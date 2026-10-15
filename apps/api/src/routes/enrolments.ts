@@ -60,7 +60,12 @@ export const enrolmentRoutes: FastifyPluginAsync = async (app) => {
   app.post("/", { preHandler: write }, async (request, reply) => {
     const actor = request.user!;
     const body = enrolmentBody.parse(request.body);
-    const student = await db.selectFrom("students").select(["id", "status"]).where("id", "=", body.studentId).where("centre_id", "=", actor.centreId).executeTakeFirst();
+    const student = await db
+      .selectFrom("students")
+      .select(["id", "status"])
+      .where("id", "=", body.studentId)
+      .where("centre_id", "=", actor.centreId)
+      .executeTakeFirst();
     if (!student) throw notFound("student");
     if (student.status !== "active") throw unprocessable("student_archived", "the student is archived");
     const { group, lines, discount: d } = await preview(body, actor.centreId);
@@ -95,7 +100,19 @@ export const enrolmentRoutes: FastifyPluginAsync = async (app) => {
       const charges = lines.length
         ? await trx
             .insertInto("installments")
-            .values(lines.map((l) => ({ centre_id: actor.centreId, enrolment_id: created.id, label: l.label, kind: "charge" as const, amount: l.amount, due_date: l.dueDate, original_due_date: l.dueDate, discount_status: null, created_by: actor.userId })))
+            .values(
+              lines.map((l) => ({
+                centre_id: actor.centreId,
+                enrolment_id: created.id,
+                label: l.label,
+                kind: "charge" as const,
+                amount: l.amount,
+                due_date: l.dueDate,
+                original_due_date: l.dueDate,
+                discount_status: null,
+                created_by: actor.userId,
+              })),
+            )
             .returning(["id", "amount"])
             .execute()
         : [];
@@ -118,12 +135,44 @@ export const enrolmentRoutes: FastifyPluginAsync = async (app) => {
           .returning(["id", "amount"])
           .executeTakeFirstOrThrow();
       }
-      const axes = { studentId: body.studentId, enrolmentId: created.id, groupId: group.groupId, studyId: group.studyId, trainingId: group.trainingId, instructorId: group.instructorId };
+      const axes = {
+        studentId: body.studentId,
+        enrolmentId: created.id,
+        groupId: group.groupId,
+        studyId: group.studyId,
+        trainingId: group.trainingId,
+        instructorId: group.instructorId,
+      };
       await recordFinancialEvents(trx, [
-        ...charges.map((c) => ({ centreId: actor.centreId, type: "installment_issued" as const, amount: c.amount, userId: actor.userId, installmentId: c.id, ...axes })),
-        ...(discountRow && canApprove ? [{ centreId: actor.centreId, type: "discount_granted" as const, amount: discountRow.amount, userId: actor.userId, installmentId: discountRow.id, ...axes }] : []),
+        ...charges.map((c) => ({
+          centreId: actor.centreId,
+          type: "installment_issued" as const,
+          amount: c.amount,
+          userId: actor.userId,
+          installmentId: c.id,
+          ...axes,
+        })),
+        ...(discountRow && canApprove
+          ? [
+              {
+                centreId: actor.centreId,
+                type: "discount_granted" as const,
+                amount: discountRow.amount,
+                userId: actor.userId,
+                installmentId: discountRow.id,
+                ...axes,
+              },
+            ]
+          : []),
       ]);
-      await writeAudit(trx, { centreId: actor.centreId, userId: actor.userId, action: "enrolment.created", objectType: "enrolment", objectId: created.id, after: { ...body, lines, discount: d } });
+      await writeAudit(trx, {
+        centreId: actor.centreId,
+        userId: actor.userId,
+        action: "enrolment.created",
+        objectType: "enrolment",
+        objectId: created.id,
+        after: { ...body, lines, discount: d },
+      });
       // Credit the student already holds pays the new schedule straight away.
       await settleStudent(trx, actor.centreId, body.studentId, actor.userId);
       return created;
@@ -171,7 +220,15 @@ export const enrolmentRoutes: FastifyPluginAsync = async (app) => {
     const body = transferBody.parse(request.body);
     return db.transaction().execute(async (trx) => {
       const result = await transferEnrolment(trx, actor, id, body);
-      await writeAudit(trx, { centreId: actor.centreId, userId: actor.userId, action: "enrolment.transferred", objectType: "enrolment", objectId: id, after: { ...body, ...result }, reason: body.reason });
+      await writeAudit(trx, {
+        centreId: actor.centreId,
+        userId: actor.userId,
+        action: "enrolment.transferred",
+        objectType: "enrolment",
+        objectId: id,
+        after: { ...body, ...result },
+        reason: body.reason,
+      });
       return result;
     });
   });
@@ -182,7 +239,15 @@ export const enrolmentRoutes: FastifyPluginAsync = async (app) => {
     const body = dropBody.parse(request.body);
     return db.transaction().execute(async (trx) => {
       const result = await dropEnrolment(trx, actor, id, body);
-      await writeAudit(trx, { centreId: actor.centreId, userId: actor.userId, action: "enrolment.dropped", objectType: "enrolment", objectId: id, after: { ...body, ...result }, reason: body.reason });
+      await writeAudit(trx, {
+        centreId: actor.centreId,
+        userId: actor.userId,
+        action: "enrolment.dropped",
+        objectType: "enrolment",
+        objectId: id,
+        after: { ...body, ...result },
+        reason: body.reason,
+      });
       return result;
     });
   });
@@ -238,7 +303,16 @@ export const enrolmentRoutes: FastifyPluginAsync = async (app) => {
         ]);
         await settleStudent(trx, actor.centreId, discountRow.studentId, actor.userId);
       }
-      await writeAudit(trx, { centreId: actor.centreId, userId: actor.userId, action: `discount.${status}`, objectType: "installment", objectId: id, before: { discountStatus: "pending" }, after: { discountStatus: status }, reason: body.reason ?? null });
+      await writeAudit(trx, {
+        centreId: actor.centreId,
+        userId: actor.userId,
+        action: `discount.${status}`,
+        objectType: "installment",
+        objectId: id,
+        before: { discountStatus: "pending" },
+        after: { discountStatus: status },
+        reason: body.reason ?? null,
+      });
       return { id, discountStatus: status };
     });
   });

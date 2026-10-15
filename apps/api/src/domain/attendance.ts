@@ -126,7 +126,18 @@ export async function sheetRows(db: Db, session: SessionContext): Promise<SheetR
     };
   });
   for (const r of records.filter((x) => x.isGuest)) {
-    rows.push({ studentId: r.studentId, enrolmentId: r.enrolmentId, firstName: r.firstName, lastName: r.lastName, status: "present", saved: true, isGuest: true, originGroupName: r.originGroupName, hostSessionId: null, note: r.note });
+    rows.push({
+      studentId: r.studentId,
+      enrolmentId: r.enrolmentId,
+      firstName: r.firstName,
+      lastName: r.lastName,
+      status: "present",
+      saved: true,
+      isGuest: true,
+      originGroupName: r.originGroupName,
+      hostSessionId: null,
+      note: r.note,
+    });
   }
   return rows;
 }
@@ -158,20 +169,54 @@ export async function saveRecords(trx: Transaction<Database>, session: SessionCo
       if (host.sheetStatus === "validated") throw conflict("host_sheet_validated", "the host session sheet is already validated");
       hostSessionId = host.id;
     }
-    const previous = await trx.selectFrom("attendance_records").select(["host_session_id"]).where("session_id", "=", session.id).where("student_id", "=", input.studentId).executeTakeFirst();
+    const previous = await trx
+      .selectFrom("attendance_records")
+      .select(["host_session_id"])
+      .where("session_id", "=", session.id)
+      .where("student_id", "=", input.studentId)
+      .executeTakeFirst();
     if (previous?.host_session_id && previous.host_session_id !== hostSessionId) {
-      await trx.deleteFrom("attendance_records").where("session_id", "=", previous.host_session_id).where("student_id", "=", input.studentId).where("is_guest", "=", true).execute();
+      await trx
+        .deleteFrom("attendance_records")
+        .where("session_id", "=", previous.host_session_id)
+        .where("student_id", "=", input.studentId)
+        .where("is_guest", "=", true)
+        .execute();
     }
     await trx
       .insertInto("attendance_records")
-      .values({ centre_id: session.centreId, session_id: session.id, student_id: input.studentId, enrolment_id: enrolmentId, status: input.status, host_session_id: hostSessionId, note: input.note ?? null, updated_by: userId })
-      .onConflict((oc) => oc.columns(["session_id", "student_id"]).doUpdateSet({ status: input.status, host_session_id: hostSessionId, note: input.note ?? null, updated_by: userId, updated_at: new Date() }))
+      .values({
+        centre_id: session.centreId,
+        session_id: session.id,
+        student_id: input.studentId,
+        enrolment_id: enrolmentId,
+        status: input.status,
+        host_session_id: hostSessionId,
+        note: input.note ?? null,
+        updated_by: userId,
+      })
+      .onConflict((oc) =>
+        oc
+          .columns(["session_id", "student_id"])
+          .doUpdateSet({ status: input.status, host_session_id: hostSessionId, note: input.note ?? null, updated_by: userId, updated_at: new Date() }),
+      )
       .execute();
     if (hostSessionId) {
       await trx
         .insertInto("attendance_records")
-        .values({ centre_id: session.centreId, session_id: hostSessionId, student_id: input.studentId, enrolment_id: enrolmentId, status: "present", is_guest: true, note: `Rattrapage : ${session.groupName}`, updated_by: userId })
-        .onConflict((oc) => oc.columns(["session_id", "student_id"]).doUpdateSet({ status: "present", is_guest: true, updated_by: userId, updated_at: new Date() }))
+        .values({
+          centre_id: session.centreId,
+          session_id: hostSessionId,
+          student_id: input.studentId,
+          enrolment_id: enrolmentId,
+          status: "present",
+          is_guest: true,
+          note: `Rattrapage : ${session.groupName}`,
+          updated_by: userId,
+        })
+        .onConflict((oc) =>
+          oc.columns(["session_id", "student_id"]).doUpdateSet({ status: "present", is_guest: true, updated_by: userId, updated_at: new Date() }),
+        )
         .execute();
       await trx.updateTable("class_sessions").set({ sheet_status: "in_progress" }).where("id", "=", hostSessionId).where("sheet_status", "=", "none").execute();
     }
@@ -194,7 +239,12 @@ export async function syncSessionCharges(trx: Transaction<Database>, session: Se
     .where("attendance_records.is_guest", "=", false)
     .where("enrolments.payment_mode", "=", "per_session")
     .execute();
-  const existing = await trx.selectFrom("installments").select(["id", "enrolment_id"]).where("session_id", "=", session.id).where("status", "=", "open").execute();
+  const existing = await trx
+    .selectFrom("installments")
+    .select(["id", "enrolment_id"])
+    .where("session_id", "=", session.id)
+    .where("status", "=", "open")
+    .execute();
   const touched = new Set<string>();
   const charged = new Map(existing.map((e) => [e.enrolment_id, e.id]));
   for (const r of records) {
@@ -222,12 +272,34 @@ export async function syncSessionCharges(trx: Transaction<Database>, session: Se
         .returning("id")
         .executeTakeFirstOrThrow();
       await recordFinancialEvents(trx, [
-        { centreId: session.centreId, type: "installment_issued", amount: price, userId, installmentId: charge.id, studentId: r.studentId, enrolmentId: r.enrolmentId, groupId: session.groupId, studyId: session.studyId, instructorId: session.instructorId },
+        {
+          centreId: session.centreId,
+          type: "installment_issued",
+          amount: price,
+          userId,
+          installmentId: charge.id,
+          studentId: r.studentId,
+          enrolmentId: r.enrolmentId,
+          groupId: session.groupId,
+          studyId: session.studyId,
+          instructorId: session.instructorId,
+        },
       ]);
     } else if (!billable && chargeId) {
       await cancelUnpaidCharge(trx, chargeId, userId, "attendance corrected: session not billable");
       await recordFinancialEvents(trx, [
-        { centreId: session.centreId, type: "installment_cancelled", amount: -price, userId, installmentId: chargeId, studentId: r.studentId, enrolmentId: r.enrolmentId, groupId: session.groupId, studyId: session.studyId, instructorId: session.instructorId },
+        {
+          centreId: session.centreId,
+          type: "installment_cancelled",
+          amount: -price,
+          userId,
+          installmentId: chargeId,
+          studentId: r.studentId,
+          enrolmentId: r.enrolmentId,
+          groupId: session.groupId,
+          studyId: session.studyId,
+          instructorId: session.instructorId,
+        },
       ]);
     }
   }
@@ -237,9 +309,17 @@ export async function syncSessionCharges(trx: Transaction<Database>, session: Se
 
 /** A charge that already received money (payment or discount) cannot be cancelled: cancel the payment first. */
 export async function cancelUnpaidCharge(trx: Transaction<Database>, installmentId: string, userId: string, reason: string): Promise<void> {
-  const paid = await trx.selectFrom("effective_allocations").select(sql<number>`coalesce(sum(amount), 0)::bigint`.as("paid")).where("installment_id", "=", installmentId).executeTakeFirstOrThrow();
+  const paid = await trx
+    .selectFrom("effective_allocations")
+    .select(sql<number>`coalesce(sum(amount), 0)::bigint`.as("paid"))
+    .where("installment_id", "=", installmentId)
+    .executeTakeFirstOrThrow();
   if (Number(paid.paid) > 0) throw conflict("installment_paid", "this instalment has received a payment; cancel the payment first");
-  await trx.updateTable("installments").set({ status: "cancelled", cancelled_at: new Date(), cancelled_by: userId, cancel_reason: reason }).where("id", "=", installmentId).execute();
+  await trx
+    .updateTable("installments")
+    .set({ status: "cancelled", cancelled_at: new Date(), cancelled_by: userId, cancel_reason: reason })
+    .where("id", "=", installmentId)
+    .execute();
 }
 
 /** Group attendance grid (students x sessions) with each student's rate under the group's effective settings. */
@@ -269,8 +349,18 @@ export async function groupAttendance(db: Db, groupId: string, centreId: string,
     ? await db
         .selectFrom("attendance_records")
         .innerJoin("students", "students.id", "attendance_records.student_id")
-        .select(["attendance_records.session_id as sessionId", "attendance_records.student_id as studentId", "students.first_name as firstName", "students.last_name as lastName", "attendance_records.status"])
-        .where("attendance_records.session_id", "in", sessions.map((s) => s.id))
+        .select([
+          "attendance_records.session_id as sessionId",
+          "attendance_records.student_id as studentId",
+          "students.first_name as firstName",
+          "students.last_name as lastName",
+          "attendance_records.status",
+        ])
+        .where(
+          "attendance_records.session_id",
+          "in",
+          sessions.map((s) => s.id),
+        )
         .where("attendance_records.is_guest", "=", false)
         .execute()
     : [];
@@ -287,6 +377,15 @@ export async function groupAttendance(db: Db, groupId: string, centreId: string,
       const rate = attendanceRate(Object.values(s.cells), rateSettings);
       return { ...s, rate, rateBasisPoints: rateToBasisPoints(rate) ?? null };
     });
-  const groupRate = attendanceRate(records.map((r) => r.status), rateSettings);
-  return { settings: rateSettings, sessions: sessions.map((s) => ({ id: s.id, startsAt: s.startsAt, localDate: s.localDate })), rows, groupRate, groupRateBasisPoints: rateToBasisPoints(groupRate) ?? null };
+  const groupRate = attendanceRate(
+    records.map((r) => r.status),
+    rateSettings,
+  );
+  return {
+    settings: rateSettings,
+    sessions: sessions.map((s) => ({ id: s.id, startsAt: s.startsAt, localDate: s.localDate })),
+    rows,
+    groupRate,
+    groupRateBasisPoints: rateToBasisPoints(groupRate) ?? null,
+  };
 }

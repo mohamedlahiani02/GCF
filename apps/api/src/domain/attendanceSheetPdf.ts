@@ -53,7 +53,10 @@ export function renderAttendanceSheet(sheet: AttendanceSheetPdf): Promise<Buffer
     });
     y += rowHeight;
   };
-  drawRow(COLUMNS.map((c) => c.title), true);
+  drawRow(
+    COLUMNS.map((c) => c.title),
+    true,
+  );
   const rows = [
     ...sheet.students.map((s) => `${s.lastName} ${s.firstName}${s.guestOf ? ` (invité, ${s.guestOf})` : ""}`),
     ...Array.from({ length: sheet.blankRows }, () => ""),
@@ -62,7 +65,10 @@ export function renderAttendanceSheet(sheet: AttendanceSheetPdf): Promise<Buffer
     if (y + rowHeight > doc.page.height - MARGIN - 110) {
       doc.addPage();
       y = MARGIN;
-      drawRow(COLUMNS.map((c) => c.title), true);
+      drawRow(
+        COLUMNS.map((c) => c.title),
+        true,
+      );
     }
     drawRow([String(index + 1), name, "", "", "", "", ""], false);
   });

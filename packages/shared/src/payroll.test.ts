@@ -11,9 +11,7 @@ describe("attendance rate", () => {
 
   it("honours the settings", () => {
     const statuses = ["present", "absent_justified", "present_other_group"] as const;
-    expect(
-      attendanceRate(statuses, { countJustifiedAsPresent: true, countOtherGroupAsPresent: false }),
-    ).toEqual({ numerator: 2, denominator: 3 });
+    expect(attendanceRate(statuses, { countJustifiedAsPresent: true, countOtherGroupAsPresent: false })).toEqual({ numerator: 2, denominator: 3 });
   });
 
   it("has no basis points when nothing is counted", () => {
@@ -25,10 +23,7 @@ describe("pay = base x presence factor", () => {
   const rate85 = { numerator: 17, denominator: 20 };
 
   it("matches the reference example: 8 students x 40 = 320, share 60 % = 192, attendance 85 % = 163,200", () => {
-    const result = computePay(
-      { base: { kind: "pct_collections", basisPoints: 6000, collected: 320_000 }, presence: { kind: "prorata" } },
-      rate85,
-    );
+    const result = computePay({ base: { kind: "pct_collections", basisPoints: 6000, collected: 320_000 }, presence: { kind: "prorata" } }, rate85);
     expect(result.base).toBe(192_000);
     expect(result.amount).toBe(163_200);
   });
@@ -63,19 +58,13 @@ describe("pay = base x presence factor", () => {
   });
 
   it("computes hourly pay from minutes", () => {
-    const result = computePay(
-      { base: { kind: "hourly", hourlyRate: 30_000, minutesDelivered: 90 }, presence: { kind: "session_due" } },
-      rate85,
-    );
+    const result = computePay({ base: { kind: "hourly", hourlyRate: 30_000, minutesDelivered: 90 }, presence: { kind: "session_due" } }, rate85);
     expect(result.amount).toBe(45_000);
   });
 
   it("refuses to prorate when no student sessions were counted", () => {
-    expect(() =>
-      computePay(
-        { base: { kind: "monthly_flat", amount: 100_000 }, presence: { kind: "prorata" } },
-        { numerator: 0, denominator: 0 },
-      ),
-    ).toThrow(PayrollError);
+    expect(() => computePay({ base: { kind: "monthly_flat", amount: 100_000 }, presence: { kind: "prorata" } }, { numerator: 0, denominator: 0 })).toThrow(
+      PayrollError,
+    );
   });
 });

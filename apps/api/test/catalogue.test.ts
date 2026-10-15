@@ -27,7 +27,16 @@ beforeAll(async () => {
       availability: [{ weekday: 3, startTime: "14:00", endTime: "18:00" }],
     })
   ).body.id;
-  ids.karim = (await h.call("POST", "/api/instructors", admin, { firstName: "Karim", lastName: "Trabelsi", kind: "trainer", employment: "freelance", subjectIds: [], availability: [] })).body.id;
+  ids.karim = (
+    await h.call("POST", "/api/instructors", admin, {
+      firstName: "Karim",
+      lastName: "Trabelsi",
+      kind: "trainer",
+      employment: "freelance",
+      subjectIds: [],
+      availability: [],
+    })
+  ).body.id;
   ids.student = (await h.call("POST", "/api/students", secretariat, { firstName: "Rim", lastName: "Jlassi" })).body.id;
   ids.student2 = (await h.call("POST", "/api/students", secretariat, { firstName: "Mohamed", lastName: "Ayari" })).body.id;
 });
@@ -123,17 +132,37 @@ describe("private studies and groups", () => {
   });
 
   it("rejects a payment mode the study does not allow and a duplicate enrolment", async () => {
-    const wrongMode = await h.call("POST", "/api/enrolments", secretariat, { studentId: ids.student2, groupId: ids.groupA, effectiveDate: "2026-10-01", paymentMode: "full" });
+    const wrongMode = await h.call("POST", "/api/enrolments", secretariat, {
+      studentId: ids.student2,
+      groupId: ids.groupA,
+      effectiveDate: "2026-10-01",
+      paymentMode: "full",
+    });
     expect(wrongMode.status).toBe(422);
-    const duplicate = await h.call("POST", "/api/enrolments", secretariat, { studentId: ids.student, groupId: ids.groupA, effectiveDate: "2026-10-01", paymentMode: "monthly" });
+    const duplicate = await h.call("POST", "/api/enrolments", secretariat, {
+      studentId: ids.student,
+      groupId: ids.groupA,
+      effectiveDate: "2026-10-01",
+      paymentMode: "monthly",
+    });
     expect(duplicate.status).toBe(409);
   });
 
   it("stops enrolments when the group is full", async () => {
-    const second = await h.call("POST", "/api/enrolments", secretariat, { studentId: ids.student2, groupId: ids.groupA, effectiveDate: "2026-10-01", paymentMode: "monthly" });
+    const second = await h.call("POST", "/api/enrolments", secretariat, {
+      studentId: ids.student2,
+      groupId: ids.groupA,
+      effectiveDate: "2026-10-01",
+      paymentMode: "monthly",
+    });
     expect(second.status).toBe(201);
     const third = (await h.call("POST", "/api/students", secretariat, { firstName: "Nour", lastName: "Hamdi" })).body.id;
-    const full = await h.call("POST", "/api/enrolments", secretariat, { studentId: third, groupId: ids.groupA, effectiveDate: "2026-10-01", paymentMode: "monthly" });
+    const full = await h.call("POST", "/api/enrolments", secretariat, {
+      studentId: third,
+      groupId: ids.groupA,
+      effectiveDate: "2026-10-01",
+      paymentMode: "monthly",
+    });
     expect(full.status).toBe(409);
     expect(full.body.code).toBe("group_full");
   });
@@ -141,7 +170,13 @@ describe("private studies and groups", () => {
 
 describe("trainings and payment plans", () => {
   it("rejects a plan that does not add up to the price, and previews it live", async () => {
-    const training = await h.call("POST", "/api/catalogue/trainings", admin, { title: "Excel avancé", durationHours: 40, price: 450_000, capacity: 12, paymentModes: "both" });
+    const training = await h.call("POST", "/api/catalogue/trainings", admin, {
+      title: "Excel avancé",
+      durationHours: 40,
+      price: 450_000,
+      capacity: 12,
+      paymentModes: "both",
+    });
     expect(training.status).toBe(201);
     ids.training = training.body.id;
     const bad = [4000, 3000, 2000].map((value, i) => ({ label: `Tranche ${i + 1}`, valueKind: "percent", value, dueKind: "relative", dueOffsetDays: i * 21 }));
@@ -160,7 +195,11 @@ describe("trainings and payment plans", () => {
     ];
     const plan = await h.call("POST", `/api/catalogue/trainings/${ids.training}/plans`, admin, { name: "40 / 30 / 30", isDefault: true, items });
     expect(plan.status).toBe(201);
-    const session = await h.call("POST", `/api/catalogue/trainings/${ids.training}/sessions`, admin, { name: "Session 3", startDate: "2026-11-03", endDate: "2026-12-15" });
+    const session = await h.call("POST", `/api/catalogue/trainings/${ids.training}/sessions`, admin, {
+      name: "Session 3",
+      startDate: "2026-11-03",
+      endDate: "2026-12-15",
+    });
     const group = await h.call("POST", "/api/groups", secretariat, {
       kind: "training",
       trainingSessionId: session.body.id,
@@ -202,14 +241,23 @@ describe("trainings and payment plans", () => {
       discount: { kind: "percent", value: 1000, reason: "Fratrie" },
     });
     expect(enrolment.status).toBe(201);
-    const discountRow = await h.db.selectFrom("installments").select(["id", "amount", "discount_status"]).where("enrolment_id", "=", enrolment.body.id).where("kind", "=", "discount").executeTakeFirstOrThrow();
+    const discountRow = await h.db
+      .selectFrom("installments")
+      .select(["id", "amount", "discount_status"])
+      .where("enrolment_id", "=", enrolment.body.id)
+      .where("kind", "=", "discount")
+      .executeTakeFirstOrThrow();
     expect(discountRow).toMatchObject({ amount: -45_000, discount_status: "pending" });
 
     const bySecretariat = await h.call("POST", `/api/enrolments/discounts/${discountRow.id}/decision`, secretariat, { approve: true });
     expect(bySecretariat.status).toBe(403);
     const approved = await h.call("POST", `/api/enrolments/discounts/${discountRow.id}/decision`, admin, { approve: true });
     expect(approved.status).toBe(200);
-    const event = await h.db.selectFrom("financial_events").select(["event_type", "amount"]).where("installment_id", "=", discountRow.id).executeTakeFirstOrThrow();
+    const event = await h.db
+      .selectFrom("financial_events")
+      .select(["event_type", "amount"])
+      .where("installment_id", "=", discountRow.id)
+      .executeTakeFirstOrThrow();
     expect(event).toEqual({ event_type: "discount_granted", amount: -45_000 });
   });
 
@@ -227,19 +275,35 @@ describe("integrity", () => {
   });
 
   it("refuses a price change that an amount-based plan no longer matches", async () => {
-    const training = await h.call("POST", "/api/catalogue/trainings", admin, { title: "Comptabilité de base", durationHours: 60, price: 600_000, capacity: 12, paymentModes: "installments" });
+    const training = await h.call("POST", "/api/catalogue/trainings", admin, {
+      title: "Comptabilité de base",
+      durationHours: 60,
+      price: 600_000,
+      capacity: 12,
+      paymentModes: "installments",
+    });
     const items = [
       { label: "Inscription", valueKind: "amount", value: 200_000, dueKind: "relative", dueOffsetDays: 0 },
       { label: "Solde", valueKind: "amount", value: 400_000, dueKind: "relative", dueOffsetDays: 30 },
     ];
-    expect((await h.call("POST", `/api/catalogue/trainings/${training.body.id}/plans`, admin, { name: "2 tranches", isDefault: true, items })).status).toBe(201);
+    expect((await h.call("POST", `/api/catalogue/trainings/${training.body.id}/plans`, admin, { name: "2 tranches", isDefault: true, items })).status).toBe(
+      201,
+    );
     const res = await h.call("PATCH", `/api/catalogue/trainings/${training.body.id}`, admin, { price: 650_000 });
     expect(res.status).toBe(422);
     expect(res.body.code).toBe("plan_total_mismatch");
   });
 
   it("lets only the admin change the catalogue", async () => {
-    const res = await h.call("POST", "/api/catalogue/studies", secretariat, { subjectId: ids.maths, name: "X", billingMode: "monthly", price: 1, absenceBilled: true, sessionsPerWeek: 1, capacity: 1 });
+    const res = await h.call("POST", "/api/catalogue/studies", secretariat, {
+      subjectId: ids.maths,
+      name: "X",
+      billingMode: "monthly",
+      price: 1,
+      absenceBilled: true,
+      sessionsPerWeek: 1,
+      capacity: 1,
+    });
     expect(res.status).toBe(403);
   });
 });

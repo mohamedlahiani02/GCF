@@ -26,7 +26,7 @@ export function mulDivRound(a: Millimes, numerator: number, denominator: number)
     throw new MoneyError("numerator and denominator must be safe integers");
   }
   if (denominator === 0) throw new MoneyError("denominator must not be zero");
-  const negative = a < 0 !== numerator < 0 !== denominator < 0;
+  const negative = (a < 0 !== numerator < 0) !== denominator < 0;
   const product = BigInt(Math.abs(a)) * BigInt(Math.abs(numerator));
   const den = BigInt(Math.abs(denominator));
   const quotient = product / den;
@@ -93,7 +93,6 @@ export function parseTnd(input: string): Millimes {
   assertMillimes(millimes);
   return negative ? -millimes : millimes;
 }
-
 
 /** Formats millimes as a fixed 3-decimal string, e.g. 163200 -> "163,200" (fr) or "163.200" (en). */
 export function formatTnd(amount: Millimes, locale: "fr" | "en" = "fr"): string {

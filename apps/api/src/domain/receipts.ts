@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 import { sql, type Transaction } from "kysely";
 import type { Database } from "../db/types.js";
-import { centreClock, studentCredit, studentTotals } from "./ledger.js";
+import { centreClock, payerCredit, payerTotals, type Payer } from "./ledger.js";
 import { renderReceipt, type ReceiptSnapshot } from "./receiptPdf.js";
 
 /** Gap-free numbering per centre and year: the counter row is locked and rolls back with the transaction. */
@@ -27,7 +27,8 @@ export interface IssueReceipt {
 export async function issueReceipt(trx: Transaction<Database>, input: IssueReceipt): Promise<{ id: string; number: string }> {
   const payment = await trx
     .selectFrom("payments")
-    .innerJoin("students", "students.id", "payments.student_id")
+    .leftJoin("students", "students.id", "payments.student_id")
+    .leftJoin("renters", "renters.id", "payments.renter_id")
     .innerJoin("centres", "centres.id", "payments.centre_id")
     .select([
       "payments.amount",
@@ -36,6 +37,9 @@ export async function issueReceipt(trx: Transaction<Database>, input: IssueRecei
       "payments.cheque_bank as chequeBank",
       "payments.reference",
       "payments.student_id as studentId",
+      "payments.renter_id as renterId",
+      "renters.name as renterName",
+      "renters.company as renterCompany",
       "students.first_name as firstName",
       "students.last_name as lastName",
       "students.is_minor as isMinor",
@@ -54,20 +58,24 @@ export async function issueReceipt(trx: Transaction<Database>, input: IssueRecei
   const sequence = await nextNumber(trx, input.centreId, year);
   const number = `${payment.prefix}-${year}-${String(sequence).padStart(6, "0")}`;
   const issuedAt = await sql<{ at: string }>`select to_char(now() at time zone ${payment.timezone}, 'DD/MM/YYYY HH24:MI') as at`.execute(trx);
-  const totals = await studentTotals(trx, input.centreId, payment.studentId!);
+  const payer: Payer = payment.studentId ? { kind: "student", id: payment.studentId } : { kind: "renter", id: payment.renterId! };
+  const totals = await payerTotals(trx, input.centreId, payer);
+  const payerName = payment.studentId
+    ? `${payment.firstName} ${payment.lastName}`
+    : `${payment.renterName}${payment.renterCompany ? ` (${payment.renterCompany})` : ""}`;
   const snapshot: ReceiptSnapshot = {
     number,
     kind: input.kind,
     issuedAt: issuedAt.rows[0]!.at,
     centre: { name: payment.centreName, address: payment.address, taxId: payment.taxId, footer: payment.footer },
-    payer: { name: `${payment.firstName} ${payment.lastName}`, guardianName: payment.isMinor ? payment.guardianName : null },
+    payer: { name: payerName, guardianName: payment.isMinor ? payment.guardianName : null },
     method: payment.method,
     chequeNumber: payment.chequeNumber,
     chequeBank: payment.chequeBank,
     reference: payment.reference,
     amount: input.kind === "cancellation" ? -payment.amount : payment.amount,
     lines: input.lines,
-    creditAfter: await studentCredit(trx, payment.studentId!),
+    creditAfter: await payerCredit(trx, payer),
     remainingAfter: totals.due,
     cancels: input.cancels ? { number: input.cancels.number, reason: input.cancels.reason } : null,
   };

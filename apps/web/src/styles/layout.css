@@ -1,0 +1,327 @@
+/* Application layout on top of the design-system tokens and components (app.css). */
+html,
+body,
+#root {
+  height: 100%;
+}
+.app {
+  min-height: 100vh;
+}
+.side {
+  width: 248px;
+  flex: 0 0 248px;
+  padding: 16px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  background: var(--surface);
+  position: sticky;
+  top: 0;
+  height: 100vh;
+  overflow-y: auto;
+}
+.side.collapsed {
+  width: 64px;
+  flex-basis: 64px;
+}
+.side.collapsed .lbl,
+.side.collapsed .gsearch,
+.side.collapsed .navi span,
+.side.collapsed .side-foot .cap {
+  display: none;
+}
+.brand {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 0 4px;
+  font-weight: 600;
+  line-height: 1.2;
+}
+.brand .logo {
+  width: 34px;
+  height: 34px;
+  border-radius: 8px;
+  background: var(--accent);
+  color: var(--on-accent);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 13px;
+  flex: 0 0 auto;
+}
+.navi svg {
+  flex: 0 0 auto;
+}
+.side-foot {
+  margin-top: auto;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 8px 4px;
+  border-top: 1px solid var(--line);
+}
+.top {
+  min-height: 56px;
+  padding: 8px 32px;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  background: var(--surface);
+  border-bottom: 1px solid var(--line);
+}
+.crumbs {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  color: var(--muted);
+}
+.crumbs strong {
+  color: var(--ink);
+}
+.search-results {
+  position: absolute;
+  z-index: 30;
+  inset-inline: 0;
+  top: 40px;
+  background: var(--surface);
+  border: 1px solid var(--line2);
+  border-radius: 8px;
+  box-shadow: 0 8px 20px rgba(20, 30, 45, 0.12);
+  max-height: 360px;
+  overflow: auto;
+}
+.search-results a {
+  display: block;
+  padding: 8px 12px;
+  color: var(--ink);
+  text-decoration: none;
+}
+.search-results a:hover,
+.search-results a:focus-visible {
+  background: var(--accent-soft);
+}
+.overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(20, 30, 45, 0.35);
+  z-index: 40;
+  display: flex;
+  justify-content: flex-end;
+}
+.overlay.center {
+  justify-content: center;
+  align-items: center;
+  padding: 16px;
+}
+.overlay .drawer {
+  height: 100vh;
+  max-width: 100vw;
+}
+.drawer-body {
+  padding: 16px;
+  overflow-y: auto;
+  flex: 1 1 auto;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+.toasts {
+  position: fixed;
+  inset-inline-end: 24px;
+  bottom: 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  z-index: 60;
+}
+.toast.error {
+  background: #7c1d14;
+}
+.spinner {
+  width: 18px;
+  height: 18px;
+  border: 2px solid var(--line2);
+  border-top-color: var(--accent);
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+  display: inline-block;
+}
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+.login {
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 32px;
+}
+.seg {
+  display: inline-flex;
+  gap: 4px;
+  flex-wrap: wrap;
+}
+.seg .btn[aria-pressed="true"] {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--on-accent);
+}
+.b-btn {
+  cursor: pointer;
+}
+.tbl tr.clickable {
+  cursor: pointer;
+}
+.tbl tr.clickable:hover td {
+  background: var(--soft);
+}
+.tbl input.input,
+.tbl select.input {
+  min-height: 30px;
+}
+textarea.input {
+  min-height: 72px;
+  padding: 8px 10px;
+  resize: vertical;
+}
+.err-text {
+  font-size: 12px;
+  color: #a3261b;
+}
+.cal {
+  display: grid;
+  gap: 0;
+  min-width: 960px;
+}
+.cal-block {
+  margin: 4px 2px;
+  padding: 4px 8px;
+  border-radius: 6px;
+  font-size: 12px;
+  border: 1px solid;
+  overflow: hidden;
+}
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}
+@media (max-width: 900px) {
+  .side {
+    position: static;
+    height: auto;
+    width: 100%;
+    flex-basis: auto;
+  }
+  .top {
+    padding: 8px 16px;
+  }
+}
+@media print {
+  .side,
+  .top {
+    display: none;
+  }
+}
+
+/* Modal sizes: forms with several columns use the wide variant. Both stay inside the viewport. */
+.modal {
+  max-width: calc(100vw - 32px);
+  max-height: calc(100vh - 32px);
+  display: flex;
+  flex-direction: column;
+}
+.modal > .card-b {
+  overflow-y: auto;
+}
+.modal.wide {
+  width: 880px;
+}
+
+/* Planning blocks (legend colours of the mockups). */
+.blk {
+  border: 1px solid;
+  border-radius: 6px;
+  font-size: 12px;
+  padding: 4px 8px;
+  overflow: hidden;
+}
+.blk-course {
+  background: #e1ecfb;
+  color: #1d4f9e;
+  border-color: #afc8ee;
+}
+.blk-training {
+  background: #ddf2f0;
+  color: #0b5b55;
+  border-color: #a5d8d3;
+}
+.blk-rental {
+  background: #fde8d6;
+  color: #8a3b00;
+  border-color: #efc3a0;
+}
+.blk-conflict {
+  background: #fbe4e1;
+  color: #a3261b;
+  border-color: #e7a59d;
+}
+button.blk {
+  font: inherit;
+  text-align: start;
+  cursor: pointer;
+}
+.timeline-row {
+  position: relative;
+  min-height: 64px;
+  border-top: 1px solid var(--line);
+}
+.timeline-row .blk {
+  position: absolute;
+  top: 6px;
+  bottom: 6px;
+}
+
+/* Filters placed in a page header keep their natural width. */
+.ph-actions {
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+.ph-actions .input {
+  width: auto;
+}
+
+/* Filters placed in a card header keep their natural width. */
+.card-h .input {
+  width: auto;
+}
+/* A select followed by an inline "+" button stays on one line. */
+.input-with-action {
+  display: flex;
+  gap: 6px;
+  flex-wrap: nowrap;
+}
+.input-with-action > .input {
+  flex: 1;
+  min-width: 0;
+}
+
+/* Footer actions never wrap or shrink; the explanatory text takes the remaining width. */
+.card-f > .row {
+  flex: 0 0 auto;
+  flex-wrap: nowrap;
+}
+.card-f > .cap {
+  flex: 1 1 auto;
+  min-width: 0;
+}

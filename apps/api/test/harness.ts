@@ -56,6 +56,7 @@ export async function createHarness(options: { mailer?: Mailer } = {}): Promise<
     loginMaxFailures: 5,
     loginLockMinutes: 15,
     smtp: null,
+    webDistDir: null,
   };
   const app = await buildApp({ config, db, rateLimit: false, mailer: options.mailer ?? null });
   const hash = await hashPassword(PASSWORD);

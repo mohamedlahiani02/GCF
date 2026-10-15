@@ -1,11 +1,12 @@
 import type { FastifyPluginAsync } from "fastify";
-import type { Transaction } from "kysely";
+import { sql, type Transaction } from "kysely";
 import { z } from "zod";
 import { writeAudit } from "../audit.js";
 import type { Database } from "../db/types.js";
+import { monthBounds } from "../domain/payrollCalc.js";
 import { findSlotConflicts, type WeeklySlot } from "../domain/slotConflicts.js";
 import { conflict, HttpError, notFound, unprocessable } from "../errors.js";
-import { archiveBody, clockTime, idParam, isoDate, millimes, requiredText, toClock, uuid } from "../validation.js";
+import { archiveBody, clockTime, idParam, isoDate, millimes, requiredText, toClock, uuid, yearMonth } from "../validation.js";
 
 const slot = z
   .object({ weekday: z.number().int().min(1).max(7), startTime: clockTime, endTime: clockTime, roomId: uuid.nullable().optional() })
@@ -31,7 +32,10 @@ const createBody = z
   })
   .strict()
   .refine((g) => g.endDate >= g.startDate, "the end date cannot be before the start date")
-  .refine((g) => (g.kind === "study" ? !!g.studyId && !g.trainingSessionId : !!g.trainingSessionId && !g.studyId), "a study group needs studyId, a training group needs trainingSessionId");
+  .refine(
+    (g) => (g.kind === "study" ? !!g.studyId && !g.trainingSessionId : !!g.trainingSessionId && !g.studyId),
+    "a study group needs studyId, a training group needs trainingSessionId",
+  );
 
 const updateBody = z
   .object({
@@ -51,7 +55,14 @@ const updateBody = z
 
 const slotsBody = z.object({ slots: z.array(slot).max(14) }).strict();
 const checkBody = z
-  .object({ instructorId: uuid, roomId: uuid.nullable().optional(), startDate: isoDate, endDate: isoDate, slots: z.array(slot).max(14), groupId: uuid.optional() })
+  .object({
+    instructorId: uuid,
+    roomId: uuid.nullable().optional(),
+    startDate: isoDate,
+    endDate: isoDate,
+    slots: z.array(slot).max(14),
+    groupId: uuid.optional(),
+  })
   .strict();
 const listQuery = z.object({ studyId: uuid.optional(), trainingSessionId: uuid.optional(), status: z.enum(["active", "archived", "all"]).default("active") });
 
@@ -61,12 +72,23 @@ function toSlots(slots: z.infer<typeof slot>[]): WeeklySlot[] {
 
 async function assertRefs(trx: Transaction<Database>, centreId: string, refs: { instructorId?: string; roomIds: (string | null | undefined)[] }) {
   if (refs.instructorId) {
-    const instructor = await trx.selectFrom("instructors").select("status").where("id", "=", refs.instructorId).where("centre_id", "=", centreId).executeTakeFirst();
+    const instructor = await trx
+      .selectFrom("instructors")
+      .select("status")
+      .where("id", "=", refs.instructorId)
+      .where("centre_id", "=", centreId)
+      .executeTakeFirst();
     if (!instructor || instructor.status !== "active") throw unprocessable("unknown_instructor", "the instructor does not exist or is archived");
   }
   const roomIds = [...new Set(refs.roomIds.filter((r): r is string => !!r))];
   if (roomIds.length) {
-    const rooms = await trx.selectFrom("rooms").select("id").where("centre_id", "=", centreId).where("status", "=", "active").where("id", "in", roomIds).execute();
+    const rooms = await trx
+      .selectFrom("rooms")
+      .select("id")
+      .where("centre_id", "=", centreId)
+      .where("status", "=", "active")
+      .where("id", "in", roomIds)
+      .execute();
     if (rooms.length !== roomIds.length) throw unprocessable("unknown_room", "one of the rooms does not exist or is archived");
   }
 }
@@ -121,24 +143,30 @@ export const groupRoutes: FastifyPluginAsync = async (app) => {
       .where("groups.centre_id", "=", centreId)
       .executeTakeFirst();
     if (!group) throw notFound("group");
-    const slots = await db.selectFrom("group_slots").select(["id", "weekday", "start_time", "end_time", "room_id as roomId"]).where("group_id", "=", id).orderBy("weekday").orderBy("start_time").execute();
+    const slots = await db
+      .selectFrom("group_slots")
+      .select(["id", "weekday", "start_time", "end_time", "room_id as roomId"])
+      .where("group_id", "=", id)
+      .orderBy("weekday")
+      .orderBy("start_time")
+      .execute();
     const students = await db
       .selectFrom("enrolments")
       .innerJoin("students", "students.id", "enrolments.student_id")
-      .select(["enrolments.id as enrolmentId", "students.id as studentId", "students.first_name as firstName", "students.last_name as lastName", "students.is_minor as isMinor", "enrolments.effective_date as effectiveDate"])
+      .select([
+        "enrolments.id as enrolmentId",
+        "students.id as studentId",
+        "students.first_name as firstName",
+        "students.last_name as lastName",
+        "students.is_minor as isMinor",
+        "enrolments.effective_date as effectiveDate",
+      ])
       .where("enrolments.group_id", "=", id)
       .where("enrolments.status", "=", "active")
       .orderBy("students.last_name")
       .orderBy("students.first_name")
       .execute();
-    const {
-      studyPrice,
-      trainingPrice,
-      studyAbsenceBilled,
-      centreCountJustified,
-      centreCountMakeup,
-      ...rest
-    } = group;
+    const { studyPrice, trainingPrice, studyAbsenceBilled, centreCountJustified, centreCountMakeup, ...rest } = group;
     return {
       ...rest,
       effective: {
@@ -212,7 +240,12 @@ export const groupRoutes: FastifyPluginAsync = async (app) => {
     const id = await db.transaction().execute(async (trx) => {
       let capacity = body.capacity;
       if (body.kind === "study") {
-        const study = await trx.selectFrom("studies").select(["capacity", "status"]).where("id", "=", body.studyId!).where("centre_id", "=", actor.centreId).executeTakeFirst();
+        const study = await trx
+          .selectFrom("studies")
+          .select(["capacity", "status"])
+          .where("id", "=", body.studyId!)
+          .where("centre_id", "=", actor.centreId)
+          .executeTakeFirst();
         if (!study || study.status !== "active") throw unprocessable("unknown_study", "the study does not exist or is archived");
         capacity ??= study.capacity;
       } else {
@@ -258,7 +291,10 @@ export const groupRoutes: FastifyPluginAsync = async (app) => {
         .returning("id")
         .executeTakeFirstOrThrow();
       if (slots.length) {
-        await trx.insertInto("group_slots").values(slots.map((s) => ({ group_id: group.id, weekday: s.weekday, start_time: s.startTime, end_time: s.endTime, room_id: s.roomId }))).execute();
+        await trx
+          .insertInto("group_slots")
+          .values(slots.map((s) => ({ group_id: group.id, weekday: s.weekday, start_time: s.startTime, end_time: s.endTime, room_id: s.roomId })))
+          .execute();
       }
       await writeAudit(trx, { centreId: actor.centreId, userId: actor.userId, action: "group.created", objectType: "group", objectId: group.id, after: body });
       return group.id;
@@ -307,7 +343,15 @@ export const groupRoutes: FastifyPluginAsync = async (app) => {
         })
         .where("id", "=", id)
         .execute();
-      await writeAudit(trx, { centreId: actor.centreId, userId: actor.userId, action: "group.updated", objectType: "group", objectId: id, before, after: body });
+      await writeAudit(trx, {
+        centreId: actor.centreId,
+        userId: actor.userId,
+        action: "group.updated",
+        objectType: "group",
+        objectId: id,
+        before,
+        after: body,
+      });
     });
     return detail(id, actor.centreId);
   });
@@ -333,11 +377,77 @@ export const groupRoutes: FastifyPluginAsync = async (app) => {
       if (conflicts.length) throw scheduleConflict({ conflicts });
       await trx.deleteFrom("group_slots").where("group_id", "=", id).execute();
       if (slots.length) {
-        await trx.insertInto("group_slots").values(slots.map((s) => ({ group_id: id, weekday: s.weekday, start_time: s.startTime, end_time: s.endTime, room_id: s.roomId }))).execute();
+        await trx
+          .insertInto("group_slots")
+          .values(slots.map((s) => ({ group_id: id, weekday: s.weekday, start_time: s.startTime, end_time: s.endTime, room_id: s.roomId })))
+          .execute();
       }
-      await writeAudit(trx, { centreId: actor.centreId, userId: actor.userId, action: "group.slots_updated", objectType: "group", objectId: id, before: before.slots, after: slots });
+      await writeAudit(trx, {
+        centreId: actor.centreId,
+        userId: actor.userId,
+        action: "group.slots_updated",
+        objectType: "group",
+        objectId: id,
+        before: before.slots,
+        after: slots,
+      });
     });
     return detail(id, actor.centreId);
+  });
+
+  /** Money of the group for a month: invoiced (instalments due), collected (payments received), still unpaid. */
+  app.get("/:id/finance", { preHandler: app.requirePermission("payments:read") }, async (request) => {
+    const centreId = request.user!.centreId;
+    const { id } = idParam.parse(request.params);
+    const { month } = z.object({ month: yearMonth }).parse(request.query);
+    const group = await db.selectFrom("groups").select("id").where("id", "=", id).where("centre_id", "=", centreId).executeTakeFirst();
+    if (!group) throw notFound("group");
+    const { start, end } = monthBounds(month);
+    const centre = await db.selectFrom("centres").select("timezone").where("id", "=", centreId).executeTakeFirstOrThrow();
+    const invoiced = await db
+      .selectFrom("installments")
+      .innerJoin("enrolments", "enrolments.id", "installments.enrolment_id")
+      .leftJoin(
+        db
+          .selectFrom("effective_allocations")
+          .select(["installment_id", sql<number>`sum(amount)::bigint`.as("paid")])
+          .groupBy("installment_id")
+          .as("p"),
+        "p.installment_id",
+        "installments.id",
+      )
+      .select([
+        sql<number>`coalesce(sum(installments.amount) filter (where installments.kind = 'charge'), 0)::bigint`.as("charges"),
+        sql<number>`coalesce(sum(installments.amount) filter (where installments.kind = 'discount' and installments.discount_status = 'approved'), 0)::bigint`.as(
+          "discounts",
+        ),
+        sql<number>`coalesce(sum(installments.amount - coalesce(p.paid, 0)) filter (where installments.kind = 'charge'), 0)::bigint`.as("unpaid"),
+        sql<number>`coalesce(sum(installments.amount - coalesce(p.paid, 0)) filter (where installments.kind = 'charge' and installments.postponement_count > 0), 0)::bigint`.as(
+          "postponed",
+        ),
+      ])
+      .where("enrolments.group_id", "=", id)
+      .where("installments.status", "=", "open")
+      .where("installments.due_date", ">=", start)
+      .where("installments.due_date", "<=", end)
+      .executeTakeFirstOrThrow();
+    const collected = await db
+      .selectFrom("effective_allocations")
+      .innerJoin("payments", "payments.id", "effective_allocations.payment_id")
+      .innerJoin("installments", "installments.id", "effective_allocations.installment_id")
+      .innerJoin("enrolments", "enrolments.id", "installments.enrolment_id")
+      .select(sql<number>`coalesce(sum(effective_allocations.amount), 0)::bigint`.as("total"))
+      .where("enrolments.group_id", "=", id)
+      .where(sql<string>`(payments.received_at at time zone ${centre.timezone})::date`, ">=", start)
+      .where(sql<string>`(payments.received_at at time zone ${centre.timezone})::date`, "<=", end)
+      .executeTakeFirstOrThrow();
+    return {
+      month,
+      invoiced: Number(invoiced.charges) + Number(invoiced.discounts),
+      collected: Number(collected.total),
+      unpaid: Number(invoiced.unpaid),
+      postponed: Number(invoiced.postponed),
+    };
   });
 
   app.post("/:id/archive", { preHandler: write }, async (request) => {
@@ -347,7 +457,12 @@ export const groupRoutes: FastifyPluginAsync = async (app) => {
     await db.transaction().execute(async (trx) => {
       const enrolled = await trx.selectFrom("enrolments").select("id").where("group_id", "=", id).where("status", "=", "active").executeTakeFirst();
       if (enrolled) throw conflict("has_active_enrolments", "transfer or close the enrolments of this group first");
-      const result = await trx.updateTable("groups").set({ status: "archived", updated_at: new Date() }).where("id", "=", id).where("centre_id", "=", actor.centreId).executeTakeFirst();
+      const result = await trx
+        .updateTable("groups")
+        .set({ status: "archived", updated_at: new Date() })
+        .where("id", "=", id)
+        .where("centre_id", "=", actor.centreId)
+        .executeTakeFirst();
       if (result.numUpdatedRows === 0n) throw notFound("group");
       await writeAudit(trx, { centreId: actor.centreId, userId: actor.userId, action: "group.archived", objectType: "group", objectId: id, reason });
     });

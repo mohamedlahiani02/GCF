@@ -18,21 +18,83 @@ beforeAll(async () => {
   admin = await h.login("admin@pay.tn");
   secretariat = await h.login("sec@pay.tn");
   const subject = (await h.call("POST", "/api/catalogue/subjects", admin, { name: "Anglais" })).body.id;
-  const teacher = (await h.call("POST", "/api/instructors", admin, { firstName: "Ines", lastName: "Gharbi", kind: "teacher", employment: "salaried", subjectIds: [], availability: [] })).body.id;
-  const teacher2 = (await h.call("POST", "/api/instructors", admin, { firstName: "Sami", lastName: "Haddad", kind: "teacher", employment: "salaried", subjectIds: [], availability: [] })).body.id;
-  const study = (await h.call("POST", "/api/catalogue/studies", admin, { subjectId: subject, name: "Anglais", billingMode: "monthly", price: 40_000, absenceBilled: true, sessionsPerWeek: 1, capacity: 10 })).body.id;
+  const teacher = (
+    await h.call("POST", "/api/instructors", admin, {
+      firstName: "Ines",
+      lastName: "Gharbi",
+      kind: "teacher",
+      employment: "salaried",
+      subjectIds: [],
+      availability: [],
+    })
+  ).body.id;
+  const teacher2 = (
+    await h.call("POST", "/api/instructors", admin, {
+      firstName: "Sami",
+      lastName: "Haddad",
+      kind: "teacher",
+      employment: "salaried",
+      subjectIds: [],
+      availability: [],
+    })
+  ).body.id;
+  const study = (
+    await h.call("POST", "/api/catalogue/studies", admin, {
+      subjectId: subject,
+      name: "Anglais",
+      billingMode: "monthly",
+      price: 40_000,
+      absenceBilled: true,
+      sessionsPerWeek: 1,
+      capacity: 10,
+    })
+  ).body.id;
   const group = (name: string, instructorId: string, extra: Record<string, unknown> = {}) =>
-    h.call("POST", "/api/groups", secretariat, { kind: "study", studyId: study, name, instructorId, startDate: "2026-09-01", endDate: "2026-12-31", slots: [], ...extra });
+    h.call("POST", "/api/groups", secretariat, {
+      kind: "study",
+      studyId: study,
+      name,
+      instructorId,
+      startDate: "2026-09-01",
+      endDate: "2026-12-31",
+      slots: [],
+      ...extra,
+    });
   ids.gA = (await group("Groupe A", teacher)).body.id;
   ids.gB = (await group("Groupe B", teacher2, { priceOverride: 38_000 })).body.id;
-  const training = (await h.call("POST", "/api/catalogue/trainings", admin, { title: "Anglais professionnel", durationHours: 30, price: 100_000, capacity: 10, paymentModes: "full" })).body.id;
-  const session = (await h.call("POST", `/api/catalogue/trainings/${training}/sessions`, admin, { name: "S1", startDate: "2026-10-01", endDate: "2026-12-15" })).body.id;
-  ids.gT = (await h.call("POST", "/api/groups", secretariat, { kind: "training", trainingSessionId: session, name: "Groupe pro", instructorId: teacher2, startDate: "2026-10-01", endDate: "2026-12-15", slots: [] })).body.id;
+  const training = (
+    await h.call("POST", "/api/catalogue/trainings", admin, {
+      title: "Anglais professionnel",
+      durationHours: 30,
+      price: 100_000,
+      capacity: 10,
+      paymentModes: "full",
+    })
+  ).body.id;
+  const session = (await h.call("POST", `/api/catalogue/trainings/${training}/sessions`, admin, { name: "S1", startDate: "2026-10-01", endDate: "2026-12-15" }))
+    .body.id;
+  ids.gT = (
+    await h.call("POST", "/api/groups", secretariat, {
+      kind: "training",
+      trainingSessionId: session,
+      name: "Groupe pro",
+      instructorId: teacher2,
+      startDate: "2026-10-01",
+      endDate: "2026-12-15",
+      slots: [],
+    })
+  ).body.id;
 
   ids.amira = (await h.call("POST", "/api/students", secretariat, { firstName: "Amira", lastName: "Chebbi", receiptEmail: "amira@example.tn" })).body.id;
   ids.rim = (await h.call("POST", "/api/students", secretariat, { firstName: "Rim", lastName: "Jlassi", email: "rim@example.tn" })).body.id;
   for (const s of ["amira", "rim"]) {
-    await h.call("POST", "/api/enrolments", secretariat, { studentId: ids[s], groupId: ids.gA, effectiveDate: "2026-09-01", paymentMode: "monthly", firstDueDate: "2026-09-05" });
+    await h.call("POST", "/api/enrolments", secretariat, {
+      studentId: ids[s],
+      groupId: ids.gA,
+      effectiveDate: "2026-09-01",
+      paymentMode: "monthly",
+      firstDueDate: "2026-09-05",
+    });
   }
 });
 
@@ -78,16 +140,29 @@ describe("collecting a payment", () => {
   });
 
   it("uses the credit automatically on a new enrolment", async () => {
-    const res = await h.call("POST", "/api/enrolments", secretariat, { studentId: ids.amira, groupId: ids.gT, effectiveDate: "2026-10-01", paymentMode: "full" });
+    const res = await h.call("POST", "/api/enrolments", secretariat, {
+      studentId: ids.amira,
+      groupId: ids.gT,
+      effectiveDate: "2026-10-01",
+      paymentMode: "full",
+    });
     expect(res.status).toBe(201);
     expect((await account(ids.amira)).totals).toEqual({ due: 60_000, credit: 0, pendingDiscounts: 0 });
   });
 
   it("re-opens what a bounced cheque had paid", async () => {
-    const res = await h.call("POST", "/api/payments", secretariat, { studentId: ids.amira, amount: 60_000, method: "cheque", cheque: { number: "004871", bank: "BIAT" } });
+    const res = await h.call("POST", "/api/payments", secretariat, {
+      studentId: ids.amira,
+      amount: 60_000,
+      method: "cheque",
+      cheque: { number: "004871", bank: "BIAT" },
+    });
     expect(res.status).toBe(201);
     expect(res.body.after.due).toBe(0);
-    const bounced = await h.call("POST", `/api/payments/${res.body.paymentId}/cheque-status`, secretariat, { status: "bounced", reason: "Provision insuffisante" });
+    const bounced = await h.call("POST", `/api/payments/${res.body.paymentId}/cheque-status`, secretariat, {
+      status: "bounced",
+      reason: "Provision insuffisante",
+    });
     expect(bounced.status).toBe(200);
     expect((await account(ids.amira)).totals.due).toBe(60_000);
     const again = await h.call("POST", `/api/payments/${res.body.paymentId}/cheque-status`, secretariat, { status: "cashed" });
@@ -117,7 +192,10 @@ describe("collecting a payment", () => {
     const pay = await h.call("POST", "/api/payments", secretariat, { studentId: ids.rim, amount: 1_000, method: "cash" });
     await expect(
       h.db.transaction().execute(async (trx) => {
-        await trx.insertInto("allocations").values({ centre_id: h.centreId, payment_id: pay.body.paymentId, installment_id: inst.id, amount: 50_000 }).execute();
+        await trx
+          .insertInto("allocations")
+          .values({ centre_id: h.centreId, payment_id: pay.body.paymentId, installment_id: inst.id, amount: 50_000 })
+          .execute();
       }),
     ).rejects.toThrow(/over/);
   });
@@ -186,7 +264,12 @@ describe("postponements", () => {
 describe("change of group and drop-out", () => {
   it("re-prices unpaid future instalments at the new group's tariff and keeps the history", async () => {
     const enrolment = (await h.call("GET", `/api/enrolments?studentId=${ids.rim}`, secretariat)).body.find((e: { groupId: string }) => e.groupId === ids.gA);
-    const res = await h.call("POST", `/api/enrolments/${enrolment.id}/transfer`, secretariat, { newGroupId: ids.gB, effectiveDate: "2026-12-01", mode: "reprice", reason: "Conflit d'horaire" });
+    const res = await h.call("POST", `/api/enrolments/${enrolment.id}/transfer`, secretariat, {
+      newGroupId: ids.gB,
+      effectiveDate: "2026-12-01",
+      mode: "reprice",
+      reason: "Conflit d'horaire",
+    });
     expect(res.status).toBe(200);
     expect(res.body).toMatchObject({ movedInstallments: 1, cancelledTotal: 40_000, issuedTotal: 38_000 });
     const a = await account(ids.rim);

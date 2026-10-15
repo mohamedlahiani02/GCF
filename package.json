@@ -9,6 +9,11 @@
   "scripts": {
     "typecheck": "pnpm -r typecheck",
     "test": "pnpm --filter @gcf/shared test && pnpm --filter @gcf/api test",
-    "build": "pnpm -r build"
+    "build": "pnpm -r build",
+    "format": "prettier --write .",
+    "format:check": "prettier --check ."
+  },
+  "devDependencies": {
+    "prettier": "3.9.10"
   }
 }

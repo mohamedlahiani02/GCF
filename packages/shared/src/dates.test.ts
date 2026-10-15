@@ -8,7 +8,6 @@ describe("dates", () => {
     expect(isIsoDate("15/10/2026")).toBe(false);
   });
 
-
   it("reads today in the centre time zone", () => {
     expect(todayIn("Africa/Tunis", new Date("2026-10-15T23:30:00Z"))).toBe("2026-10-16");
   });

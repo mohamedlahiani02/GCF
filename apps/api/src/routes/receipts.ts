@@ -22,7 +22,8 @@ export const receiptRoutes: FastifyPluginAsync = async (app) => {
     const rows = await db
       .selectFrom("receipts")
       .innerJoin("payments", "payments.id", "receipts.payment_id")
-      .innerJoin("students", "students.id", "payments.student_id")
+      .leftJoin("students", "students.id", "payments.student_id")
+      .leftJoin("renters", "renters.id", "payments.renter_id")
       .select((eb) => [
         "receipts.id",
         "receipts.number",
@@ -30,6 +31,7 @@ export const receiptRoutes: FastifyPluginAsync = async (app) => {
         "receipts.issued_at as issuedAt",
         "students.first_name as firstName",
         "students.last_name as lastName",
+        "renters.name as renterName",
         "payments.amount",
         "payments.status as paymentStatus",
         eb
@@ -67,10 +69,34 @@ export const receiptRoutes: FastifyPluginAsync = async (app) => {
       .where("centre_id", "=", request.user!.centreId)
       .executeTakeFirst();
     if (!receipt) throw notFound("receipt");
-    const prints = await db.selectFrom("receipt_prints").leftJoin("users", "users.id", "receipt_prints.printed_by").select(["receipt_prints.printed_at as printedAt", "receipt_prints.duplicate", "users.full_name as printedBy"]).where("receipt_id", "=", id).orderBy("printed_at").execute();
-    const dispatches = await db.selectFrom("mail_dispatches").select(["sent_at as sentAt", "recipient", "status", "error"]).where("receipt_id", "=", id).orderBy("sent_at").execute();
+    const prints = await db
+      .selectFrom("receipt_prints")
+      .leftJoin("users", "users.id", "receipt_prints.printed_by")
+      .select(["receipt_prints.printed_at as printedAt", "receipt_prints.duplicate", "users.full_name as printedBy"])
+      .where("receipt_id", "=", id)
+      .orderBy("printed_at")
+      .execute();
+    const dispatches = await db
+      .selectFrom("mail_dispatches")
+      .select(["sent_at as sentAt", "recipient", "status", "error"])
+      .where("receipt_id", "=", id)
+      .orderBy("sent_at")
+      .execute();
     const cancellation = await db.selectFrom("receipts").select(["id", "number"]).where("cancels_receipt_id", "=", id).executeTakeFirst();
     return { ...receipt, immutable: true, cancelledBy: cancellation ?? null, prints, dispatches };
+  });
+
+  /** On-screen view of the archived original. Viewing is not printing: it is neither logged nor a duplicate. */
+  app.get("/:id/view", { preHandler: read }, async (request, reply) => {
+    const { id } = idParam.parse(request.params);
+    const receipt = await db
+      .selectFrom("receipts")
+      .select(["number", "pdf"])
+      .where("id", "=", id)
+      .where("centre_id", "=", request.user!.centreId)
+      .executeTakeFirst();
+    if (!receipt) throw notFound("receipt");
+    return reply.header("content-type", "application/pdf").header("content-disposition", `inline; filename="${receipt.number}.pdf"`).send(receipt.pdf);
   });
 
   /** The first print is the original; every later print carries the DUPLICATA mention. */
@@ -78,7 +104,12 @@ export const receiptRoutes: FastifyPluginAsync = async (app) => {
     const actor = request.user!;
     const { id } = idParam.parse(request.params);
     const { format } = pdfQuery.parse(request.query);
-    const receipt = await db.selectFrom("receipts").select(["id", "number", "snapshot", "pdf"]).where("id", "=", id).where("centre_id", "=", actor.centreId).executeTakeFirst();
+    const receipt = await db
+      .selectFrom("receipts")
+      .select(["id", "number", "snapshot", "pdf"])
+      .where("id", "=", id)
+      .where("centre_id", "=", actor.centreId)
+      .executeTakeFirst();
     if (!receipt) throw notFound("receipt");
     const printed = await db.selectFrom("receipt_prints").select("id").where("receipt_id", "=", id).executeTakeFirst();
     const duplicate = !!printed;
@@ -98,15 +129,30 @@ export const receiptRoutes: FastifyPluginAsync = async (app) => {
     const receipt = await db
       .selectFrom("receipts")
       .innerJoin("payments", "payments.id", "receipts.payment_id")
-      .innerJoin("students", "students.id", "payments.student_id")
+      .leftJoin("students", "students.id", "payments.student_id")
+      .leftJoin("renters", "renters.id", "payments.renter_id")
       .innerJoin("centres", "centres.id", "receipts.centre_id")
-      .select(["receipts.id", "receipts.number", "receipts.pdf", "students.id as studentId", "students.receipt_email as receiptEmail", "students.email", "students.guardian_email as guardianEmail", "students.is_minor as isMinor", "centres.name as centreName"])
+      .select([
+        "receipts.id",
+        "receipts.number",
+        "receipts.pdf",
+        "payments.student_id as studentId",
+        "payments.renter_id as renterId",
+        "students.receipt_email as receiptEmail",
+        "students.email",
+        "students.guardian_email as guardianEmail",
+        "students.is_minor as isMinor",
+        "renters.email as renterEmail",
+        "centres.name as centreName",
+      ])
       .where("receipts.id", "=", id)
       .where("receipts.centre_id", "=", actor.centreId)
       .executeTakeFirst();
     if (!receipt) throw notFound("receipt");
-    const to = body.to ?? receipt.receiptEmail ?? (receipt.isMinor ? receipt.guardianEmail : receipt.email) ?? receipt.email;
-    if (!to) throw new HttpError(422, "no_recipient", "the student has no e-mail address for receipts");
+    const to =
+      body.to ??
+      (receipt.renterId ? receipt.renterEmail : (receipt.receiptEmail ?? (receipt.isMinor ? receipt.guardianEmail : receipt.email) ?? receipt.email));
+    if (!to) throw new HttpError(422, "no_recipient", "no e-mail address is known for this payer");
     let status: "sent" | "failed" = "sent";
     let error: string | null = null;
     try {
@@ -121,8 +167,28 @@ export const receiptRoutes: FastifyPluginAsync = async (app) => {
       error = sendError instanceof Error ? sendError.message.slice(0, 500) : "unknown error";
       request.log.warn({ err: sendError, receipt: receipt.number }, "receipt e-mail failed");
     }
-    await db.insertInto("mail_dispatches").values({ centre_id: actor.centreId, kind: "receipt", receipt_id: id, student_id: receipt.studentId, recipient: to, status, error, sent_by: actor.userId }).execute();
-    await writeAudit(db, { centreId: actor.centreId, userId: actor.userId, action: `receipt.mail_${status}`, objectType: "receipt", objectId: id, after: { to } });
+    await db
+      .insertInto("mail_dispatches")
+      .values({
+        centre_id: actor.centreId,
+        kind: "receipt",
+        receipt_id: id,
+        student_id: receipt.studentId,
+        renter_id: receipt.renterId,
+        recipient: to,
+        status,
+        error,
+        sent_by: actor.userId,
+      })
+      .execute();
+    await writeAudit(db, {
+      centreId: actor.centreId,
+      userId: actor.userId,
+      action: `receipt.mail_${status}`,
+      objectType: "receipt",
+      objectId: id,
+      after: { to },
+    });
     return { id, recipient: to, status, error };
   });
 };

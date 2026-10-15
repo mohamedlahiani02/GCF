@@ -7,7 +7,13 @@ import type { Student } from "../db/types.js";
 import { notFound, unprocessable } from "../errors.js";
 
 const optionalText = (max: number) =>
-  z.string().trim().max(max).transform((v) => (v === "" ? null : v)).nullable().optional();
+  z
+    .string()
+    .trim()
+    .max(max)
+    .transform((v) => (v === "" ? null : v))
+    .nullable()
+    .optional();
 const optionalEmail = z
   .union([z.literal(""), z.string().trim().toLowerCase().email().max(254)])
   .transform((v) => (v === "" ? null : v))
@@ -99,7 +105,58 @@ export const studentRoutes: FastifyPluginAsync = async (app) => {
       .limit(query.pageSize)
       .offset((query.page - 1) * query.pageSize)
       .execute();
-    return { items: rows.map(present), total: Number(total), page: query.page, pageSize: query.pageSize };
+    const ids = rows.map((r) => r.id);
+    const groups = ids.length
+      ? await db
+          .selectFrom("enrolments")
+          .innerJoin("groups", "groups.id", "enrolments.group_id")
+          .select(["enrolments.student_id as studentId", "groups.name"])
+          .where("enrolments.student_id", "in", ids)
+          .where("enrolments.status", "=", "active")
+          .orderBy("groups.name")
+          .execute()
+      : [];
+    const due = ids.length
+      ? await db
+          .selectFrom("installments")
+          .innerJoin("enrolments", "enrolments.id", "installments.enrolment_id")
+          .leftJoin(
+            db
+              .selectFrom("effective_allocations")
+              .select(["installment_id", sql<number>`sum(amount)::bigint`.as("paid")])
+              .groupBy("installment_id")
+              .as("p"),
+            "p.installment_id",
+            "installments.id",
+          )
+          .select(["enrolments.student_id as studentId", sql<number>`sum(installments.amount - coalesce(p.paid, 0))::bigint`.as("due")])
+          .where("enrolments.student_id", "in", ids)
+          .where("installments.kind", "=", "charge")
+          .where("installments.status", "=", "open")
+          .groupBy("enrolments.student_id")
+          .execute()
+      : [];
+    const lastPayments = ids.length
+      ? await db
+          .selectFrom("payments")
+          .select(["student_id as studentId", sql<Date>`max(received_at)`.as("at")])
+          .where("student_id", "in", ids)
+          .where("status", "=", "valid")
+          .where("kind", "=", "payment")
+          .groupBy("student_id")
+          .execute()
+      : [];
+    return {
+      items: rows.map((r) => ({
+        ...present(r),
+        activeGroups: groups.filter((g) => g.studentId === r.id).map((g) => g.name),
+        due: Number(due.find((d) => d.studentId === r.id)?.due ?? 0),
+        lastPaymentAt: lastPayments.find((p) => p.studentId === r.id)?.at ?? null,
+      })),
+      total: Number(total),
+      page: query.page,
+      pageSize: query.pageSize,
+    };
   });
 
   app.get("/:id", { preHandler: app.requirePermission("students:read") }, async (request) => {

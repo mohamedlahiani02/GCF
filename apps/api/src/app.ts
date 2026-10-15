@@ -1,6 +1,8 @@
 import cookie from "@fastify/cookie";
 import helmet from "@fastify/helmet";
 import rateLimit from "@fastify/rate-limit";
+import fastifyStatic from "@fastify/static";
+import path from "node:path";
 import Fastify, { type FastifyInstance, type FastifyReply, type FastifyRequest } from "fastify";
 import type { Kysely } from "kysely";
 import { ZodError } from "zod";
@@ -13,13 +15,19 @@ import { forbidden, HttpError, unauthenticated } from "./errors.js";
 import { accountRoutes } from "./routes/accounts.js";
 import { auditRoutes } from "./routes/audit.js";
 import { authRoutes } from "./routes/auth.js";
+import { cashRoutes } from "./routes/cash.js";
 import { catalogueRoutes } from "./routes/catalogue.js";
 import { centreRoutes } from "./routes/centre.js";
+import { dashboardRoutes } from "./routes/dashboard.js";
 import { enrolmentRoutes } from "./routes/enrolments.js";
 import { groupRoutes } from "./routes/groups.js";
 import { instructorRoutes } from "./routes/instructors.js";
 import { paymentRoutes } from "./routes/payments.js";
+import { payrollRoutes } from "./routes/payroll.js";
 import { receiptRoutes } from "./routes/receipts.js";
+import { rentalRoutes } from "./routes/rentals.js";
+import { reportRoutes } from "./routes/reports.js";
+import { searchRoutes } from "./routes/search.js";
 import { sessionRoutes } from "./routes/sessions.js";
 import { studentRoutes } from "./routes/students.js";
 import { userRoutes } from "./routes/users.js";
@@ -135,5 +143,33 @@ export async function buildApp(options: AppOptions): Promise<FastifyInstance> {
   await app.register(paymentRoutes, { prefix: "/api/payments" });
   await app.register(receiptRoutes, { prefix: "/api/receipts" });
   await app.register(accountRoutes, { prefix: "/api" });
+  await app.register(payrollRoutes, { prefix: "/api/payroll" });
+  await app.register(rentalRoutes, { prefix: "/api" });
+  await app.register(cashRoutes, { prefix: "/api/cash" });
+  await app.register(reportRoutes, { prefix: "/api/reports" });
+  await app.register(dashboardRoutes, { prefix: "/api/dashboard" });
+  await app.register(searchRoutes, { prefix: "/api/search" });
+
+  if (config.webDistDir) {
+    const root = path.resolve(config.webDistDir);
+    const assets = path.join(root, "assets");
+    await app.register(fastifyStatic, {
+      root,
+      wildcard: false,
+      index: false,
+      setHeaders: (reply, filePath) => {
+        // Vite fingerprints everything under assets/, so those files never change; index.html must always be revalidated.
+        reply.header("cache-control", filePath.startsWith(assets) ? "public, max-age=31536000, immutable" : "no-cache");
+      },
+    });
+    app.setNotFoundHandler((request, reply) => {
+      if (request.method !== "GET" || request.url === "/api" || request.url.startsWith("/api/")) {
+        return reply.status(404).send({ code: "not_found", message: "route not found" });
+      }
+      return reply.sendFile("index.html");
+    });
+  } else {
+    app.setNotFoundHandler((_request, reply) => reply.status(404).send({ code: "not_found", message: "route not found" }));
+  }
   return app;
 }

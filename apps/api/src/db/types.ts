@@ -21,6 +21,9 @@ export interface CentresTable {
   overdue_grace_days: Generated<number>;
   receipt_prefix: Generated<string>;
   receipt_footer: string | null;
+  open_from: Generated<string>;
+  open_to: Generated<string>;
+  open_weekdays: Generated<number[]>;
   created_at: Timestamp;
   updated_at: Timestamp;
 }
@@ -249,7 +252,8 @@ export interface EnrolmentsTable {
 export interface InstallmentsTable {
   id: Generated<string>;
   centre_id: string;
-  enrolment_id: string;
+  enrolment_id: string | null;
+  rental_id: ColumnType<string | null, string | null | undefined, string | null>;
   label: string;
   kind: "charge" | "discount";
   amount: number;
@@ -293,6 +297,7 @@ export interface RoomBookingsTable {
   room_id: string;
   period: string;
   session_id: string | null;
+  rental_slot_id: ColumnType<string | null, string | null | undefined, string | null>;
   active: Generated<boolean>;
 }
 
@@ -325,6 +330,8 @@ export interface FinancialEventsTable {
   instructor_id: string | null;
   room_id: string | null;
   installment_id: string | null;
+  rental_id: ColumnType<string | null, string | null | undefined, string | null>;
+  renter_id: ColumnType<string | null, string | null | undefined, string | null>;
   payload: Json;
 }
 
@@ -336,6 +343,7 @@ export interface PaymentsTable {
   centre_id: string;
   kind: Generated<"payment" | "refund">;
   student_id: string | null;
+  renter_id: ColumnType<string | null, string | null | undefined, string | null>;
   received_at: Timestamp;
   amount: number;
   method: PaymentMethod;
@@ -399,6 +407,7 @@ export interface MailDispatchesTable {
   kind: "receipt" | "reminder";
   receipt_id: string | null;
   student_id: string | null;
+  renter_id: ColumnType<string | null, string | null | undefined, string | null>;
   recipient: string;
   status: "sent" | "failed";
   error: string | null;
@@ -419,6 +428,138 @@ export interface PostponementsTable {
   decided_by: string | null;
   decided_at: NullableTimestamp;
   decision_reason: string | null;
+}
+
+export type PayBaseKind = "pct_collections" | "pct_session_tariff" | "fixed_per_session" | "monthly_flat" | "hourly" | "training_flat";
+export type PresenceKind = "ignore" | "prorata" | "session_due" | "threshold";
+
+export interface PayRulesTable {
+  id: Generated<string>;
+  centre_id: string;
+  instructor_id: string;
+  scope: "instructor" | "study" | "training" | "group";
+  study_id: string | null;
+  training_id: string | null;
+  group_id: string | null;
+  base_kind: PayBaseKind;
+  basis_points: number | null;
+  amount: number | null;
+  collection_basis: "collected" | "invoiced" | null;
+  presence_kind: PresenceKind;
+  min_rate_basis_points: number | null;
+  floor_amount: number | null;
+  prorata_above: boolean | null;
+  valid_from: DateColumn;
+  valid_to: NullableDate;
+  status: Status;
+  created_by: string | null;
+  created_at: Timestamp;
+}
+
+export interface PayPeriodsTable {
+  id: Generated<string>;
+  centre_id: string;
+  month: DateColumn;
+  status: Generated<"draft" | "calculated" | "validated" | "paid">;
+  calculated_at: NullableTimestamp;
+  validated_at: NullableTimestamp;
+  validated_by: string | null;
+  created_at: Timestamp;
+}
+
+export interface PayLinesTable {
+  id: Generated<string>;
+  period_id: string;
+  instructor_id: string;
+  group_id: string | null;
+  rule_id: string;
+  rule_snapshot: Json;
+  base: number;
+  rate_numerator: number;
+  rate_denominator: number;
+  amount: number;
+  details: Json;
+}
+
+export interface PayAdjustmentsTable {
+  id: Generated<string>;
+  period_id: string;
+  instructor_id: string;
+  kind: "bonus" | "deduction";
+  amount: number;
+  reason: string;
+  created_by: string | null;
+  created_at: Timestamp;
+}
+
+export interface PayslipsTable {
+  id: Generated<string>;
+  period_id: string;
+  instructor_id: string;
+  total: number;
+  pdf: Buffer;
+  sha256: string;
+  issued_at: Timestamp;
+  paid_on: NullableDate;
+  payment_method: "cash" | "transfer" | "cheque" | null;
+  payment_reference: string | null;
+  paid_by: string | null;
+}
+
+export type RentalUnit = "hour" | "half_day" | "day" | "month" | "year";
+
+export interface RoomRatesTable {
+  room_id: string;
+  unit: RentalUnit;
+  amount: number;
+}
+
+export interface RentersTable {
+  id: Generated<string>;
+  centre_id: string;
+  name: string;
+  company: string | null;
+  phone: string | null;
+  email: string | null;
+  created_at: Timestamp;
+}
+
+export interface RentalsTable {
+  id: Generated<string>;
+  centre_id: string;
+  renter_id: string;
+  room_id: string;
+  unit: RentalUnit;
+  quantity: number;
+  unit_price: number;
+  total: number;
+  payment_mode: "full" | "deposit_balance" | "recurring";
+  status: Generated<"active" | "cancelled">;
+  cancelled_at: NullableTimestamp;
+  cancel_reason: string | null;
+  notes: string | null;
+  created_by: string | null;
+  created_at: Timestamp;
+}
+
+export interface RentalSlotsTable {
+  id: Generated<string>;
+  rental_id: string;
+  starts_at: ColumnType<Date, Date | string, Date | string>;
+  ends_at: ColumnType<Date, Date | string, Date | string>;
+}
+
+export interface CashClosingsTable {
+  id: Generated<string>;
+  centre_id: string;
+  day: DateColumn;
+  expected_cash: number;
+  counted_cash: number;
+  difference: number;
+  comment: string | null;
+  totals: Json;
+  closed_by: string;
+  closed_at: Timestamp;
 }
 
 export interface Database {
@@ -453,6 +594,16 @@ export interface Database {
   receipt_prints: ReceiptPrintsTable;
   mail_dispatches: MailDispatchesTable;
   postponements: PostponementsTable;
+  pay_rules: PayRulesTable;
+  pay_periods: PayPeriodsTable;
+  pay_lines: PayLinesTable;
+  pay_adjustments: PayAdjustmentsTable;
+  payslips: PayslipsTable;
+  room_rates: RoomRatesTable;
+  renters: RentersTable;
+  rentals: RentalsTable;
+  rental_slots: RentalSlotsTable;
+  cash_closings: CashClosingsTable;
 }
 
 export type Student = Selectable<StudentsTable>;
