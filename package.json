@@ -1,0 +1,14 @@
+{
+  "name": "gcf",
+  "private": true,
+  "version": "0.1.0",
+  "packageManager": "pnpm@10.28.0",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "typecheck": "pnpm -r typecheck",
+    "test": "pnpm --filter @gcf/shared test && pnpm --filter @gcf/api test",
+    "build": "pnpm -r build"
+  }
+}
