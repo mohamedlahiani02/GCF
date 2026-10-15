@@ -21,6 +21,9 @@ export interface CentresTable {
   overdue_grace_days: Generated<number>;
   receipt_prefix: Generated<string>;
   receipt_footer: string | null;
+  open_from: Generated<string>;
+  open_to: Generated<string>;
+  open_weekdays: Generated<number[]>;
   created_at: Timestamp;
   updated_at: Timestamp;
 }
@@ -546,6 +549,19 @@ export interface RentalSlotsTable {
   ends_at: ColumnType<Date, Date | string, Date | string>;
 }
 
+export interface CashClosingsTable {
+  id: Generated<string>;
+  centre_id: string;
+  day: DateColumn;
+  expected_cash: number;
+  counted_cash: number;
+  difference: number;
+  comment: string | null;
+  totals: Json;
+  closed_by: string;
+  closed_at: Timestamp;
+}
+
 export interface Database {
   centres: CentresTable;
   users: UsersTable;
@@ -587,6 +603,7 @@ export interface Database {
   renters: RentersTable;
   rentals: RentalsTable;
   rental_slots: RentalSlotsTable;
+  cash_closings: CashClosingsTable;
 }
 
 export type Student = Selectable<StudentsTable>;

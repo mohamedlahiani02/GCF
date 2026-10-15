@@ -3,6 +3,7 @@ import { sql, type Transaction } from "kysely";
 import { z } from "zod";
 import { writeAudit } from "../audit.js";
 import type { Database } from "../db/types.js";
+import { assertCashOpen } from "../domain/cash.js";
 import { recordFinancialEvents } from "../domain/financialEvents.js";
 import { applyAllocations, lockPayer, payerCredit, payerTotals, planAllocations, settlePayer, type Payer, type PlannedAllocation } from "../domain/ledger.js";
 import { issueReceipt } from "../domain/receipts.js";
@@ -126,6 +127,7 @@ export const paymentRoutes: FastifyPluginAsync = async (app) => {
     const payer = payerOf(body);
     await assertInstallmentsOfPayer(payer, body.installmentIds, actor.centreId);
     const result = await db.transaction().execute(async (trx) => {
+      await assertCashOpen(trx, actor.centreId);
       await lockPayer(trx, payer, actor.centreId);
       const payment = await trx
         .insertInto("payments")
@@ -233,6 +235,7 @@ export const paymentRoutes: FastifyPluginAsync = async (app) => {
       const payment = await trx.selectFrom("payments").select(["id", "student_id", "renter_id", "status", "amount", "kind"]).where("id", "=", id).where("centre_id", "=", actor.centreId).forUpdate().executeTakeFirst();
       if (!payment) throw notFound("payment");
       if (payment.status === "cancelled") throw conflict("already_cancelled", "the payment is already cancelled");
+      await assertCashOpen(trx, actor.centreId);
       const payer = payerOfRow(payment);
       await lockPayer(trx, payer, actor.centreId);
       const original = await trx.selectFrom("receipts").select(["id", "number"]).where("payment_id", "=", id).where("kind", "!=", "cancellation").executeTakeFirstOrThrow();
@@ -263,6 +266,7 @@ export const paymentRoutes: FastifyPluginAsync = async (app) => {
     if ((body.method === "cheque") !== !!body.cheque) throw unprocessable("invalid_cheque", "a cheque needs its number and bank, other methods none");
     const payer = payerOf(body);
     const result = await db.transaction().execute(async (trx) => {
+      await assertCashOpen(trx, actor.centreId);
       await lockPayer(trx, payer, actor.centreId);
       const credit = await payerCredit(trx, payer);
       if (body.amount > credit) throw conflict("insufficient_credit", `the available credit is ${credit} millimes`);
