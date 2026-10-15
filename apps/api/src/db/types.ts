@@ -19,6 +19,8 @@ export interface CentresTable {
   postponement_requires_approval: Generated<boolean>;
   max_postponements: Generated<number>;
   overdue_grace_days: Generated<number>;
+  receipt_prefix: Generated<string>;
+  receipt_footer: string | null;
   created_at: Timestamp;
   updated_at: Timestamp;
 }
@@ -326,6 +328,99 @@ export interface FinancialEventsTable {
   payload: Json;
 }
 
+export type PaymentMethod = "cash" | "transfer" | "cheque" | "card";
+export type ChequeStatus = "received" | "deposited" | "cashed" | "bounced";
+
+export interface PaymentsTable {
+  id: Generated<string>;
+  centre_id: string;
+  kind: Generated<"payment" | "refund">;
+  student_id: string | null;
+  received_at: Timestamp;
+  amount: number;
+  method: PaymentMethod;
+  cheque_number: string | null;
+  cheque_bank: string | null;
+  cheque_status: ChequeStatus | null;
+  reference: string | null;
+  note: string | null;
+  status: Generated<"valid" | "cancelled">;
+  cancelled_at: NullableTimestamp;
+  cancelled_by: string | null;
+  cancel_reason: string | null;
+  created_by: string | null;
+  created_at: Timestamp;
+}
+
+export interface AllocationsTable {
+  id: Generated<string>;
+  centre_id: string;
+  payment_id: string | null;
+  discount_id: string | null;
+  installment_id: string;
+  amount: number;
+  created_by: string | null;
+  created_at: Timestamp;
+}
+
+export interface ReceiptCountersTable {
+  centre_id: string;
+  year: number;
+  last_number: number;
+}
+
+export interface ReceiptsTable {
+  id: Generated<string>;
+  centre_id: string;
+  number: string;
+  year: number;
+  sequence: number;
+  kind: "payment" | "refund" | "cancellation";
+  payment_id: string;
+  cancels_receipt_id: string | null;
+  issued_at: Timestamp;
+  snapshot: Json;
+  pdf: Buffer;
+  sha256: string;
+  created_by: string | null;
+}
+
+export interface ReceiptPrintsTable {
+  id: Generated<string>;
+  receipt_id: string;
+  printed_at: Timestamp;
+  printed_by: string | null;
+  duplicate: boolean;
+}
+
+export interface MailDispatchesTable {
+  id: Generated<string>;
+  centre_id: string;
+  kind: "receipt" | "reminder";
+  receipt_id: string | null;
+  student_id: string | null;
+  recipient: string;
+  status: "sent" | "failed";
+  error: string | null;
+  sent_at: Timestamp;
+  sent_by: string | null;
+}
+
+export interface PostponementsTable {
+  id: Generated<string>;
+  centre_id: string;
+  installment_id: string;
+  from_date: DateColumn;
+  to_date: DateColumn;
+  reason: string;
+  requested_by: string | null;
+  requested_at: Timestamp;
+  status: "pending" | "approved" | "rejected";
+  decided_by: string | null;
+  decided_at: NullableTimestamp;
+  decision_reason: string | null;
+}
+
 export interface Database {
   centres: CentresTable;
   users: UsersTable;
@@ -350,6 +445,14 @@ export interface Database {
   class_sessions: ClassSessionsTable;
   room_bookings: RoomBookingsTable;
   attendance_records: AttendanceRecordsTable;
+  payments: PaymentsTable;
+  allocations: AllocationsTable;
+  effective_allocations: AllocationsTable;
+  receipt_counters: ReceiptCountersTable;
+  receipts: ReceiptsTable;
+  receipt_prints: ReceiptPrintsTable;
+  mail_dispatches: MailDispatchesTable;
+  postponements: PostponementsTable;
 }
 
 export type Student = Selectable<StudentsTable>;

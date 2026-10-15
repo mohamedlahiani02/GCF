@@ -3,7 +3,9 @@ import { z } from "zod";
 import { writeAudit } from "../audit.js";
 import { can } from "../auth/permissions.js";
 import { buildSchedule, discountAmount, loadGroupBilling, type ScheduleLine } from "../domain/enrolmentSchedule.js";
+import { dropEnrolment, transferEnrolment } from "../domain/enrolmentChanges.js";
 import { recordFinancialEvents } from "../domain/financialEvents.js";
+import { lockStudent, settleStudent } from "../domain/ledger.js";
 import { conflict, notFound, unprocessable } from "../errors.js";
 import { basisPoints, idParam, isoDate, millimes, reason, uuid } from "../validation.js";
 
@@ -24,6 +26,8 @@ const enrolmentBody = z
   })
   .strict();
 
+const transferBody = z.object({ newGroupId: uuid, effectiveDate: isoDate, mode: z.enum(["keep", "reprice"]), reason }).strict();
+const dropBody = z.object({ date: isoDate, reason }).strict();
 const decisionBody = z.object({ approve: z.boolean(), reason: reason.optional() }).strict();
 const listQuery = z.object({ studentId: uuid.optional(), groupId: uuid.optional() });
 
@@ -63,6 +67,7 @@ export const enrolmentRoutes: FastifyPluginAsync = async (app) => {
     const canApprove = can(actor.role, "discounts:approve");
 
     const enrolment = await db.transaction().execute(async (trx) => {
+      await lockStudent(trx, body.studentId, actor.centreId);
       // Serialises enrolments into the same group so the capacity check cannot be raced.
       await trx.selectFrom("groups").select("id").where("id", "=", group.groupId).forUpdate().executeTakeFirstOrThrow();
       const enrolled = await trx
@@ -119,6 +124,8 @@ export const enrolmentRoutes: FastifyPluginAsync = async (app) => {
         ...(discountRow && canApprove ? [{ centreId: actor.centreId, type: "discount_granted" as const, amount: discountRow.amount, userId: actor.userId, installmentId: discountRow.id, ...axes }] : []),
       ]);
       await writeAudit(trx, { centreId: actor.centreId, userId: actor.userId, action: "enrolment.created", objectType: "enrolment", objectId: created.id, after: { ...body, lines, discount: d } });
+      // Credit the student already holds pays the new schedule straight away.
+      await settleStudent(trx, actor.centreId, body.studentId, actor.userId);
       return created;
     });
     return reply.status(201).send({ ...enrolment, groupId: body.groupId, studentId: body.studentId });
@@ -158,6 +165,28 @@ export const enrolmentRoutes: FastifyPluginAsync = async (app) => {
       .execute();
   });
 
+  app.post("/:id/transfer", { preHandler: write }, async (request) => {
+    const actor = request.user!;
+    const { id } = idParam.parse(request.params);
+    const body = transferBody.parse(request.body);
+    return db.transaction().execute(async (trx) => {
+      const result = await transferEnrolment(trx, actor, id, body);
+      await writeAudit(trx, { centreId: actor.centreId, userId: actor.userId, action: "enrolment.transferred", objectType: "enrolment", objectId: id, after: { ...body, ...result }, reason: body.reason });
+      return result;
+    });
+  });
+
+  app.post("/:id/drop", { preHandler: write }, async (request) => {
+    const actor = request.user!;
+    const { id } = idParam.parse(request.params);
+    const body = dropBody.parse(request.body);
+    return db.transaction().execute(async (trx) => {
+      const result = await dropEnrolment(trx, actor, id, body);
+      await writeAudit(trx, { centreId: actor.centreId, userId: actor.userId, action: "enrolment.dropped", objectType: "enrolment", objectId: id, after: { ...body, ...result }, reason: body.reason });
+      return result;
+    });
+  });
+
   /** Approves or rejects a discount entered by someone who could not approve it. */
   app.post("/discounts/:id/decision", { preHandler: app.requirePermission("discounts:approve") }, async (request) => {
     const actor = request.user!;
@@ -191,6 +220,7 @@ export const enrolmentRoutes: FastifyPluginAsync = async (app) => {
       const status = body.approve ? "approved" : "rejected";
       await trx.updateTable("installments").set({ discount_status: status }).where("id", "=", id).execute();
       if (body.approve) {
+        await lockStudent(trx, discountRow.studentId, actor.centreId);
         await recordFinancialEvents(trx, [
           {
             centreId: actor.centreId,
@@ -206,6 +236,7 @@ export const enrolmentRoutes: FastifyPluginAsync = async (app) => {
             instructorId: discountRow.instructorId,
           },
         ]);
+        await settleStudent(trx, actor.centreId, discountRow.studentId, actor.userId);
       }
       await writeAudit(trx, { centreId: actor.centreId, userId: actor.userId, action: `discount.${status}`, objectType: "installment", objectId: id, before: { discountStatus: "pending" }, after: { discountStatus: status }, reason: body.reason ?? null });
       return { id, discountStatus: status };

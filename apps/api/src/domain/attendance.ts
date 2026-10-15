@@ -3,6 +3,7 @@ import { sql, type Kysely, type Transaction } from "kysely";
 import type { Database } from "../db/types.js";
 import { conflict, notFound, unprocessable } from "../errors.js";
 import { recordFinancialEvents } from "./financialEvents.js";
+import { lockStudent, settleStudent } from "./ledger.js";
 
 type Db = Kysely<Database> | Transaction<Database>;
 
@@ -194,10 +195,15 @@ export async function syncSessionCharges(trx: Transaction<Database>, session: Se
     .where("enrolments.payment_mode", "=", "per_session")
     .execute();
   const existing = await trx.selectFrom("installments").select(["id", "enrolment_id"]).where("session_id", "=", session.id).where("status", "=", "open").execute();
+  const touched = new Set<string>();
   const charged = new Map(existing.map((e) => [e.enrolment_id, e.id]));
   for (const r of records) {
     const billable = r.status === "present" || r.status === "present_other_group" || session.absenceBilled === true;
     const chargeId = charged.get(r.enrolmentId);
+    if (billable !== !!chargeId) {
+      await lockStudent(trx, r.studentId, session.centreId);
+      touched.add(r.studentId);
+    }
     if (billable && !chargeId) {
       const charge = await trx
         .insertInto("installments")
@@ -225,9 +231,14 @@ export async function syncSessionCharges(trx: Transaction<Database>, session: Se
       ]);
     }
   }
+  // New charges are paid straight away from any credit the student holds.
+  for (const studentId of touched) await settleStudent(trx, session.centreId, studentId, userId);
 }
 
+/** A charge that already received money (payment or discount) cannot be cancelled: cancel the payment first. */
 export async function cancelUnpaidCharge(trx: Transaction<Database>, installmentId: string, userId: string, reason: string): Promise<void> {
+  const paid = await trx.selectFrom("effective_allocations").select(sql<number>`coalesce(sum(amount), 0)::bigint`.as("paid")).where("installment_id", "=", installmentId).executeTakeFirstOrThrow();
+  if (Number(paid.paid) > 0) throw conflict("installment_paid", "this instalment has received a payment; cancel the payment first");
   await trx.updateTable("installments").set({ status: "cancelled", cancelled_at: new Date(), cancelled_by: userId, cancel_reason: reason }).where("id", "=", installmentId).execute();
 }
 

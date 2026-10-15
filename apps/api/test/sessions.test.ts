@@ -34,8 +34,8 @@ beforeAll(async () => {
       endDate: "2026-12-31",
       slots: [{ weekday, startTime: "16:00", endTime: "18:00" }],
     });
-  ids.gA = (await group("Groupe A", ids.t1, ids.roomA, 1)).body.id;
-  ids.gB = (await group("Groupe B", ids.t2, ids.roomB, 2)).body.id;
+  ids.gA = (await group("Groupe A", ids.t1!, ids.roomA!, 1)).body.id;
+  ids.gB = (await group("Groupe B", ids.t2!, ids.roomB!, 2)).body.id;
   for (const [key, name] of [["s1", "Ines"], ["s2", "Omar"], ["s3", "Sarra"]] as const) {
     ids[key] = (await h.call("POST", "/api/students", secretariat, { firstName: name, lastName: "Test" })).body.id;
   }

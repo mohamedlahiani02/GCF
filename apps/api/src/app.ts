@@ -8,7 +8,9 @@ import { can, type Permission } from "./auth/permissions.js";
 import { resolveSession, type SessionUser } from "./auth/sessions.js";
 import type { Config } from "./config.js";
 import type { Database } from "./db/types.js";
+import { createMailer, type Mailer } from "./mail.js";
 import { forbidden, HttpError, unauthenticated } from "./errors.js";
+import { accountRoutes } from "./routes/accounts.js";
 import { auditRoutes } from "./routes/audit.js";
 import { authRoutes } from "./routes/auth.js";
 import { catalogueRoutes } from "./routes/catalogue.js";
@@ -16,6 +18,8 @@ import { centreRoutes } from "./routes/centre.js";
 import { enrolmentRoutes } from "./routes/enrolments.js";
 import { groupRoutes } from "./routes/groups.js";
 import { instructorRoutes } from "./routes/instructors.js";
+import { paymentRoutes } from "./routes/payments.js";
+import { receiptRoutes } from "./routes/receipts.js";
 import { sessionRoutes } from "./routes/sessions.js";
 import { studentRoutes } from "./routes/students.js";
 import { userRoutes } from "./routes/users.js";
@@ -27,6 +31,7 @@ declare module "fastify" {
     db: Kysely<Database>;
     config: Config;
     requirePermission(permission: Permission): (request: FastifyRequest) => Promise<void>;
+    mailer: Mailer | null;
   }
   interface FastifyRequest {
     user: SessionUser | null;
@@ -37,6 +42,8 @@ export interface AppOptions {
   config: Config;
   db: Kysely<Database>;
   rateLimit?: boolean;
+  /** Overrides the SMTP mailer built from the configuration (used by tests). */
+  mailer?: Mailer | null;
 }
 
 const UNSAFE_METHODS = new Set(["POST", "PUT", "PATCH", "DELETE"]);
@@ -61,6 +68,7 @@ export async function buildApp(options: AppOptions): Promise<FastifyInstance> {
 
   app.decorate("db", db);
   app.decorate("config", config);
+  app.decorate("mailer", options.mailer === undefined ? createMailer(config) : options.mailer);
   app.decorateRequest("user", null);
 
   await app.register(helmet);
@@ -124,5 +132,8 @@ export async function buildApp(options: AppOptions): Promise<FastifyInstance> {
   await app.register(groupRoutes, { prefix: "/api/groups" });
   await app.register(enrolmentRoutes, { prefix: "/api/enrolments" });
   await app.register(sessionRoutes, { prefix: "/api" });
+  await app.register(paymentRoutes, { prefix: "/api/payments" });
+  await app.register(receiptRoutes, { prefix: "/api/receipts" });
+  await app.register(accountRoutes, { prefix: "/api" });
   return app;
 }

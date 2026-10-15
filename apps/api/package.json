@@ -7,7 +7,7 @@
     "dev": "tsx watch --env-file=.env src/server.ts",
     "start": "tsx --env-file=.env src/server.ts",
     "migrate": "tsx --env-file=.env src/db/migrate.ts",
-    "typecheck": "tsc --noEmit",
+    "typecheck": "tsc --noEmit && tsc --noEmit -p test",
     "test": "vitest run",
     "bootstrap": "tsx --env-file=.env src/cli/bootstrap.ts"
   },
@@ -19,6 +19,7 @@
     "argon2": "^0.45.1",
     "fastify": "^5.12.7",
     "kysely": "^0.29.6",
+    "nodemailer": "10.1.1",
     "pdfkit": "^0.20.2",
     "pg": "^8.23.1",
     "pino": "^10.4.0",
@@ -26,6 +27,7 @@
   },
   "devDependencies": {
     "@types/node": "^26.6.5",
+    "@types/nodemailer": "8.0.2",
     "@types/pdfkit": "^0.17.6",
     "@types/pg": "^8.23.1",
     "tsx": "^4.23.15",
