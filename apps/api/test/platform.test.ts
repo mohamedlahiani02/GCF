@@ -86,9 +86,8 @@ describe("students", () => {
     expect(audit.map((a) => a.action)).toEqual(["student.created"]);
   });
 
-  it("requires a guardian for a minor", async () => {
-    const birthDate = `${new Date().getFullYear() - 15}-01-01`;
-    const missing = await h.app.inject({ method: "POST", url: "/api/students", headers: json(secretariat), payload: { firstName: "Yassine", lastName: "Mejri", birthDate } });
+  it("requires a guardian for a student flagged as minor", async () => {
+    const missing = await h.app.inject({ method: "POST", url: "/api/students", headers: json(secretariat), payload: { firstName: "Yassine", lastName: "Mejri", isMinor: true } });
     expect(missing.statusCode).toBe(422);
     expect(missing.json().code).toBe("guardian_required");
 
@@ -96,12 +95,15 @@ describe("students", () => {
       method: "POST",
       url: "/api/students",
       headers: json(secretariat),
-      payload: { firstName: "Yassine", lastName: "Mejri", birthDate, guardianName: "Mme Mejri", guardianPhone: "22 111 222" },
+      payload: { firstName: "Yassine", lastName: "Mejri", isMinor: true, guardianName: "Mme Mejri", guardianPhone: "22 111 222" },
     });
     expect(ok.statusCode).toBe(201);
 
     const removeGuardian = await h.app.inject({ method: "PATCH", url: `/api/students/${ok.json().id}`, headers: json(secretariat), payload: { guardianPhone: null } });
     expect(removeGuardian.statusCode).toBe(422);
+
+    const minors = await h.app.inject({ method: "GET", url: "/api/students?minor=true", headers: { cookie: secretariat } });
+    expect(minors.json().items.map((s: { lastName: string }) => s.lastName)).toEqual(["Mejri"]);
   });
 
   it("rejects impossible dates and unknown fields", async () => {

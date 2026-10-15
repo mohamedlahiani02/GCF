@@ -14,7 +14,6 @@ export interface CentresTable {
   currency_decimals: Generated<number>;
   locale: Generated<"fr" | "ar">;
   timezone: Generated<string>;
-  majority_age: Generated<number>;
   created_at: Timestamp;
   updated_at: Timestamp;
 }
@@ -63,6 +62,7 @@ export interface StudentsTable {
   first_name: string;
   last_name: string;
   birth_date: ColumnType<string | null, string | null | undefined, string | null>;
+  is_minor: Generated<boolean>;
   phone: string | null;
   email: string | null;
   receipt_email: string | null;
