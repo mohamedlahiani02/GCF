@@ -106,3 +106,28 @@ describe("lists and search", () => {
     expect(res.body).toEqual({ month: "2026-10", invoiced: 40_000, collected: 30_000, unpaid: 10_000, postponed: 0 });
   });
 });
+
+describe("screens support", () => {
+  it("views a receipt without counting a print", async () => {
+    const list = await h.call("GET", "/api/receipts", secretariat);
+    const id = list.body.items[0].id;
+    const view = await h.app.inject({ method: "GET", url: `/api/receipts/${id}/view`, headers: { cookie: secretariat } });
+    expect(view.rawPayload.subarray(0, 5).toString()).toBe("%PDF-");
+    expect((await h.call("GET", `/api/receipts/${id}`, secretariat)).body.prints).toHaveLength(0);
+  });
+
+  it("lists what waits for an admin decision", async () => {
+    const account = (await h.call("GET", `/api/students/${ids.student}/account`, secretariat)).body;
+    const open = account.installments.find((i: { state: string }) => i.state === "upcoming");
+    await h.call("POST", `/api/installments/${open.id}/postpone`, secretariat, { toDate: "2026-12-20", reason: "Attente" });
+    const approvals = await h.call("GET", "/api/approvals", admin);
+    expect(approvals.body.postponements).toEqual([expect.objectContaining({ studentName: "Amira Chebbi", reason: "Attente" })]);
+    expect(approvals.body.discounts).toEqual([]);
+  });
+
+  it("gives a renter's account", async () => {
+    const renter = (await h.call("POST", "/api/renters", secretariat, { name: "Société Medis" })).body.id;
+    const res = await h.call("GET", `/api/renters/${renter}/account`, secretariat);
+    expect(res.body).toMatchObject({ renter: { name: "Société Medis" }, totals: { due: 0, credit: 0 }, installments: [], payments: [] });
+  });
+});

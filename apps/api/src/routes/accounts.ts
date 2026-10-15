@@ -4,7 +4,7 @@ import { sql } from "kysely";
 import { z } from "zod";
 import { writeAudit } from "../audit.js";
 import { can } from "../auth/permissions.js";
-import { centreClock, installmentBalances, lockStudent, studentTotals } from "../domain/ledger.js";
+import { centreClock, installmentBalances, lockPayer, payerTotals, studentTotals } from "../domain/ledger.js";
 import { conflict, HttpError, notFound, unprocessable } from "../errors.js";
 import { idParam, isoDate, reason, uuid } from "../validation.js";
 
@@ -116,6 +116,85 @@ export const accountRoutes: FastifyPluginAsync = async (app) => {
     return { student, totals, installments, payments, postponements, timeline };
   });
 
+  app.get("/renters/:id/account", { preHandler: app.requirePermission("payments:read") }, async (request) => {
+    const centreId = request.user!.centreId;
+    const { id } = idParam.parse(request.params);
+    const renter = await db
+      .selectFrom("renters")
+      .select(["id", "name", "company", "phone", "email"])
+      .where("id", "=", id)
+      .where("centre_id", "=", centreId)
+      .executeTakeFirst();
+    if (!renter) throw notFound("renter");
+    const payer = { kind: "renter" as const, id };
+    const payments = await db
+      .selectFrom("payments")
+      .leftJoin("receipts", (join) => join.onRef("receipts.payment_id", "=", "payments.id").on("receipts.kind", "!=", "cancellation"))
+      .select([
+        "payments.id",
+        "payments.kind",
+        "payments.received_at as receivedAt",
+        "payments.amount",
+        "payments.method",
+        "payments.cheque_status as chequeStatus",
+        "payments.status",
+        "payments.cancel_reason as cancelReason",
+        "receipts.id as receiptId",
+        "receipts.number as receiptNumber",
+      ])
+      .where("payments.renter_id", "=", id)
+      .orderBy("payments.received_at", "desc")
+      .execute();
+    return { renter, totals: await payerTotals(db, centreId, payer), installments: await installmentBalances(db, centreId, { payer }), payments };
+  });
+
+  /** What waits for an administrator's decision: discounts and postponements entered by the secretariat. */
+  app.get("/approvals", { preHandler: app.requirePermission("payments:read") }, async (request) => {
+    const centreId = request.user!.centreId;
+    const discounts = await db
+      .selectFrom("installments")
+      .innerJoin("enrolments", "enrolments.id", "installments.enrolment_id")
+      .innerJoin("students", "students.id", "enrolments.student_id")
+      .leftJoin("users", "users.id", "installments.created_by")
+      .select([
+        "installments.id",
+        "installments.label",
+        "installments.amount",
+        "installments.created_at as createdAt",
+        "students.id as studentId",
+        sql<string>`students.first_name || ' ' || students.last_name`.as("studentName"),
+        "users.full_name as requestedBy",
+      ])
+      .where("installments.centre_id", "=", centreId)
+      .where("installments.kind", "=", "discount")
+      .where("installments.status", "=", "open")
+      .where("installments.discount_status", "=", "pending")
+      .orderBy("installments.created_at")
+      .execute();
+    const postponements = await db
+      .selectFrom("postponements")
+      .innerJoin("installments", "installments.id", "postponements.installment_id")
+      .leftJoin("enrolments", "enrolments.id", "installments.enrolment_id")
+      .leftJoin("students", "students.id", "enrolments.student_id")
+      .leftJoin("users", "users.id", "postponements.requested_by")
+      .select([
+        "postponements.id",
+        "installments.label",
+        "postponements.from_date as fromDate",
+        "postponements.to_date as toDate",
+        "postponements.reason",
+        "postponements.requested_at as requestedAt",
+        "students.id as studentId",
+        sql<string | null>`students.first_name || ' ' || students.last_name`.as("studentName"),
+        "users.full_name as requestedBy",
+      ])
+      .where("postponements.centre_id", "=", centreId)
+      .where("postponements.status", "=", "pending")
+      .orderBy("postponements.requested_at")
+      .execute();
+    return { discounts, postponements };
+  });
+
   /** Moves a due date, with a mandatory reason; the original date is always kept. */
   app.post("/installments/:id/postpone", { preHandler: app.requirePermission("payments:write") }, async (request, reply) => {
     const actor = request.user!;
@@ -124,7 +203,8 @@ export const accountRoutes: FastifyPluginAsync = async (app) => {
     const result = await db.transaction().execute(async (trx) => {
       const row = await trx
         .selectFrom("installments")
-        .innerJoin("enrolments", "enrolments.id", "installments.enrolment_id")
+        .leftJoin("enrolments", "enrolments.id", "installments.enrolment_id")
+        .leftJoin("rentals", "rentals.id", "installments.rental_id")
         .innerJoin("centres", "centres.id", "installments.centre_id")
         .select([
           "installments.id",
@@ -133,6 +213,7 @@ export const accountRoutes: FastifyPluginAsync = async (app) => {
           "installments.due_date as dueDate",
           "installments.postponement_count as count",
           "enrolments.student_id as studentId",
+          "rentals.renter_id as renterId",
           "centres.max_postponements as max",
           "centres.postponement_requires_approval as requiresApproval",
         ])
@@ -140,7 +221,7 @@ export const accountRoutes: FastifyPluginAsync = async (app) => {
         .where("installments.centre_id", "=", actor.centreId)
         .executeTakeFirst();
       if (!row || row.kind !== "charge" || row.status !== "open") throw notFound("open instalment");
-      await lockStudent(trx, row.studentId, actor.centreId);
+      await lockPayer(trx, row.studentId ? { kind: "student", id: row.studentId } : { kind: "renter", id: row.renterId! }, actor.centreId);
       const [balance] = await installmentBalances(trx, actor.centreId, { installmentIds: [id] });
       if (!balance || balance.remaining <= 0) throw conflict("already_paid", "the instalment is already paid");
       if (body.toDate <= row.dueDate) throw unprocessable("date_not_later", "the new date must be after the current due date");

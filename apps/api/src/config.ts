@@ -18,6 +18,8 @@ const schema = z.object({
   SMTP_USER: z.string().min(1).optional(),
   SMTP_PASS: z.string().optional(),
   MAIL_FROM: z.string().min(3).optional(),
+  /** Built web client (apps/web/dist). When set, the API also serves the single-page application. */
+  WEB_DIST_DIR: z.string().min(1).optional(),
 });
 
 export interface Config {
@@ -32,6 +34,7 @@ export interface Config {
   loginMaxFailures: number;
   loginLockMinutes: number;
   smtp: { host: string; port: number; secure: boolean; user: string | undefined; pass: string | undefined; from: string } | null;
+  webDistDir: string | null;
 }
 
 export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
@@ -58,5 +61,6 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     smtp: e.SMTP_HOST
       ? { host: e.SMTP_HOST, port: e.SMTP_PORT, secure: e.SMTP_SECURE === "true", user: e.SMTP_USER, pass: e.SMTP_PASS, from: e.MAIL_FROM! }
       : null,
+    webDistDir: e.WEB_DIST_DIR ?? null,
   };
 }

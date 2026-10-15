@@ -1,6 +1,8 @@
 import cookie from "@fastify/cookie";
 import helmet from "@fastify/helmet";
 import rateLimit from "@fastify/rate-limit";
+import fastifyStatic from "@fastify/static";
+import path from "node:path";
 import Fastify, { type FastifyInstance, type FastifyReply, type FastifyRequest } from "fastify";
 import type { Kysely } from "kysely";
 import { ZodError } from "zod";
@@ -147,5 +149,27 @@ export async function buildApp(options: AppOptions): Promise<FastifyInstance> {
   await app.register(reportRoutes, { prefix: "/api/reports" });
   await app.register(dashboardRoutes, { prefix: "/api/dashboard" });
   await app.register(searchRoutes, { prefix: "/api/search" });
+
+  if (config.webDistDir) {
+    const root = path.resolve(config.webDistDir);
+    const assets = path.join(root, "assets");
+    await app.register(fastifyStatic, {
+      root,
+      wildcard: false,
+      index: false,
+      setHeaders: (reply, filePath) => {
+        // Vite fingerprints everything under assets/, so those files never change; index.html must always be revalidated.
+        reply.header("cache-control", filePath.startsWith(assets) ? "public, max-age=31536000, immutable" : "no-cache");
+      },
+    });
+    app.setNotFoundHandler((request, reply) => {
+      if (request.method !== "GET" || request.url === "/api" || request.url.startsWith("/api/")) {
+        return reply.status(404).send({ code: "not_found", message: "route not found" });
+      }
+      return reply.sendFile("index.html");
+    });
+  } else {
+    app.setNotFoundHandler((_request, reply) => reply.status(404).send({ code: "not_found", message: "route not found" }));
+  }
   return app;
 }

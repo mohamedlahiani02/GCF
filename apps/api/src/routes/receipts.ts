@@ -86,6 +86,19 @@ export const receiptRoutes: FastifyPluginAsync = async (app) => {
     return { ...receipt, immutable: true, cancelledBy: cancellation ?? null, prints, dispatches };
   });
 
+  /** On-screen view of the archived original. Viewing is not printing: it is neither logged nor a duplicate. */
+  app.get("/:id/view", { preHandler: read }, async (request, reply) => {
+    const { id } = idParam.parse(request.params);
+    const receipt = await db
+      .selectFrom("receipts")
+      .select(["number", "pdf"])
+      .where("id", "=", id)
+      .where("centre_id", "=", request.user!.centreId)
+      .executeTakeFirst();
+    if (!receipt) throw notFound("receipt");
+    return reply.header("content-type", "application/pdf").header("content-disposition", `inline; filename="${receipt.number}.pdf"`).send(receipt.pdf);
+  });
+
   /** The first print is the original; every later print carries the DUPLICATA mention. */
   app.get("/:id/pdf", { preHandler: read }, async (request, reply) => {
     const actor = request.user!;
