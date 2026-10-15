@@ -1,7 +1,8 @@
+import { createHash } from "node:crypto";
 import type { FastifyPluginAsync } from "fastify";
 import { z } from "zod";
 import { writeAudit } from "../audit.js";
-import { notFound } from "../errors.js";
+import { notFound, unprocessable } from "../errors.js";
 import { clockTime } from "../validation.js";
 
 const nullableText = z
@@ -35,11 +36,61 @@ const centreUpdate = z
   .partial()
   .strict();
 
+/** Largest logo accepted, in bytes; the database enforces the same limit. */
+export const LOGO_MAX_BYTES = 512 * 1024;
+type LogoMime = "image/png" | "image/jpeg" | "image/webp";
+
+// The request body limit (1 MiB) bounds the upload; parseLogo enforces the logo limit itself.
+const logoBody = z.object({ image: z.string() }).strict();
+
+/** Identifies the image from its first bytes, so a file is never stored under a type it does not have. */
+function sniffImage(bytes: Buffer): LogoMime | null {
+  if (bytes.length >= 8 && bytes.subarray(0, 8).equals(Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]))) return "image/png";
+  if (bytes.length >= 3 && bytes[0] === 0xff && bytes[1] === 0xd8 && bytes[2] === 0xff) return "image/jpeg";
+  if (bytes.length >= 12 && bytes.toString("ascii", 0, 4) === "RIFF" && bytes.toString("ascii", 8, 12) === "WEBP") return "image/webp";
+  return null;
+}
+
+/** Decodes a `data:image/...;base64,` URL into a PNG, JPEG or WebP image within the size limit. */
+export function parseLogo(dataUrl: string): { bytes: Buffer; mime: LogoMime } {
+  const match = /^data:(image\/(?:png|jpeg|webp));base64,([A-Za-z0-9+/]+={0,2})$/.exec(dataUrl);
+  if (!match) throw unprocessable("invalid_logo", "the logo must be a PNG, JPEG or WebP image");
+  const bytes = Buffer.from(match[2]!, "base64");
+  if (bytes.length === 0) throw unprocessable("invalid_logo", "the logo is empty");
+  if (bytes.length > LOGO_MAX_BYTES) throw unprocessable("logo_too_large", `the logo cannot exceed ${LOGO_MAX_BYTES} bytes`);
+  const mime = sniffImage(bytes);
+  if (!mime || mime !== match[1]) throw unprocessable("invalid_logo", "the logo must be a PNG, JPEG or WebP image");
+  return { bytes, mime };
+}
+
+// Every column but the logo itself, which only GET /logo reads.
+const CENTRE_COLUMNS = [
+  "id",
+  "name",
+  "address",
+  "tax_id",
+  "currency",
+  "currency_decimals",
+  "locale",
+  "timezone",
+  "count_justified_as_present",
+  "count_makeup_as_present",
+  "postponement_requires_approval",
+  "max_postponements",
+  "overdue_grace_days",
+  "receipt_prefix",
+  "receipt_footer",
+  "open_from",
+  "open_to",
+  "open_weekdays",
+  "logo_updated_at",
+] as const;
+
 export const centreRoutes: FastifyPluginAsync = async (app) => {
   const { db } = app;
 
   const load = async (centreId: string) => {
-    const centre = await db.selectFrom("centres").selectAll().where("id", "=", centreId).executeTakeFirst();
+    const centre = await db.selectFrom("centres").select(CENTRE_COLUMNS).where("id", "=", centreId).executeTakeFirst();
     if (!centre) throw notFound("centre");
     return centre;
   };
@@ -63,6 +114,8 @@ export const centreRoutes: FastifyPluginAsync = async (app) => {
     openFrom: c.open_from.slice(0, 5),
     openTo: c.open_to.slice(0, 5),
     openWeekdays: c.open_weekdays,
+    // Changes with each new logo, so the browser can cache the image until it is replaced.
+    logoVersion: c.logo_updated_at ? c.logo_updated_at.getTime() : null,
   });
 
   app.get("/", { preHandler: app.requirePermission("centre:read") }, async (request) => {
@@ -73,7 +126,7 @@ export const centreRoutes: FastifyPluginAsync = async (app) => {
     const user = request.user!;
     const body = centreUpdate.parse(request.body);
     return db.transaction().execute(async (trx) => {
-      const before = await trx.selectFrom("centres").selectAll().where("id", "=", user.centreId).forUpdate().executeTakeFirst();
+      const before = await trx.selectFrom("centres").select(CENTRE_COLUMNS).where("id", "=", user.centreId).forUpdate().executeTakeFirst();
       if (!before) throw notFound("centre");
       const after = await trx
         .updateTable("centres")
@@ -96,7 +149,7 @@ export const centreRoutes: FastifyPluginAsync = async (app) => {
           updated_at: new Date(),
         })
         .where("id", "=", user.centreId)
-        .returningAll()
+        .returning(CENTRE_COLUMNS)
         .executeTakeFirstOrThrow();
       await writeAudit(trx, {
         centreId: user.centreId,
@@ -107,6 +160,48 @@ export const centreRoutes: FastifyPluginAsync = async (app) => {
         before: present(before),
         after: present(after),
       });
+      return present(after);
+    });
+  });
+
+  app.get("/logo", { preHandler: app.requirePermission("centre:read") }, async (request, reply) => {
+    const centre = await db.selectFrom("centres").select(["logo", "logo_mime"]).where("id", "=", request.user!.centreId).executeTakeFirst();
+    if (!centre?.logo || !centre.logo_mime) throw notFound("logo");
+    return reply.header("content-type", centre.logo_mime).header("cache-control", "private, max-age=31536000, immutable").send(centre.logo);
+  });
+
+  app.put("/logo", { preHandler: app.requirePermission("centre:manage") }, async (request) => {
+    const user = request.user!;
+    const { bytes, mime } = parseLogo(logoBody.parse(request.body).image);
+    return db.transaction().execute(async (trx) => {
+      const after = await trx
+        .updateTable("centres")
+        .set({ logo: bytes, logo_mime: mime, logo_updated_at: new Date(), updated_at: new Date() })
+        .where("id", "=", user.centreId)
+        .returning(CENTRE_COLUMNS)
+        .executeTakeFirstOrThrow();
+      await writeAudit(trx, {
+        centreId: user.centreId,
+        userId: user.userId,
+        action: "centre.logo_updated",
+        objectType: "centre",
+        objectId: user.centreId,
+        after: { mime, bytes: bytes.length, sha256: createHash("sha256").update(bytes).digest("hex") },
+      });
+      return present(after);
+    });
+  });
+
+  app.delete("/logo", { preHandler: app.requirePermission("centre:manage") }, async (request) => {
+    const user = request.user!;
+    return db.transaction().execute(async (trx) => {
+      const after = await trx
+        .updateTable("centres")
+        .set({ logo: null, logo_mime: null, logo_updated_at: null, updated_at: new Date() })
+        .where("id", "=", user.centreId)
+        .returning(CENTRE_COLUMNS)
+        .executeTakeFirstOrThrow();
+      await writeAudit(trx, { centreId: user.centreId, userId: user.userId, action: "centre.logo_removed", objectType: "centre", objectId: user.centreId });
       return present(after);
     });
   });

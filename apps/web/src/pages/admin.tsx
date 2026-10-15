@@ -25,6 +25,7 @@ interface Centre {
   openFrom: string;
   openTo: string;
   openWeekdays: number[];
+  logoVersion: number | null;
 }
 interface UserRow {
   id: string;
@@ -44,6 +45,85 @@ interface AuditRow {
   before: unknown;
   after: unknown;
   reason: string | null;
+}
+
+const LOGO_MAX_BYTES = 512 * 1024;
+const LOGO_TYPES = ["image/png", "image/jpeg", "image/webp"];
+
+function readAsDataUrl(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(String(reader.result));
+    reader.onerror = () => reject(reader.error ?? new Error("file could not be read"));
+    reader.readAsDataURL(file);
+  });
+}
+
+/** The logo shown in the navigation: uploaded on its own, without the "Enregistrer" button of the settings. */
+function LogoSetting({ name, logoVersion, editable }: { name: string; logoVersion: number | null; editable: boolean }) {
+  const client = useQueryClient();
+  const toast = useToast();
+  const [problem, setProblem] = useState<string | null>(null);
+  const refresh = async () => {
+    await client.invalidateQueries({ queryKey: ["centre-settings"] });
+    await client.invalidateQueries({ queryKey: ["centre"] });
+  };
+  const upload = useMutation({
+    mutationFn: async (file: File) => api.put<Centre>("/centre/logo", { image: await readAsDataUrl(file) }),
+    onSuccess: async () => {
+      await refresh();
+      toast("Logo enregistré.");
+    },
+  });
+  const remove = useMutation({
+    mutationFn: () => api.del<Centre>("/centre/logo"),
+    onSuccess: async () => {
+      await refresh();
+      toast("Logo retiré.");
+    },
+  });
+  const pick = (file: File | undefined) => {
+    setProblem(null);
+    if (!file) return;
+    if (!LOGO_TYPES.includes(file.type)) return setProblem("Le logo doit être une image PNG, JPEG ou WebP.");
+    if (file.size > LOGO_MAX_BYTES) return setProblem("Le logo ne doit pas dépasser 512 Ko.");
+    upload.mutate(file);
+  };
+  return (
+    <div className="logo-setting">
+      <span className="logo-preview">
+        {logoVersion ? <img src={api.fileUrl("/centre/logo", { v: logoVersion })} alt={`Logo de ${name}`} /> : <span className="cap">Aucun logo</span>}
+      </span>
+      <div className="stack" style={{ gap: 6 }}>
+        <span className="lab">Logo</span>
+        <span className="cap">Affiché en haut du menu. PNG, JPEG ou WebP, 512 Ko maximum ; un logo carré ou horizontal sur fond clair rend le mieux.</span>
+        {editable ? (
+          <div className="row" style={{ gap: 8 }}>
+            <label className={`btn${upload.isPending ? " disabled" : ""}`}>
+              {logoVersion ? "Remplacer le logo" : "Choisir un logo"}
+              <input
+                type="file"
+                accept={LOGO_TYPES.join(",")}
+                className="visually-hidden"
+                disabled={upload.isPending}
+                onChange={(e) => {
+                  pick(e.target.files?.[0]);
+                  e.target.value = "";
+                }}
+              />
+            </label>
+            {logoVersion ? (
+              <button type="button" className="btn btn-g" disabled={remove.isPending} onClick={() => remove.mutate()}>
+                Retirer
+              </button>
+            ) : null}
+          </div>
+        ) : null}
+        {problem ? <span className="err-text">{problem}</span> : null}
+        <ErrorBanner error={upload.error ?? remove.error} />
+      </div>
+    </div>
+  );
 }
 
 function CentreSettings() {
@@ -104,6 +184,7 @@ function CentreSettings() {
     >
       <fieldset className="card-b stack" disabled={!editable} style={{ border: 0, margin: 0 }}>
         <h3 className="h2">Identité (figure sur les reçus)</h3>
+        <LogoSetting name={v.name} logoVersion={centre.data.logoVersion} editable={editable} />
         <div className="grid3">
           <Field label="Nom du centre">
             <input className="input" value={v.name} onChange={(e) => set("name", e.target.value)} />
