@@ -19,6 +19,9 @@ export const PERMISSIONS = [
   "rooms:write",
   "enrolments:write",
   "discounts:approve",
+  "attendance:read",
+  "attendance:write",
+  "attendance:correct",
 ] as const;
 export type Permission = (typeof PERMISSIONS)[number];
 
@@ -33,8 +36,10 @@ const ROLE_PERMISSIONS: Record<Role, ReadonlySet<Permission>> = {
     "instructors:read",
     "rooms:write",
     "enrolments:write",
+    "attendance:read",
+    "attendance:write",
   ]),
-  accountant: new Set<Permission>(["centre:read", "audit:read", "students:read", "catalogue:read", "instructors:read"]),
+  accountant: new Set<Permission>(["centre:read", "audit:read", "students:read", "catalogue:read", "instructors:read", "attendance:read"]),
 };
 
 export function can(role: Role, permission: Permission): boolean {

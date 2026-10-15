@@ -260,8 +260,52 @@ export interface InstallmentsTable {
   cancelled_by: string | null;
   cancel_reason: string | null;
   carried_from_id: string | null;
+  session_id: string | null;
   created_by: string | null;
   created_at: Timestamp;
+}
+
+export type SessionStatus = "scheduled" | "held" | "cancelled";
+export type SheetStatus = "none" | "in_progress" | "validated";
+export type AttendanceStatusColumn = "present" | "absent" | "absent_justified" | "present_other_group";
+
+export interface ClassSessionsTable {
+  id: Generated<string>;
+  centre_id: string;
+  group_id: string;
+  instructor_id: string;
+  room_id: string | null;
+  starts_at: ColumnType<Date, Date | string, Date | string>;
+  ends_at: ColumnType<Date, Date | string, Date | string>;
+  status: Generated<SessionStatus>;
+  cancel_reason: string | null;
+  sheet_status: Generated<SheetStatus>;
+  validated_at: NullableTimestamp;
+  validated_by: string | null;
+  created_at: Timestamp;
+}
+
+export interface RoomBookingsTable {
+  id: Generated<string>;
+  centre_id: string;
+  room_id: string;
+  period: string;
+  session_id: string | null;
+  active: Generated<boolean>;
+}
+
+export interface AttendanceRecordsTable {
+  id: Generated<string>;
+  centre_id: string;
+  session_id: string;
+  student_id: string;
+  enrolment_id: string;
+  status: AttendanceStatusColumn;
+  is_guest: Generated<boolean>;
+  host_session_id: string | null;
+  note: string | null;
+  updated_at: Timestamp;
+  updated_by: string | null;
 }
 
 export interface FinancialEventsTable {
@@ -303,6 +347,9 @@ export interface Database {
   enrolments: EnrolmentsTable;
   installments: InstallmentsTable;
   financial_events: FinancialEventsTable;
+  class_sessions: ClassSessionsTable;
+  room_bookings: RoomBookingsTable;
+  attendance_records: AttendanceRecordsTable;
 }
 
 export type Student = Selectable<StudentsTable>;

@@ -16,6 +16,7 @@ import { centreRoutes } from "./routes/centre.js";
 import { enrolmentRoutes } from "./routes/enrolments.js";
 import { groupRoutes } from "./routes/groups.js";
 import { instructorRoutes } from "./routes/instructors.js";
+import { sessionRoutes } from "./routes/sessions.js";
 import { studentRoutes } from "./routes/students.js";
 import { userRoutes } from "./routes/users.js";
 
@@ -122,5 +123,6 @@ export async function buildApp(options: AppOptions): Promise<FastifyInstance> {
   await app.register(instructorRoutes, { prefix: "/api/instructors" });
   await app.register(groupRoutes, { prefix: "/api/groups" });
   await app.register(enrolmentRoutes, { prefix: "/api/enrolments" });
+  await app.register(sessionRoutes, { prefix: "/api" });
   return app;
 }
