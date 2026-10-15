@@ -16,7 +16,10 @@ const createBody = z
     password: z.string().min(PASSWORD_MIN_LENGTH).max(1024),
   })
   .strict();
-const updateBody = z.object({ fullName: z.string().trim().min(1).max(200), role, active: z.boolean() }).partial().strict();
+const updateBody = z
+  .object({ fullName: z.string().trim().min(1).max(200), role, active: z.boolean() })
+  .partial()
+  .strict();
 const resetBody = z.object({ password: z.string().min(PASSWORD_MIN_LENGTH).max(1024) }).strict();
 const idParam = z.object({ id: z.string().uuid() });
 
@@ -58,12 +61,7 @@ export const userRoutes: FastifyPluginAsync = async (app) => {
   app.addHook("preHandler", app.requirePermission("users:manage"));
 
   app.get("/", async (request) => {
-    const rows = await db
-      .selectFrom("users")
-      .select(PUBLIC_COLUMNS)
-      .where("centre_id", "=", request.user!.centreId)
-      .orderBy("full_name")
-      .execute();
+    const rows = await db.selectFrom("users").select(PUBLIC_COLUMNS).where("centre_id", "=", request.user!.centreId).orderBy("full_name").execute();
     return rows.map(present);
   });
 

@@ -60,7 +60,9 @@ export async function issueReceipt(trx: Transaction<Database>, input: IssueRecei
   const issuedAt = await sql<{ at: string }>`select to_char(now() at time zone ${payment.timezone}, 'DD/MM/YYYY HH24:MI') as at`.execute(trx);
   const payer: Payer = payment.studentId ? { kind: "student", id: payment.studentId } : { kind: "renter", id: payment.renterId! };
   const totals = await payerTotals(trx, input.centreId, payer);
-  const payerName = payment.studentId ? `${payment.firstName} ${payment.lastName}` : `${payment.renterName}${payment.renterCompany ? ` (${payment.renterCompany})` : ""}`;
+  const payerName = payment.studentId
+    ? `${payment.firstName} ${payment.lastName}`
+    : `${payment.renterName}${payment.renterCompany ? ` (${payment.renterCompany})` : ""}`;
   const snapshot: ReceiptSnapshot = {
     number,
     kind: input.kind,

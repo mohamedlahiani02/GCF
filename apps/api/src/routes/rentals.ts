@@ -19,7 +19,15 @@ const renterCreate = z.object(renterFields).strict();
 const renterUpdate = z.object(renterFields).partial().strict();
 const ratesBody = z.object({ rates: z.array(z.object({ unit: z.enum(UNITS), amount: millimes }).strict()).max(5) }).strict();
 
-const slotList = z.array(z.object({ date: isoDate, startTime: clockTime, endTime: clockTime }).strict().refine((s) => s.endTime > s.startTime, "the end time must be after the start time")).min(1).max(400);
+const slotList = z
+  .array(
+    z
+      .object({ date: isoDate, startTime: clockTime, endTime: clockTime })
+      .strict()
+      .refine((s) => s.endTime > s.startTime, "the end time must be after the start time"),
+  )
+  .min(1)
+  .max(400);
 const pattern = z
   .object({ from: isoDate, to: isoDate, weekdays: z.array(z.number().int().min(1).max(7)).min(1).max(7), startTime: clockTime, endTime: clockTime })
   .strict()
@@ -51,7 +59,12 @@ interface Evaluated {
 }
 
 async function evaluate(trx: Transaction<Database>, centreId: string, body: z.infer<typeof rentalBody>): Promise<Evaluated> {
-  const room = await trx.selectFrom("rooms").select(["id", "name", "status"]).where("id", "=", body.roomId).where("centre_id", "=", centreId).executeTakeFirst();
+  const room = await trx
+    .selectFrom("rooms")
+    .select(["id", "name", "status"])
+    .where("id", "=", body.roomId)
+    .where("centre_id", "=", centreId)
+    .executeTakeFirst();
   if (!room || room.status !== "active") throw unprocessable("unknown_room", "the room does not exist or is archived");
   const renter = await trx.selectFrom("renters").select("id").where("id", "=", body.renterId).where("centre_id", "=", centreId).executeTakeFirst();
   if (!renter) throw notFound("renter");
@@ -64,7 +77,9 @@ async function evaluate(trx: Transaction<Database>, centreId: string, body: z.in
   for (let i = 1; i < sorted.length; i += 1) {
     if (sorted[i]!.startsAt < sorted[i - 1]!.endsAt) throw unprocessable("overlapping_slots", "two slots of the rental overlap");
   }
-  const rates = new Map((await trx.selectFrom("room_rates").select(["unit", "amount"]).where("room_id", "=", room.id).execute()).map((r) => [r.unit, r.amount]));
+  const rates = new Map(
+    (await trx.selectFrom("room_rates").select(["unit", "amount"]).where("room_id", "=", room.id).execute()).map((r) => [r.unit, r.amount]),
+  );
   const pricing = priceRental(rates, body.unit, slots, body.periods);
   const firstDay = [...local].map((s) => s.date).sort()[0]!;
   const lines = rentalSchedule(pricing, body.unit, body.paymentMode, clock.today, firstDay, room.name, body.deposit);
@@ -93,7 +108,14 @@ export const rentalRoutes: FastifyPluginAsync = async (app) => {
         .values({ centre_id: actor.centreId, name: body.name, company: body.company ?? null, phone: body.phone ?? null, email: body.email ?? null })
         .returning(["id", "name", "company", "phone", "email"])
         .executeTakeFirstOrThrow();
-      await writeAudit(trx, { centreId: actor.centreId, userId: actor.userId, action: "renter.created", objectType: "renter", objectId: created.id, after: created });
+      await writeAudit(trx, {
+        centreId: actor.centreId,
+        userId: actor.userId,
+        action: "renter.created",
+        objectType: "renter",
+        objectId: created.id,
+        after: created,
+      });
       return created;
     });
     return reply.status(201).send(row);
@@ -104,7 +126,13 @@ export const rentalRoutes: FastifyPluginAsync = async (app) => {
     const { id } = idParam.parse(request.params);
     const body = renterUpdate.parse(request.body);
     return db.transaction().execute(async (trx) => {
-      const before = await trx.selectFrom("renters").select(["id", "name", "company", "phone", "email"]).where("id", "=", id).where("centre_id", "=", actor.centreId).forUpdate().executeTakeFirst();
+      const before = await trx
+        .selectFrom("renters")
+        .select(["id", "name", "company", "phone", "email"])
+        .where("id", "=", id)
+        .where("centre_id", "=", actor.centreId)
+        .forUpdate()
+        .executeTakeFirst();
       if (!before) throw notFound("renter");
       const after = await trx
         .updateTable("renters")
@@ -141,8 +169,20 @@ export const rentalRoutes: FastifyPluginAsync = async (app) => {
       if (!room) throw notFound("room");
       const before = await trx.selectFrom("room_rates").select(["unit", "amount"]).where("room_id", "=", id).execute();
       await trx.deleteFrom("room_rates").where("room_id", "=", id).execute();
-      if (body.rates.length) await trx.insertInto("room_rates").values(body.rates.map((r) => ({ room_id: id, unit: r.unit, amount: r.amount }))).execute();
-      await writeAudit(trx, { centreId: actor.centreId, userId: actor.userId, action: "room.rates_updated", objectType: "room", objectId: id, before, after: body.rates });
+      if (body.rates.length)
+        await trx
+          .insertInto("room_rates")
+          .values(body.rates.map((r) => ({ room_id: id, unit: r.unit, amount: r.amount })))
+          .execute();
+      await writeAudit(trx, {
+        centreId: actor.centreId,
+        userId: actor.userId,
+        action: "room.rates_updated",
+        objectType: "room",
+        objectId: id,
+        before,
+        after: body.rates,
+      });
       return body.rates;
     });
   });
@@ -182,23 +222,71 @@ export const rentalRoutes: FastifyPluginAsync = async (app) => {
         .returning("id")
         .executeTakeFirstOrThrow();
       for (const slot of result.slots) {
-        const row = await trx.insertInto("rental_slots").values({ rental_id: rental.id, starts_at: slot.startsAt, ends_at: slot.endsAt }).returning("id").executeTakeFirstOrThrow();
+        const row = await trx
+          .insertInto("rental_slots")
+          .values({ rental_id: rental.id, starts_at: slot.startsAt, ends_at: slot.endsAt })
+          .returning("id")
+          .executeTakeFirstOrThrow();
         await trx
           .insertInto("room_bookings")
-          .values({ centre_id: actor.centreId, room_id: body.roomId, period: sql<string>`tstzrange(${slot.startsAt}, ${slot.endsAt})` as unknown as string, session_id: null, rental_slot_id: row.id })
+          .values({
+            centre_id: actor.centreId,
+            room_id: body.roomId,
+            period: sql<string>`tstzrange(${slot.startsAt}, ${slot.endsAt})` as unknown as string,
+            session_id: null,
+            rental_slot_id: row.id,
+          })
           .execute();
       }
       const charges = await trx
         .insertInto("installments")
-        .values(result.lines.map((l) => ({ centre_id: actor.centreId, enrolment_id: null, rental_id: rental.id, label: l.label, kind: "charge" as const, amount: l.amount, due_date: l.dueDate, original_due_date: l.dueDate, discount_status: null, created_by: actor.userId })))
+        .values(
+          result.lines.map((l) => ({
+            centre_id: actor.centreId,
+            enrolment_id: null,
+            rental_id: rental.id,
+            label: l.label,
+            kind: "charge" as const,
+            amount: l.amount,
+            due_date: l.dueDate,
+            original_due_date: l.dueDate,
+            discount_status: null,
+            created_by: actor.userId,
+          })),
+        )
         .returning(["id", "amount"])
         .execute();
       await recordFinancialEvents(trx, [
-        { centreId: actor.centreId, type: "rental_booked", amount: result.pricing.total, userId: actor.userId, rentalId: rental.id, renterId: body.renterId, roomId: body.roomId, payload: { unit: body.unit, quantity: result.pricing.quantity } },
-        ...charges.map((c) => ({ centreId: actor.centreId, type: "installment_issued" as const, amount: c.amount, userId: actor.userId, installmentId: c.id, rentalId: rental.id, renterId: body.renterId, roomId: body.roomId })),
+        {
+          centreId: actor.centreId,
+          type: "rental_booked",
+          amount: result.pricing.total,
+          userId: actor.userId,
+          rentalId: rental.id,
+          renterId: body.renterId,
+          roomId: body.roomId,
+          payload: { unit: body.unit, quantity: result.pricing.quantity },
+        },
+        ...charges.map((c) => ({
+          centreId: actor.centreId,
+          type: "installment_issued" as const,
+          amount: c.amount,
+          userId: actor.userId,
+          installmentId: c.id,
+          rentalId: rental.id,
+          renterId: body.renterId,
+          roomId: body.roomId,
+        })),
       ]);
       await settlePayer(trx, actor.centreId, { kind: "renter", id: body.renterId }, actor.userId);
-      await writeAudit(trx, { centreId: actor.centreId, userId: actor.userId, action: "rental.created", objectType: "rental", objectId: rental.id, after: { ...body, pricing: result.pricing, schedule: result.lines } });
+      await writeAudit(trx, {
+        centreId: actor.centreId,
+        userId: actor.userId,
+        action: "rental.created",
+        objectType: "rental",
+        objectId: rental.id,
+        after: { ...body, pricing: result.pricing, schedule: result.lines },
+      });
       return { id: rental.id, pricing: result.pricing, schedule: result.lines };
     });
     return reply.status(201).send(created);
@@ -210,8 +298,28 @@ export const rentalRoutes: FastifyPluginAsync = async (app) => {
       .selectFrom("rentals")
       .innerJoin("renters", "renters.id", "rentals.renter_id")
       .innerJoin("rooms", "rooms.id", "rentals.room_id")
-      .leftJoin(db.selectFrom("rental_slots").select(["rental_id", sql<Date>`min(starts_at)`.as("firstStart"), sql<Date>`max(ends_at)`.as("lastEnd"), sql<number>`count(*)::integer`.as("slots")]).groupBy("rental_id").as("s"), "s.rental_id", "rentals.id")
-      .select(["rentals.id", "renters.name as renterName", "rooms.name as roomName", "rentals.unit", "rentals.quantity", "rentals.total", "rentals.payment_mode as paymentMode", "rentals.status", "s.firstStart", "s.lastEnd", "s.slots"])
+      .leftJoin(
+        db
+          .selectFrom("rental_slots")
+          .select(["rental_id", sql<Date>`min(starts_at)`.as("firstStart"), sql<Date>`max(ends_at)`.as("lastEnd"), sql<number>`count(*)::integer`.as("slots")])
+          .groupBy("rental_id")
+          .as("s"),
+        "s.rental_id",
+        "rentals.id",
+      )
+      .select([
+        "rentals.id",
+        "renters.name as renterName",
+        "rooms.name as roomName",
+        "rentals.unit",
+        "rentals.quantity",
+        "rentals.total",
+        "rentals.payment_mode as paymentMode",
+        "rentals.status",
+        "s.firstStart",
+        "s.lastEnd",
+        "s.slots",
+      ])
       .where("rentals.centre_id", "=", request.user!.centreId)
       .$if(query.status !== "all", (qb) => qb.where("rentals.status", "=", query.status as "active" | "cancelled"))
       .$if(query.roomId !== undefined, (qb) => qb.where("rentals.room_id", "=", query.roomId!))
@@ -227,12 +335,32 @@ export const rentalRoutes: FastifyPluginAsync = async (app) => {
       .selectFrom("rentals")
       .innerJoin("renters", "renters.id", "rentals.renter_id")
       .innerJoin("rooms", "rooms.id", "rentals.room_id")
-      .select(["rentals.id", "rentals.renter_id as renterId", "renters.name as renterName", "renters.company", "rentals.room_id as roomId", "rooms.name as roomName", "rentals.unit", "rentals.quantity", "rentals.unit_price as unitPrice", "rentals.total", "rentals.payment_mode as paymentMode", "rentals.status", "rentals.cancel_reason as cancelReason", "rentals.notes"])
+      .select([
+        "rentals.id",
+        "rentals.renter_id as renterId",
+        "renters.name as renterName",
+        "renters.company",
+        "rentals.room_id as roomId",
+        "rooms.name as roomName",
+        "rentals.unit",
+        "rentals.quantity",
+        "rentals.unit_price as unitPrice",
+        "rentals.total",
+        "rentals.payment_mode as paymentMode",
+        "rentals.status",
+        "rentals.cancel_reason as cancelReason",
+        "rentals.notes",
+      ])
       .where("rentals.id", "=", id)
       .where("rentals.centre_id", "=", centreId)
       .executeTakeFirst();
     if (!rental) throw notFound("rental");
-    const slots = await db.selectFrom("rental_slots").select(["id", "starts_at as startsAt", "ends_at as endsAt"]).where("rental_id", "=", id).orderBy("starts_at").execute();
+    const slots = await db
+      .selectFrom("rental_slots")
+      .select(["id", "starts_at as startsAt", "ends_at as endsAt"])
+      .where("rental_id", "=", id)
+      .orderBy("starts_at")
+      .execute();
     const schedule = await installmentBalances(db, centreId, { rentalId: id });
     const receipts = await db
       .selectFrom("receipts")
@@ -253,18 +381,50 @@ export const rentalRoutes: FastifyPluginAsync = async (app) => {
     const { id } = idParam.parse(request.params);
     const body = cancelBody.parse(request.body);
     return db.transaction().execute(async (trx) => {
-      const rental = await trx.selectFrom("rentals").select(["id", "status", "renter_id", "room_id"]).where("id", "=", id).where("centre_id", "=", actor.centreId).forUpdate().executeTakeFirst();
+      const rental = await trx
+        .selectFrom("rentals")
+        .select(["id", "status", "renter_id", "room_id"])
+        .where("id", "=", id)
+        .where("centre_id", "=", actor.centreId)
+        .forUpdate()
+        .executeTakeFirst();
       if (!rental) throw notFound("rental");
       if (rental.status === "cancelled") throw conflict("already_cancelled", "the rental is already cancelled");
       await lockPayer(trx, { kind: "renter", id: rental.renter_id }, actor.centreId);
       await trx.updateTable("rentals").set({ status: "cancelled", cancelled_at: new Date(), cancel_reason: body.reason }).where("id", "=", id).execute();
-      await sql`update room_bookings set active = false where rental_slot_id in (select id from rental_slots where rental_id = ${id} and starts_at > now())`.execute(trx);
+      await sql`update room_bookings set active = false where rental_slot_id in (select id from rental_slots where rental_id = ${id} and starts_at > now())`.execute(
+        trx,
+      );
       const open = (await installmentBalances(trx, actor.centreId, { rentalId: id })).filter((i) => i.status === "open" && i.kind === "charge" && i.paid === 0);
       for (const i of open) {
-        await trx.updateTable("installments").set({ status: "cancelled", cancelled_at: new Date(), cancelled_by: actor.userId, cancel_reason: `location annulée : ${body.reason}` }).where("id", "=", i.id).execute();
+        await trx
+          .updateTable("installments")
+          .set({ status: "cancelled", cancelled_at: new Date(), cancelled_by: actor.userId, cancel_reason: `location annulée : ${body.reason}` })
+          .where("id", "=", i.id)
+          .execute();
       }
-      await recordFinancialEvents(trx, open.map((i) => ({ centreId: actor.centreId, type: "installment_cancelled" as const, amount: -i.amount, userId: actor.userId, installmentId: i.id, rentalId: id, renterId: rental.renter_id, roomId: rental.room_id })));
-      await writeAudit(trx, { centreId: actor.centreId, userId: actor.userId, action: "rental.cancelled", objectType: "rental", objectId: id, reason: body.reason, after: { cancelledInstallments: open.length } });
+      await recordFinancialEvents(
+        trx,
+        open.map((i) => ({
+          centreId: actor.centreId,
+          type: "installment_cancelled" as const,
+          amount: -i.amount,
+          userId: actor.userId,
+          installmentId: i.id,
+          rentalId: id,
+          renterId: rental.renter_id,
+          roomId: rental.room_id,
+        })),
+      );
+      await writeAudit(trx, {
+        centreId: actor.centreId,
+        userId: actor.userId,
+        action: "rental.cancelled",
+        objectType: "rental",
+        objectId: id,
+        reason: body.reason,
+        after: { cancelledInstallments: open.length },
+      });
       return { id, status: "cancelled", cancelledInstallments: open.length };
     });
   });
@@ -277,19 +437,39 @@ export const rentalRoutes: FastifyPluginAsync = async (app) => {
       .innerJoin("renters", "renters.id", "rentals.renter_id")
       .innerJoin("rooms", "rooms.id", "rentals.room_id")
       .innerJoin("centres", "centres.id", "rentals.centre_id")
-      .select(["rentals.id", "rentals.unit", "rentals.quantity", "rentals.unit_price as unitPrice", "rentals.total", "renters.name", "renters.company", "renters.phone", "renters.email", "rooms.name as roomName", "centres.name as centreName", "centres.address", "centres.timezone", sql<string>`to_char(now() at time zone centres.timezone, 'DD/MM/YYYY')`.as("today")])
+      .select([
+        "rentals.id",
+        "rentals.unit",
+        "rentals.quantity",
+        "rentals.unit_price as unitPrice",
+        "rentals.total",
+        "renters.name",
+        "renters.company",
+        "renters.phone",
+        "renters.email",
+        "rooms.name as roomName",
+        "centres.name as centreName",
+        "centres.address",
+        "centres.timezone",
+        sql<string>`to_char(now() at time zone centres.timezone, 'DD/MM/YYYY')`.as("today"),
+      ])
       .where("rentals.id", "=", id)
       .where("rentals.centre_id", "=", centreId)
       .executeTakeFirst();
     if (!rental) throw notFound("rental");
     const slots = await db
       .selectFrom("rental_slots")
-      .select(sql<string>`to_char(starts_at at time zone ${rental.timezone}, 'DD/MM/YYYY HH24:MI') || ' - ' || to_char(ends_at at time zone ${rental.timezone}, 'HH24:MI')`.as("label"))
+      .select(
+        sql<string>`to_char(starts_at at time zone ${rental.timezone}, 'DD/MM/YYYY HH24:MI') || ' - ' || to_char(ends_at at time zone ${rental.timezone}, 'HH24:MI')`.as(
+          "label",
+        ),
+      )
       .where("rental_id", "=", id)
       .orderBy("starts_at")
       .execute();
     const schedule = await installmentBalances(db, centreId, { rentalId: id });
-    const quantityLabel = rental.unit === "hour" ? `${(rental.quantity / 60).toString().replace(".", ",")} heure(s)` : `${rental.quantity} ${UNIT_FR[rental.unit]}(s)`;
+    const quantityLabel =
+      rental.unit === "hour" ? `${(rental.quantity / 60).toString().replace(".", ",")} heure(s)` : `${rental.quantity} ${UNIT_FR[rental.unit]}(s)`;
     const pdf = await renderRentalQuote({
       centreName: rental.centreName,
       centreAddress: rental.address,
@@ -304,7 +484,10 @@ export const rentalRoutes: FastifyPluginAsync = async (app) => {
       schedule: schedule.filter((s) => s.status === "open").map((s) => ({ label: s.label, dueDate: s.dueDate, amount: s.amount })),
       issuedAt: rental.today,
     });
-    return reply.header("content-type", "application/pdf").header("content-disposition", `inline; filename="location-${rental.id.slice(0, 8)}.pdf"`).send(pdf);
+    return reply
+      .header("content-type", "application/pdf")
+      .header("content-disposition", `inline; filename="location-${rental.id.slice(0, 8)}.pdf"`)
+      .send(pdf);
   });
 
   /* Unified planning: class sessions and rental slots, for a view by room, instructor or group on the client. */
@@ -345,7 +528,15 @@ export const rentalRoutes: FastifyPluginAsync = async (app) => {
       .innerJoin("rentals", "rentals.id", "rental_slots.rental_id")
       .innerJoin("renters", "renters.id", "rentals.renter_id")
       .innerJoin("rooms", "rooms.id", "rentals.room_id")
-      .select(["rental_slots.id", "rental_slots.starts_at as startsAt", "rental_slots.ends_at as endsAt", "rentals.id as rentalId", "renters.name as renterName", "rooms.id as roomId", "rooms.name as roomName"])
+      .select([
+        "rental_slots.id",
+        "rental_slots.starts_at as startsAt",
+        "rental_slots.ends_at as endsAt",
+        "rentals.id as rentalId",
+        "renters.name as renterName",
+        "rooms.id as roomId",
+        "rooms.name as roomName",
+      ])
       .where("rentals.centre_id", "=", centreId)
       .where("rentals.status", "=", "active")
       .where(localDay("rental_slots.starts_at"), ">=", query.from)

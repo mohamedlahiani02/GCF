@@ -40,18 +40,36 @@ export function renderPayslip(data: PayslipData): Promise<Buffer> {
 
   const row = (label: string, detail: string, amount: string, bold = false) => {
     const y = doc.y;
-    doc.font(bold ? "Helvetica-Bold" : "Helvetica").fontSize(10).text(label, margin, y, { width: width - amountWidth - 8 });
-    if (detail) doc.font("Helvetica").fontSize(8).fillColor("#444444").text(detail, { width: width - amountWidth - 8 }).fillColor("#000000");
+    doc
+      .font(bold ? "Helvetica-Bold" : "Helvetica")
+      .fontSize(10)
+      .text(label, margin, y, { width: width - amountWidth - 8 });
+    if (detail)
+      doc
+        .font("Helvetica")
+        .fontSize(8)
+        .fillColor("#444444")
+        .text(detail, { width: width - amountWidth - 8 })
+        .fillColor("#000000");
     const after = doc.y;
-    doc.font(bold ? "Helvetica-Bold" : "Helvetica").fontSize(10).text(amount, margin + width - amountWidth, y, { width: amountWidth, align: "right" });
+    doc
+      .font(bold ? "Helvetica-Bold" : "Helvetica")
+      .fontSize(10)
+      .text(amount, margin + width - amountWidth, y, { width: amountWidth, align: "right" });
     doc.y = Math.max(after, doc.y) + 4;
   };
   row("Détail", "", "Montant", true);
-  doc.moveTo(margin, doc.y).lineTo(margin + width, doc.y).stroke();
+  doc
+    .moveTo(margin, doc.y)
+    .lineTo(margin + width, doc.y)
+    .stroke();
   doc.moveDown(0.3);
   for (const line of data.lines) row(line.label, line.detail, money(line.amount));
   for (const adjustment of data.adjustments) row(adjustment.label, "", money(adjustment.amount));
-  doc.moveTo(margin, doc.y).lineTo(margin + width, doc.y).stroke();
+  doc
+    .moveTo(margin, doc.y)
+    .lineTo(margin + width, doc.y)
+    .stroke();
   doc.moveDown(0.3);
   row("Net à payer", "", money(data.total), true);
 

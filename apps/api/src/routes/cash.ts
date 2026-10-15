@@ -20,7 +20,14 @@ export const cashRoutes: FastifyPluginAsync = async (app) => {
     const closing = await db
       .selectFrom("cash_closings")
       .leftJoin("users", "users.id", "cash_closings.closed_by")
-      .select(["cash_closings.expected_cash as expectedCash", "cash_closings.counted_cash as countedCash", "cash_closings.difference", "cash_closings.comment", "cash_closings.closed_at as closedAt", "users.full_name as closedBy"])
+      .select([
+        "cash_closings.expected_cash as expectedCash",
+        "cash_closings.counted_cash as countedCash",
+        "cash_closings.difference",
+        "cash_closings.comment",
+        "cash_closings.closed_at as closedAt",
+        "users.full_name as closedBy",
+      ])
       .where("cash_closings.centre_id", "=", centreId)
       .where("cash_closings.day", "=", date)
       .executeTakeFirst();
@@ -34,18 +41,48 @@ export const cashRoutes: FastifyPluginAsync = async (app) => {
     const result = await db.transaction().execute(async (trx) => {
       const { today } = await centreClock(trx, actor.centreId);
       if (body.day > today) throw unprocessable("future_day", "a day can only be closed once it has started");
-      const existing = await trx.selectFrom("cash_closings").select("id").where("centre_id", "=", actor.centreId).where("day", "=", body.day).executeTakeFirst();
+      const existing = await trx
+        .selectFrom("cash_closings")
+        .select("id")
+        .where("centre_id", "=", actor.centreId)
+        .where("day", "=", body.day)
+        .executeTakeFirst();
       if (existing) throw conflict("already_closed", "this day is already closed");
       const day = await cashDay(trx, actor.centreId, body.day);
       const difference = body.countedCash - day.expectedCash;
       if (difference !== 0 && !body.comment) throw unprocessable("comment_required", "explain the difference between expected and counted cash");
       const closing = await trx
         .insertInto("cash_closings")
-        .values({ centre_id: actor.centreId, day: body.day, expected_cash: day.expectedCash, counted_cash: body.countedCash, difference, comment: body.comment ?? null, totals: JSON.stringify(day.totals), closed_by: actor.userId })
+        .values({
+          centre_id: actor.centreId,
+          day: body.day,
+          expected_cash: day.expectedCash,
+          counted_cash: body.countedCash,
+          difference,
+          comment: body.comment ?? null,
+          totals: JSON.stringify(day.totals),
+          closed_by: actor.userId,
+        })
         .returning(["id", "day", "expected_cash as expectedCash", "counted_cash as countedCash", "difference", "comment"])
         .executeTakeFirstOrThrow();
-      await recordFinancialEvents(trx, [{ centreId: actor.centreId, type: "cash_closed", amount: difference, userId: actor.userId, payload: { day: body.day, expected: day.expectedCash, counted: body.countedCash, totals: day.totals } }]);
-      await writeAudit(trx, { centreId: actor.centreId, userId: actor.userId, action: "cash.closed", objectType: "cash_closing", objectId: closing.id, after: closing, reason: body.comment ?? null });
+      await recordFinancialEvents(trx, [
+        {
+          centreId: actor.centreId,
+          type: "cash_closed",
+          amount: difference,
+          userId: actor.userId,
+          payload: { day: body.day, expected: day.expectedCash, counted: body.countedCash, totals: day.totals },
+        },
+      ]);
+      await writeAudit(trx, {
+        centreId: actor.centreId,
+        userId: actor.userId,
+        action: "cash.closed",
+        objectType: "cash_closing",
+        objectId: closing.id,
+        after: closing,
+        reason: body.comment ?? null,
+      });
       return closing;
     });
     return reply.status(201).send(result);
@@ -55,7 +92,16 @@ export const cashRoutes: FastifyPluginAsync = async (app) => {
     db
       .selectFrom("cash_closings")
       .leftJoin("users", "users.id", "cash_closings.closed_by")
-      .select(["cash_closings.id", "cash_closings.day", "cash_closings.expected_cash as expectedCash", "cash_closings.counted_cash as countedCash", "cash_closings.difference", "cash_closings.comment", "cash_closings.closed_at as closedAt", "users.full_name as closedBy"])
+      .select([
+        "cash_closings.id",
+        "cash_closings.day",
+        "cash_closings.expected_cash as expectedCash",
+        "cash_closings.counted_cash as countedCash",
+        "cash_closings.difference",
+        "cash_closings.comment",
+        "cash_closings.closed_at as closedAt",
+        "users.full_name as closedBy",
+      ])
       .where("cash_closings.centre_id", "=", request.user!.centreId)
       .orderBy("cash_closings.day", "desc")
       .limit(120)

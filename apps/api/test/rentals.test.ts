@@ -17,14 +17,57 @@ beforeAll(async () => {
   accountant = await h.login("compta@loc.tn");
   ids.roomA = (await h.call("POST", "/api/catalogue/rooms", admin, { name: "Salle A", capacity: 20 })).body.id;
   ids.roomB = (await h.call("POST", "/api/catalogue/rooms", admin, { name: "Salle B", capacity: 12 })).body.id;
-  await h.call("PUT", `/api/rooms/${ids.roomA}/rates`, admin, { rates: [{ unit: "hour", amount: 25_000 }, { unit: "day", amount: 150_000 }, { unit: "month", amount: 1_800_000 }] });
-  await h.call("PUT", `/api/rooms/${ids.roomB}/rates`, admin, { rates: [{ unit: "hour", amount: 18_000 }, { unit: "month", amount: 1_300_000 }] });
-  ids.medis = (await h.call("POST", "/api/renters", secretariat, { name: "Société Medis", company: "Medis SARL", phone: "71 555 000", email: "contact@medis.example" })).body.id;
+  await h.call("PUT", `/api/rooms/${ids.roomA}/rates`, admin, {
+    rates: [
+      { unit: "hour", amount: 25_000 },
+      { unit: "day", amount: 150_000 },
+      { unit: "month", amount: 1_800_000 },
+    ],
+  });
+  await h.call("PUT", `/api/rooms/${ids.roomB}/rates`, admin, {
+    rates: [
+      { unit: "hour", amount: 18_000 },
+      { unit: "month", amount: 1_300_000 },
+    ],
+  });
+  ids.medis = (
+    await h.call("POST", "/api/renters", secretariat, { name: "Société Medis", company: "Medis SARL", phone: "71 555 000", email: "contact@medis.example" })
+  ).body.id;
   ids.amal = (await h.call("POST", "/api/renters", secretariat, { name: "Association Al Amal" })).body.id;
   const subject = (await h.call("POST", "/api/catalogue/subjects", admin, { name: "Physique" })).body.id;
-  const teacher = (await h.call("POST", "/api/instructors", admin, { firstName: "Rami", lastName: "Dridi", kind: "teacher", employment: "contractor", subjectIds: [], availability: [] })).body.id;
-  const study = (await h.call("POST", "/api/catalogue/studies", admin, { subjectId: subject, name: "Physique 3e", billingMode: "monthly", price: 35_000, absenceBilled: true, sessionsPerWeek: 1, capacity: 10 })).body.id;
-  ids.group = (await h.call("POST", "/api/groups", secretariat, { kind: "study", studyId: study, name: "Groupe B", instructorId: teacher, roomId: ids.roomA, startDate: "2026-10-01", endDate: "2026-12-31", slots: [{ weekday: 4, startTime: "16:00", endTime: "18:00" }] })).body.id;
+  const teacher = (
+    await h.call("POST", "/api/instructors", admin, {
+      firstName: "Rami",
+      lastName: "Dridi",
+      kind: "teacher",
+      employment: "contractor",
+      subjectIds: [],
+      availability: [],
+    })
+  ).body.id;
+  const study = (
+    await h.call("POST", "/api/catalogue/studies", admin, {
+      subjectId: subject,
+      name: "Physique 3e",
+      billingMode: "monthly",
+      price: 35_000,
+      absenceBilled: true,
+      sessionsPerWeek: 1,
+      capacity: 10,
+    })
+  ).body.id;
+  ids.group = (
+    await h.call("POST", "/api/groups", secretariat, {
+      kind: "study",
+      studyId: study,
+      name: "Groupe B",
+      instructorId: teacher,
+      roomId: ids.roomA,
+      startDate: "2026-10-01",
+      endDate: "2026-12-31",
+      slots: [{ weekday: 4, startTime: "16:00", endTime: "18:00" }],
+    })
+  ).body.id;
   await h.call("POST", `/api/groups/${ids.group}/sessions/generate`, secretariat, { from: "2026-11-01", to: "2026-11-30" });
 });
 
@@ -88,7 +131,12 @@ describe("rentals", () => {
   });
 
   it("refuses a class session in a room that is rented", async () => {
-    const res = await h.call("POST", `/api/groups/${ids.group}/sessions`, secretariat, { date: "2026-11-16", startTime: "09:00", endTime: "10:00", roomId: ids.roomB });
+    const res = await h.call("POST", `/api/groups/${ids.group}/sessions`, secretariat, {
+      date: "2026-11-16",
+      startTime: "09:00",
+      endTime: "10:00",
+      roomId: ids.roomB,
+    });
     expect(res.status).toBe(409);
     expect(res.body.details.conflicts[0].description).toBe("room rented to Association Al Amal");
   });
@@ -107,7 +155,12 @@ describe("rentals", () => {
   it("cancels a rental, frees its future slots and keeps money already received", async () => {
     const cancelled = await h.call("POST", `/api/rentals/${ids.hourly}/cancel`, secretariat, { reason: "Événement reporté" });
     expect(cancelled.body.cancelledInstallments).toBe(1);
-    const free = await h.call("POST", `/api/groups/${ids.group}/sessions`, secretariat, { date: "2026-11-05", startTime: "16:30", endTime: "17:30", roomId: ids.roomB });
+    const free = await h.call("POST", `/api/groups/${ids.group}/sessions`, secretariat, {
+      date: "2026-11-05",
+      startTime: "16:30",
+      endTime: "17:30",
+      roomId: ids.roomB,
+    });
     expect(free.status).toBe(409);
     expect(free.body.details.conflicts.map((c: { type: string }) => c.type)).toEqual(["group"]);
     const totals = (await h.call("GET", `/api/rentals/${ids.hourly}`, accountant)).body.renterTotals;

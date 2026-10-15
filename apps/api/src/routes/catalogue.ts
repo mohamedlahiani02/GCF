@@ -62,7 +62,10 @@ const sessionCreate = z
   .object(sessionFields)
   .strict()
   .refine((s) => s.endDate >= s.startDate, "the end date cannot be before the start date");
-const sessionUpdate = z.object({ ...sessionFields, status: z.enum(["open", "closed"]) }).partial().strict();
+const sessionUpdate = z
+  .object({ ...sessionFields, status: z.enum(["open", "closed"]) })
+  .partial()
+  .strict();
 
 function toPlanInput(items: z.infer<typeof planItem>[]): PlanItemInput[] {
   return items.map((i) => ({
@@ -117,8 +120,19 @@ export const catalogueRoutes: FastifyPluginAsync = async (app) => {
     const actor = request.user!;
     const body = subjectBody.parse(request.body);
     const row = await db.transaction().execute(async (trx) => {
-      const created = await trx.insertInto("subjects").values({ centre_id: actor.centreId, name: body.name }).returning(["id", "name", "status"]).executeTakeFirstOrThrow();
-      await writeAudit(trx, { centreId: actor.centreId, userId: actor.userId, action: "subject.created", objectType: "subject", objectId: created.id, after: created });
+      const created = await trx
+        .insertInto("subjects")
+        .values({ centre_id: actor.centreId, name: body.name })
+        .returning(["id", "name", "status"])
+        .executeTakeFirstOrThrow();
+      await writeAudit(trx, {
+        centreId: actor.centreId,
+        userId: actor.userId,
+        action: "subject.created",
+        objectType: "subject",
+        objectId: created.id,
+        after: created,
+      });
       return created;
     });
     return reply.status(201).send(row);
@@ -139,7 +153,14 @@ export const catalogueRoutes: FastifyPluginAsync = async (app) => {
         .values({ centre_id: actor.centreId, name: body.name, capacity: body.capacity, equipment: body.equipment ?? null })
         .returning(["id", "name", "capacity", "equipment", "status"])
         .executeTakeFirstOrThrow();
-      await writeAudit(trx, { centreId: actor.centreId, userId: actor.userId, action: "room.created", objectType: "room", objectId: created.id, after: created });
+      await writeAudit(trx, {
+        centreId: actor.centreId,
+        userId: actor.userId,
+        action: "room.created",
+        objectType: "room",
+        objectId: created.id,
+        after: created,
+      });
       return created;
     });
     return reply.status(201).send(row);
@@ -147,7 +168,17 @@ export const catalogueRoutes: FastifyPluginAsync = async (app) => {
 
   /* Private studies */
 
-  const studyColumns = ["id", "subject_id as subjectId", "name", "billing_mode as billingMode", "price", "absence_billed as absenceBilled", "sessions_per_week as sessionsPerWeek", "capacity", "status"] as const;
+  const studyColumns = [
+    "id",
+    "subject_id as subjectId",
+    "name",
+    "billing_mode as billingMode",
+    "price",
+    "absence_billed as absenceBilled",
+    "sessions_per_week as sessionsPerWeek",
+    "capacity",
+    "status",
+  ] as const;
 
   app.get("/studies", { preHandler: read }, async (request) => {
     return db
@@ -165,10 +196,7 @@ export const catalogueRoutes: FastifyPluginAsync = async (app) => {
         "studies.capacity",
         "studies.status",
       ])
-      .select((eb) => [
-        eb.fn.count<number>("groups.id").distinct().as("groupCount"),
-        eb.fn.count<number>("enrolments.id").distinct().as("studentCount"),
-      ])
+      .select((eb) => [eb.fn.count<number>("groups.id").distinct().as("groupCount"), eb.fn.count<number>("enrolments.id").distinct().as("studentCount")])
       .where("studies.centre_id", "=", request.user!.centreId)
       .groupBy("studies.id")
       .orderBy("studies.name")
@@ -196,7 +224,14 @@ export const catalogueRoutes: FastifyPluginAsync = async (app) => {
         })
         .returning(studyColumns)
         .executeTakeFirstOrThrow();
-      await writeAudit(trx, { centreId: actor.centreId, userId: actor.userId, action: "study.created", objectType: "study", objectId: created.id, after: created });
+      await writeAudit(trx, {
+        centreId: actor.centreId,
+        userId: actor.userId,
+        action: "study.created",
+        objectType: "study",
+        objectId: created.id,
+        after: created,
+      });
       return created;
     });
     return reply.status(201).send(row);
@@ -207,14 +242,30 @@ export const catalogueRoutes: FastifyPluginAsync = async (app) => {
     const { id } = idParam.parse(request.params);
     const body = studyUpdate.parse(request.body);
     return db.transaction().execute(async (trx) => {
-      const before = await trx.selectFrom("studies").select(studyColumns).where("id", "=", id).where("centre_id", "=", actor.centreId).forUpdate().executeTakeFirst();
+      const before = await trx
+        .selectFrom("studies")
+        .select(studyColumns)
+        .where("id", "=", id)
+        .where("centre_id", "=", actor.centreId)
+        .forUpdate()
+        .executeTakeFirst();
       if (!before) throw notFound("study");
       if (body.subjectId) {
-        const subject = await trx.selectFrom("subjects").select("id").where("id", "=", body.subjectId).where("centre_id", "=", actor.centreId).executeTakeFirst();
+        const subject = await trx
+          .selectFrom("subjects")
+          .select("id")
+          .where("id", "=", body.subjectId)
+          .where("centre_id", "=", actor.centreId)
+          .executeTakeFirst();
         if (!subject) throw notFound("subject");
       }
       if (body.billingMode && body.billingMode !== before.billingMode) {
-        const used = await trx.selectFrom("enrolments").innerJoin("groups", "groups.id", "enrolments.group_id").select("enrolments.id").where("groups.study_id", "=", id).executeTakeFirst();
+        const used = await trx
+          .selectFrom("enrolments")
+          .innerJoin("groups", "groups.id", "enrolments.group_id")
+          .select("enrolments.id")
+          .where("groups.study_id", "=", id)
+          .executeTakeFirst();
         if (used) throw conflict("billing_mode_locked", "the billing mode cannot change once students are enrolled");
       }
       const after = await trx
@@ -244,16 +295,40 @@ export const catalogueRoutes: FastifyPluginAsync = async (app) => {
     return db.transaction().execute(async (trx) => {
       const active = await trx.selectFrom("groups").select("id").where("study_id", "=", id).where("status", "=", "active").executeTakeFirst();
       if (active) throw conflict("has_active_groups", "archive the groups of this study first");
-      const after = await trx.updateTable("studies").set({ status: "archived", updated_at: new Date() }).where("id", "=", id).where("centre_id", "=", actor.centreId).returning(studyColumns).executeTakeFirst();
+      const after = await trx
+        .updateTable("studies")
+        .set({ status: "archived", updated_at: new Date() })
+        .where("id", "=", id)
+        .where("centre_id", "=", actor.centreId)
+        .returning(studyColumns)
+        .executeTakeFirst();
       if (!after) throw notFound("study");
-      await writeAudit(trx, { centreId: actor.centreId, userId: actor.userId, action: "study.archived", objectType: "study", objectId: id, after: { status: "archived" }, reason });
+      await writeAudit(trx, {
+        centreId: actor.centreId,
+        userId: actor.userId,
+        action: "study.archived",
+        objectType: "study",
+        objectId: id,
+        after: { status: "archived" },
+        reason,
+      });
       return after;
     });
   });
 
   /* Trainings, payment plans and sessions */
 
-  const trainingColumns = ["id", "title", "category", "description", "duration_hours as durationHours", "price", "capacity", "payment_modes as paymentModes", "status"] as const;
+  const trainingColumns = [
+    "id",
+    "title",
+    "category",
+    "description",
+    "duration_hours as durationHours",
+    "price",
+    "capacity",
+    "payment_modes as paymentModes",
+    "status",
+  ] as const;
 
   app.get("/trainings", { preHandler: read }, async (request) => {
     const rows = await db
@@ -279,14 +354,37 @@ export const catalogueRoutes: FastifyPluginAsync = async (app) => {
 
   app.get("/trainings/:id", { preHandler: read }, async (request) => {
     const { id } = idParam.parse(request.params);
-    const training = await db.selectFrom("trainings").select(trainingColumns).where("id", "=", id).where("centre_id", "=", request.user!.centreId).executeTakeFirst();
+    const training = await db
+      .selectFrom("trainings")
+      .select(trainingColumns)
+      .where("id", "=", id)
+      .where("centre_id", "=", request.user!.centreId)
+      .executeTakeFirst();
     if (!training) throw notFound("training");
-    const plans = await db.selectFrom("payment_plans").select(["id", "name", "is_default as isDefault", "status"]).where("training_id", "=", id).orderBy("name").execute();
+    const plans = await db
+      .selectFrom("payment_plans")
+      .select(["id", "name", "is_default as isDefault", "status"])
+      .where("training_id", "=", id)
+      .orderBy("name")
+      .execute();
     const items = plans.length
       ? await db
           .selectFrom("payment_plan_items")
-          .select(["plan_id as planId", "position", "label", "value_kind as valueKind", "value", "due_kind as dueKind", "due_offset_days as dueOffsetDays", "due_date as dueDate"])
-          .where("plan_id", "in", plans.map((p) => p.id))
+          .select([
+            "plan_id as planId",
+            "position",
+            "label",
+            "value_kind as valueKind",
+            "value",
+            "due_kind as dueKind",
+            "due_offset_days as dueOffsetDays",
+            "due_date as dueDate",
+          ])
+          .where(
+            "plan_id",
+            "in",
+            plans.map((p) => p.id),
+          )
           .orderBy("plan_id")
           .orderBy("position")
           .execute()
@@ -325,7 +423,14 @@ export const catalogueRoutes: FastifyPluginAsync = async (app) => {
         })
         .returning(trainingColumns)
         .executeTakeFirstOrThrow();
-      await writeAudit(trx, { centreId: actor.centreId, userId: actor.userId, action: "training.created", objectType: "training", objectId: created.id, after: created });
+      await writeAudit(trx, {
+        centreId: actor.centreId,
+        userId: actor.userId,
+        action: "training.created",
+        objectType: "training",
+        objectId: created.id,
+        after: created,
+      });
       return created;
     });
     return reply.status(201).send(row);
@@ -336,7 +441,13 @@ export const catalogueRoutes: FastifyPluginAsync = async (app) => {
     const { id } = idParam.parse(request.params);
     const body = trainingUpdate.parse(request.body);
     return db.transaction().execute(async (trx) => {
-      const before = await trx.selectFrom("trainings").select(trainingColumns).where("id", "=", id).where("centre_id", "=", actor.centreId).forUpdate().executeTakeFirst();
+      const before = await trx
+        .selectFrom("trainings")
+        .select(trainingColumns)
+        .where("id", "=", id)
+        .where("centre_id", "=", actor.centreId)
+        .forUpdate()
+        .executeTakeFirst();
       if (!before) throw notFound("training");
       if (body.price !== undefined && body.price !== before.price) {
         // Every active plan must still add up to the new price.
@@ -366,13 +477,26 @@ export const catalogueRoutes: FastifyPluginAsync = async (app) => {
         .where("id", "=", id)
         .returning(trainingColumns)
         .executeTakeFirstOrThrow();
-      await writeAudit(trx, { centreId: actor.centreId, userId: actor.userId, action: "training.updated", objectType: "training", objectId: id, before, after });
+      await writeAudit(trx, {
+        centreId: actor.centreId,
+        userId: actor.userId,
+        action: "training.updated",
+        objectType: "training",
+        objectId: id,
+        before,
+        after,
+      });
       return after;
     });
   });
 
   const loadTraining = async (id: string, centreId: string) => {
-    const training = await db.selectFrom("trainings").select(["id", "price", "payment_modes"]).where("id", "=", id).where("centre_id", "=", centreId).executeTakeFirst();
+    const training = await db
+      .selectFrom("trainings")
+      .select(["id", "price", "payment_modes"])
+      .where("id", "=", id)
+      .where("centre_id", "=", centreId)
+      .executeTakeFirst();
     if (!training) throw notFound("training");
     return training;
   };
@@ -409,7 +533,14 @@ export const catalogueRoutes: FastifyPluginAsync = async (app) => {
         .returning(["id", "name", "is_default as isDefault", "status"])
         .executeTakeFirstOrThrow();
       await savePlanItems(trx, created.id, items);
-      await writeAudit(trx, { centreId: actor.centreId, userId: actor.userId, action: "payment_plan.created", objectType: "payment_plan", objectId: created.id, after: { ...created, items } });
+      await writeAudit(trx, {
+        centreId: actor.centreId,
+        userId: actor.userId,
+        action: "payment_plan.created",
+        objectType: "payment_plan",
+        objectId: created.id,
+        after: { ...created, items },
+      });
       return created;
     });
     return reply.status(201).send(plan);
@@ -441,7 +572,14 @@ export const catalogueRoutes: FastifyPluginAsync = async (app) => {
       await trx.updateTable("payment_plans").set({ name: body.name, is_default: body.isDefault }).where("id", "=", id).execute();
       await trx.deleteFrom("payment_plan_items").where("plan_id", "=", id).execute();
       await savePlanItems(trx, id, items);
-      await writeAudit(trx, { centreId: actor.centreId, userId: actor.userId, action: "payment_plan.updated", objectType: "payment_plan", objectId: id, after: { name: body.name, isDefault: body.isDefault, items } });
+      await writeAudit(trx, {
+        centreId: actor.centreId,
+        userId: actor.userId,
+        action: "payment_plan.updated",
+        objectType: "payment_plan",
+        objectId: id,
+        after: { name: body.name, isDefault: body.isDefault, items },
+      });
       return { id, name: body.name, isDefault: body.isDefault, status: "active" };
     });
   });
@@ -451,9 +589,22 @@ export const catalogueRoutes: FastifyPluginAsync = async (app) => {
     const { id } = idParam.parse(request.params);
     const { reason } = archiveBody.parse(request.body);
     return db.transaction().execute(async (trx) => {
-      const row = await trx.updateTable("payment_plans").set({ status: "archived", is_default: false }).where("id", "=", id).where("centre_id", "=", actor.centreId).returning(["id", "name", "is_default as isDefault", "status"]).executeTakeFirst();
+      const row = await trx
+        .updateTable("payment_plans")
+        .set({ status: "archived", is_default: false })
+        .where("id", "=", id)
+        .where("centre_id", "=", actor.centreId)
+        .returning(["id", "name", "is_default as isDefault", "status"])
+        .executeTakeFirst();
       if (!row) throw notFound("payment plan");
-      await writeAudit(trx, { centreId: actor.centreId, userId: actor.userId, action: "payment_plan.archived", objectType: "payment_plan", objectId: id, reason });
+      await writeAudit(trx, {
+        centreId: actor.centreId,
+        userId: actor.userId,
+        action: "payment_plan.archived",
+        objectType: "payment_plan",
+        objectId: id,
+        reason,
+      });
       return row;
     });
   });
@@ -469,7 +620,14 @@ export const catalogueRoutes: FastifyPluginAsync = async (app) => {
         .values({ centre_id: actor.centreId, training_id: id, name: body.name, start_date: body.startDate, end_date: body.endDate })
         .returning(["id", "name", "start_date as startDate", "end_date as endDate", "status"])
         .executeTakeFirstOrThrow();
-      await writeAudit(trx, { centreId: actor.centreId, userId: actor.userId, action: "training_session.created", objectType: "training_session", objectId: created.id, after: created });
+      await writeAudit(trx, {
+        centreId: actor.centreId,
+        userId: actor.userId,
+        action: "training_session.created",
+        objectType: "training_session",
+        objectId: created.id,
+        after: created,
+      });
       return created;
     });
     return reply.status(201).send(row);
@@ -480,7 +638,13 @@ export const catalogueRoutes: FastifyPluginAsync = async (app) => {
     const { id } = idParam.parse(request.params);
     const body = sessionUpdate.parse(request.body);
     return db.transaction().execute(async (trx) => {
-      const before = await trx.selectFrom("training_sessions").select(["id", "name", "start_date as startDate", "end_date as endDate", "status"]).where("id", "=", id).where("centre_id", "=", actor.centreId).forUpdate().executeTakeFirst();
+      const before = await trx
+        .selectFrom("training_sessions")
+        .select(["id", "name", "start_date as startDate", "end_date as endDate", "status"])
+        .where("id", "=", id)
+        .where("centre_id", "=", actor.centreId)
+        .forUpdate()
+        .executeTakeFirst();
       if (!before) throw notFound("training session");
       const startDate = body.startDate ?? before.startDate;
       const endDate = body.endDate ?? before.endDate;
@@ -491,7 +655,15 @@ export const catalogueRoutes: FastifyPluginAsync = async (app) => {
         .where("id", "=", id)
         .returning(["id", "name", "start_date as startDate", "end_date as endDate", "status"])
         .executeTakeFirstOrThrow();
-      await writeAudit(trx, { centreId: actor.centreId, userId: actor.userId, action: "training_session.updated", objectType: "training_session", objectId: id, before, after });
+      await writeAudit(trx, {
+        centreId: actor.centreId,
+        userId: actor.userId,
+        action: "training_session.updated",
+        objectType: "training_session",
+        objectId: id,
+        before,
+        after,
+      });
       return after;
     });
   });

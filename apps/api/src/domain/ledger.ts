@@ -71,7 +71,11 @@ export async function installmentBalances(
 ): Promise<InstallmentBalance[]> {
   const { today, graceDays } = await centreClock(db, centreId);
   const payer = filter.payer ?? (filter.studentId ? studentPayer(filter.studentId) : undefined);
-  const paidByInstallment = db.selectFrom("effective_allocations").select(["installment_id", sql<number>`sum(amount)::bigint`.as("paid")]).groupBy("installment_id").as("p");
+  const paidByInstallment = db
+    .selectFrom("effective_allocations")
+    .select(["installment_id", sql<number>`sum(amount)::bigint`.as("paid")])
+    .groupBy("installment_id")
+    .as("p");
   const rows = await db
     .selectFrom("installments")
     .leftJoin("enrolments", "enrolments.id", "installments.enrolment_id")
@@ -97,7 +101,9 @@ export async function installmentBalances(
     .$if(payer?.kind === "renter", (qb) => qb.where("rentals.renter_id", "=", payer!.id))
     .$if(filter.enrolmentId !== undefined, (qb) => qb.where("installments.enrolment_id", "=", filter.enrolmentId!))
     .$if(filter.rentalId !== undefined, (qb) => qb.where("installments.rental_id", "=", filter.rentalId!))
-    .$if(filter.installmentIds !== undefined, (qb) => qb.where("installments.id", "in", filter.installmentIds!.length ? filter.installmentIds! : ["00000000-0000-0000-0000-000000000000"]))
+    .$if(filter.installmentIds !== undefined, (qb) =>
+      qb.where("installments.id", "in", filter.installmentIds!.length ? filter.installmentIds! : ["00000000-0000-0000-0000-000000000000"]),
+    )
     .orderBy("installments.due_date")
     .orderBy("installments.created_at")
     .execute();
@@ -180,7 +186,15 @@ export async function planAllocations(
     const discountUse = await db
       .selectFrom("installments")
       .innerJoin("enrolments", "enrolments.id", "installments.enrolment_id")
-      .leftJoin(db.selectFrom("allocations").select(["discount_id", sql<number>`sum(amount)::bigint`.as("used")]).groupBy("discount_id").as("u"), "u.discount_id", "installments.id")
+      .leftJoin(
+        db
+          .selectFrom("allocations")
+          .select(["discount_id", sql<number>`sum(amount)::bigint`.as("used")])
+          .groupBy("discount_id")
+          .as("u"),
+        "u.discount_id",
+        "installments.id",
+      )
       .select(["installments.id", "installments.enrolment_id as enrolmentId", "installments.amount", sql<number>`coalesce(u.used, 0)`.as("used")])
       .where("enrolments.student_id", "=", payer.id)
       .where("installments.kind", "=", "discount")
@@ -207,7 +221,15 @@ export async function planAllocations(
   if (credit <= 0) return planned;
   const payments = await db
     .selectFrom("payments")
-    .leftJoin(db.selectFrom("allocations").select(["payment_id", sql<number>`sum(amount)::bigint`.as("used")]).groupBy("payment_id").as("u"), "u.payment_id", "payments.id")
+    .leftJoin(
+      db
+        .selectFrom("allocations")
+        .select(["payment_id", sql<number>`sum(amount)::bigint`.as("used")])
+        .groupBy("payment_id")
+        .as("u"),
+      "u.payment_id",
+      "payments.id",
+    )
     .select(["payments.id", "payments.amount", sql<number>`coalesce(u.used, 0)`.as("used")])
     .where(payer.kind === "student" ? "payments.student_id" : "payments.renter_id", "=", payer.id)
     .where("payments.kind", "=", "payment")

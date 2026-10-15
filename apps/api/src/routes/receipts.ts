@@ -69,8 +69,19 @@ export const receiptRoutes: FastifyPluginAsync = async (app) => {
       .where("centre_id", "=", request.user!.centreId)
       .executeTakeFirst();
     if (!receipt) throw notFound("receipt");
-    const prints = await db.selectFrom("receipt_prints").leftJoin("users", "users.id", "receipt_prints.printed_by").select(["receipt_prints.printed_at as printedAt", "receipt_prints.duplicate", "users.full_name as printedBy"]).where("receipt_id", "=", id).orderBy("printed_at").execute();
-    const dispatches = await db.selectFrom("mail_dispatches").select(["sent_at as sentAt", "recipient", "status", "error"]).where("receipt_id", "=", id).orderBy("sent_at").execute();
+    const prints = await db
+      .selectFrom("receipt_prints")
+      .leftJoin("users", "users.id", "receipt_prints.printed_by")
+      .select(["receipt_prints.printed_at as printedAt", "receipt_prints.duplicate", "users.full_name as printedBy"])
+      .where("receipt_id", "=", id)
+      .orderBy("printed_at")
+      .execute();
+    const dispatches = await db
+      .selectFrom("mail_dispatches")
+      .select(["sent_at as sentAt", "recipient", "status", "error"])
+      .where("receipt_id", "=", id)
+      .orderBy("sent_at")
+      .execute();
     const cancellation = await db.selectFrom("receipts").select(["id", "number"]).where("cancels_receipt_id", "=", id).executeTakeFirst();
     return { ...receipt, immutable: true, cancelledBy: cancellation ?? null, prints, dispatches };
   });
@@ -80,7 +91,12 @@ export const receiptRoutes: FastifyPluginAsync = async (app) => {
     const actor = request.user!;
     const { id } = idParam.parse(request.params);
     const { format } = pdfQuery.parse(request.query);
-    const receipt = await db.selectFrom("receipts").select(["id", "number", "snapshot", "pdf"]).where("id", "=", id).where("centre_id", "=", actor.centreId).executeTakeFirst();
+    const receipt = await db
+      .selectFrom("receipts")
+      .select(["id", "number", "snapshot", "pdf"])
+      .where("id", "=", id)
+      .where("centre_id", "=", actor.centreId)
+      .executeTakeFirst();
     if (!receipt) throw notFound("receipt");
     const printed = await db.selectFrom("receipt_prints").select("id").where("receipt_id", "=", id).executeTakeFirst();
     const duplicate = !!printed;
@@ -120,7 +136,9 @@ export const receiptRoutes: FastifyPluginAsync = async (app) => {
       .where("receipts.centre_id", "=", actor.centreId)
       .executeTakeFirst();
     if (!receipt) throw notFound("receipt");
-    const to = body.to ?? (receipt.renterId ? receipt.renterEmail : (receipt.receiptEmail ?? (receipt.isMinor ? receipt.guardianEmail : receipt.email) ?? receipt.email));
+    const to =
+      body.to ??
+      (receipt.renterId ? receipt.renterEmail : (receipt.receiptEmail ?? (receipt.isMinor ? receipt.guardianEmail : receipt.email) ?? receipt.email));
     if (!to) throw new HttpError(422, "no_recipient", "no e-mail address is known for this payer");
     let status: "sent" | "failed" = "sent";
     let error: string | null = null;
@@ -136,8 +154,28 @@ export const receiptRoutes: FastifyPluginAsync = async (app) => {
       error = sendError instanceof Error ? sendError.message.slice(0, 500) : "unknown error";
       request.log.warn({ err: sendError, receipt: receipt.number }, "receipt e-mail failed");
     }
-    await db.insertInto("mail_dispatches").values({ centre_id: actor.centreId, kind: "receipt", receipt_id: id, student_id: receipt.studentId, renter_id: receipt.renterId, recipient: to, status, error, sent_by: actor.userId }).execute();
-    await writeAudit(db, { centreId: actor.centreId, userId: actor.userId, action: `receipt.mail_${status}`, objectType: "receipt", objectId: id, after: { to } });
+    await db
+      .insertInto("mail_dispatches")
+      .values({
+        centre_id: actor.centreId,
+        kind: "receipt",
+        receipt_id: id,
+        student_id: receipt.studentId,
+        renter_id: receipt.renterId,
+        recipient: to,
+        status,
+        error,
+        sent_by: actor.userId,
+      })
+      .execute();
+    await writeAudit(db, {
+      centreId: actor.centreId,
+      userId: actor.userId,
+      action: `receipt.mail_${status}`,
+      objectType: "receipt",
+      objectId: id,
+      after: { to },
+    });
     return { id, recipient: to, status, error };
   });
 };

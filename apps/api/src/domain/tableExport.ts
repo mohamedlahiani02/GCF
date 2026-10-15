@@ -96,20 +96,40 @@ export function toPdf(table: ReportTable): Promise<Buffer> {
       doc.text(cell, x + 2, y + 4, { width: widths[i]! - 4, align, lineBreak: false, ellipsis: true });
       x += widths[i]!;
     });
-    doc.moveTo(margin, y + rowHeight).lineTo(margin + width, y + rowHeight).lineWidth(0.3).stroke();
+    doc
+      .moveTo(margin, y + rowHeight)
+      .lineTo(margin + width, y + rowHeight)
+      .lineWidth(0.3)
+      .stroke();
     y += rowHeight;
   };
   const kinds = table.columns.map((c) => c.kind);
-  drawRow(table.columns.map((c) => c.label), true, kinds);
+  drawRow(
+    table.columns.map((c) => c.label),
+    true,
+    kinds,
+  );
   for (const row of table.rows) {
     if (y + rowHeight > doc.page.height - margin) {
       doc.addPage();
       y = margin;
-      drawRow(table.columns.map((c) => c.label), true, kinds);
+      drawRow(
+        table.columns.map((c) => c.label),
+        true,
+        kinds,
+      );
     }
-    drawRow(table.columns.map((c) => display(row[c.key] ?? null, c.kind)), false, kinds);
+    drawRow(
+      table.columns.map((c) => display(row[c.key] ?? null, c.kind)),
+      false,
+      kinds,
+    );
   }
-  if (table.rows.length === 0) doc.font("Helvetica").fontSize(9).text("Aucune donnée pour cette période.", margin, y + 6);
+  if (table.rows.length === 0)
+    doc
+      .font("Helvetica")
+      .fontSize(9)
+      .text("Aucune donnée pour cette période.", margin, y + 6);
   doc.end();
   return done;
 }

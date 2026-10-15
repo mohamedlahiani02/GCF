@@ -21,7 +21,13 @@ describe("dates for schedules", () => {
 
 describe("payment plans", () => {
   it("splits 40 / 30 / 30 exactly", () => {
-    const items = [4000, 3000, 3000].map((value, i) => ({ label: `T${i + 1}`, valueKind: "percent" as const, value, dueKind: "relative" as const, dueOffsetDays: i * 21 }));
+    const items = [4000, 3000, 3000].map((value, i) => ({
+      label: `T${i + 1}`,
+      valueKind: "percent" as const,
+      value,
+      dueKind: "relative" as const,
+      dueOffsetDays: i * 21,
+    }));
     expect(planAmounts(450_000, items)).toEqual([180_000, 135_000, 135_000]);
   });
 

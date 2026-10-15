@@ -73,7 +73,8 @@ export function rentalSchedule(
   const label = `Location ${roomName}`;
   if (mode === "full") return [{ label: `${label}, paiement intégral`, amount: pricing.total, dueDate: today }];
   if (mode === "deposit_balance") {
-    if (deposit === undefined || deposit <= 0 || deposit >= pricing.total) throw unprocessable("invalid_deposit", "the deposit must be more than zero and less than the total");
+    if (deposit === undefined || deposit <= 0 || deposit >= pricing.total)
+      throw unprocessable("invalid_deposit", "the deposit must be more than zero and less than the total");
     return [
       { label: `${label}, acompte`, amount: deposit, dueDate: today },
       { label: `${label}, solde`, amount: pricing.total - deposit, dueDate: firstDay > today ? firstDay : today },

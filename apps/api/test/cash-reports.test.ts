@@ -19,12 +19,50 @@ beforeAll(async () => {
   accountant = await h.login("compta@cash.tn");
   today = (await sql<{ d: string }>`select to_char(now() at time zone 'Africa/Tunis', 'YYYY-MM-DD') as d`.execute(h.db)).rows[0]!.d;
   const subject = (await h.call("POST", "/api/catalogue/subjects", admin, { name: "Français" })).body.id;
-  const teacher = (await h.call("POST", "/api/instructors", admin, { firstName: "Ines", lastName: "Gharbi", kind: "teacher", employment: "salaried", subjectIds: [], availability: [] })).body.id;
-  const study = (await h.call("POST", "/api/catalogue/studies", admin, { subjectId: subject, name: "Français", billingMode: "monthly", price: 40_000, absenceBilled: true, sessionsPerWeek: 1, capacity: 10 })).body.id;
-  ids.group = (await h.call("POST", "/api/groups", secretariat, { kind: "study", studyId: study, name: "Français A", instructorId: teacher, startDate: "2026-09-01", endDate: "2026-12-31", slots: [] })).body.id;
-  for (const [key, name] of [["a", "Amira"], ["b", "Omar"]] as const) {
+  const teacher = (
+    await h.call("POST", "/api/instructors", admin, {
+      firstName: "Ines",
+      lastName: "Gharbi",
+      kind: "teacher",
+      employment: "salaried",
+      subjectIds: [],
+      availability: [],
+    })
+  ).body.id;
+  const study = (
+    await h.call("POST", "/api/catalogue/studies", admin, {
+      subjectId: subject,
+      name: "Français",
+      billingMode: "monthly",
+      price: 40_000,
+      absenceBilled: true,
+      sessionsPerWeek: 1,
+      capacity: 10,
+    })
+  ).body.id;
+  ids.group = (
+    await h.call("POST", "/api/groups", secretariat, {
+      kind: "study",
+      studyId: study,
+      name: "Français A",
+      instructorId: teacher,
+      startDate: "2026-09-01",
+      endDate: "2026-12-31",
+      slots: [],
+    })
+  ).body.id;
+  for (const [key, name] of [
+    ["a", "Amira"],
+    ["b", "Omar"],
+  ] as const) {
     ids[key] = (await h.call("POST", "/api/students", secretariat, { firstName: name, lastName: "Caisse" })).body.id;
-    await h.call("POST", "/api/enrolments", secretariat, { studentId: ids[key], groupId: ids.group, effectiveDate: "2026-09-01", paymentMode: "monthly", firstDueDate: "2026-09-05" });
+    await h.call("POST", "/api/enrolments", secretariat, {
+      studentId: ids[key],
+      groupId: ids.group,
+      effectiveDate: "2026-09-01",
+      paymentMode: "monthly",
+      firstDueDate: "2026-09-05",
+    });
   }
   await h.call("POST", "/api/payments", secretariat, { studentId: ids.a, amount: 100_000, method: "cash" });
   await h.call("POST", "/api/payments", secretariat, { studentId: ids.a, amount: 50_000, method: "card" });

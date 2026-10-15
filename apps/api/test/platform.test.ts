@@ -43,15 +43,30 @@ describe("authentication", () => {
   it("locks the account after the configured number of failures", async () => {
     await h.createUser("secretariat", "victim@test.tn");
     for (let i = 0; i < 5; i += 1) {
-      const res = await h.app.inject({ method: "POST", url: "/api/auth/login", headers: { origin: ORIGIN }, payload: { email: "victim@test.tn", password: "wrong-password" } });
+      const res = await h.app.inject({
+        method: "POST",
+        url: "/api/auth/login",
+        headers: { origin: ORIGIN },
+        payload: { email: "victim@test.tn", password: "wrong-password" },
+      });
       expect(res.statusCode).toBe(401);
     }
-    const locked = await h.app.inject({ method: "POST", url: "/api/auth/login", headers: { origin: ORIGIN }, payload: { email: "victim@test.tn", password: "correct-horse-battery" } });
+    const locked = await h.app.inject({
+      method: "POST",
+      url: "/api/auth/login",
+      headers: { origin: ORIGIN },
+      payload: { email: "victim@test.tn", password: "correct-horse-battery" },
+    });
     expect(locked.statusCode).toBe(423);
   });
 
   it("gives the same answer for an unknown e-mail", async () => {
-    const res = await h.app.inject({ method: "POST", url: "/api/auth/login", headers: { origin: ORIGIN }, payload: { email: "nobody@test.tn", password: "x" } });
+    const res = await h.app.inject({
+      method: "POST",
+      url: "/api/auth/login",
+      headers: { origin: ORIGIN },
+      payload: { email: "nobody@test.tn", password: "x" },
+    });
     expect(res.statusCode).toBe(401);
     expect(res.json().code).toBe("invalid_credentials");
   });
@@ -89,7 +104,12 @@ describe("students", () => {
   });
 
   it("requires a guardian for a student flagged as minor", async () => {
-    const missing = await h.app.inject({ method: "POST", url: "/api/students", headers: json(secretariat), payload: { firstName: "Yassine", lastName: "Mejri", isMinor: true } });
+    const missing = await h.app.inject({
+      method: "POST",
+      url: "/api/students",
+      headers: json(secretariat),
+      payload: { firstName: "Yassine", lastName: "Mejri", isMinor: true },
+    });
     expect(missing.statusCode).toBe(422);
     expect(missing.json().code).toBe("guardian_required");
 
@@ -101,7 +121,12 @@ describe("students", () => {
     });
     expect(ok.statusCode).toBe(201);
 
-    const removeGuardian = await h.app.inject({ method: "PATCH", url: `/api/students/${ok.json().id}`, headers: json(secretariat), payload: { guardianPhone: null } });
+    const removeGuardian = await h.app.inject({
+      method: "PATCH",
+      url: `/api/students/${ok.json().id}`,
+      headers: json(secretariat),
+      payload: { guardianPhone: null },
+    });
     expect(removeGuardian.statusCode).toBe(422);
 
     const minors = await h.app.inject({ method: "GET", url: "/api/students?minor=true", headers: { cookie: secretariat } });
@@ -109,9 +134,19 @@ describe("students", () => {
   });
 
   it("rejects impossible dates and unknown fields", async () => {
-    const bad = await h.app.inject({ method: "POST", url: "/api/students", headers: json(secretariat), payload: { firstName: "A", lastName: "B", birthDate: "2010-02-30" } });
+    const bad = await h.app.inject({
+      method: "POST",
+      url: "/api/students",
+      headers: json(secretariat),
+      payload: { firstName: "A", lastName: "B", birthDate: "2010-02-30" },
+    });
     expect(bad.statusCode).toBe(400);
-    const extra = await h.app.inject({ method: "POST", url: "/api/students", headers: json(secretariat), payload: { firstName: "A", lastName: "B", balance: 100 } });
+    const extra = await h.app.inject({
+      method: "POST",
+      url: "/api/students",
+      headers: json(secretariat),
+      payload: { firstName: "A", lastName: "B", balance: 100 },
+    });
     expect(extra.statusCode).toBe(400);
   });
 
@@ -129,7 +164,12 @@ describe("students", () => {
     const id = list.json().items[0].id as string;
     const noReason = await h.app.inject({ method: "POST", url: `/api/students/${id}/archive`, headers: json(secretariat), payload: {} });
     expect(noReason.statusCode).toBe(400);
-    const archived = await h.app.inject({ method: "POST", url: `/api/students/${id}/archive`, headers: json(secretariat), payload: { reason: "Abandon de la formation" } });
+    const archived = await h.app.inject({
+      method: "POST",
+      url: `/api/students/${id}/archive`,
+      headers: json(secretariat),
+      payload: { reason: "Abandon de la formation" },
+    });
     expect(archived.statusCode).toBe(200);
     expect(archived.json().status).toBe("archived");
     const entry = await h.db.selectFrom("audit_log").selectAll().where("object_id", "=", id).where("action", "=", "student.archived").executeTakeFirstOrThrow();

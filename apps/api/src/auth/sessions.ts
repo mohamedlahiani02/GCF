@@ -21,12 +21,7 @@ function hashToken(token: string): Buffer {
 }
 
 /** Creates a session and returns the opaque token for the cookie. Only its SHA-256 hash is stored. */
-export async function createSession(
-  db: Kysely<Database>,
-  userId: string,
-  policy: SessionPolicy,
-  userAgent: string | undefined,
-): Promise<string> {
+export async function createSession(db: Kysely<Database>, userId: string, policy: SessionPolicy, userAgent: string | undefined): Promise<string> {
   const token = randomBytes(32).toString("base64url");
   const absolute = new Date(Date.now() + policy.absoluteHours * 3_600_000);
   await db
@@ -40,11 +35,7 @@ export async function createSession(
  * Resolves a token to an active user and slides the idle window. Expired sessions and sessions of
  * deactivated users are deleted, so a role or activation change takes effect on the next request.
  */
-export async function resolveSession(
-  db: Kysely<Database>,
-  token: string,
-  policy: SessionPolicy,
-): Promise<SessionUser | undefined> {
+export async function resolveSession(db: Kysely<Database>, token: string, policy: SessionPolicy): Promise<SessionUser | undefined> {
   const row = await db
     .selectFrom("sessions")
     .innerJoin("users", "users.id", "sessions.user_id")
@@ -70,7 +61,11 @@ export async function resolveSession(
     await db.deleteFrom("sessions").where("id", "=", row.sessionId).execute();
     return undefined;
   }
-  await db.updateTable("sessions").set({ last_seen_at: new Date(now) }).where("id", "=", row.sessionId).execute();
+  await db
+    .updateTable("sessions")
+    .set({ last_seen_at: new Date(now) })
+    .where("id", "=", row.sessionId)
+    .execute();
   return {
     sessionId: row.sessionId,
     userId: row.userId,

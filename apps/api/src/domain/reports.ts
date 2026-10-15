@@ -34,7 +34,15 @@ async function unpaid(db: Db, centreId: string, range: ReportRange): Promise<Rep
     .leftJoin("students", "students.id", "enrolments.student_id")
     .leftJoin("rentals", "rentals.id", "installments.rental_id")
     .leftJoin("renters", "renters.id", "rentals.renter_id")
-    .leftJoin(db.selectFrom("effective_allocations").select(["installment_id", sql<number>`sum(amount)::bigint`.as("paid")]).groupBy("installment_id").as("p"), "p.installment_id", "installments.id")
+    .leftJoin(
+      db
+        .selectFrom("effective_allocations")
+        .select(["installment_id", sql<number>`sum(amount)::bigint`.as("paid")])
+        .groupBy("installment_id")
+        .as("p"),
+      "p.installment_id",
+      "installments.id",
+    )
     .select([
       "installments.id",
       sql<string>`coalesce(students.last_name || ' ' || students.first_name, renters.name)`.as("payer"),
@@ -56,7 +64,11 @@ async function unpaid(db: Db, centreId: string, range: ReportRange): Promise<Rep
   const filtered = rows
     .map((r) => {
       const paid = Number(r.paid);
-      const state = stateOf({ ...r, enrolmentId: null, rentalId: null, kind: "charge", discountStatus: null, status: "open", sessionId: null, paid, remaining: r.amount - paid }, today, graceDays);
+      const state = stateOf(
+        { ...r, enrolmentId: null, rentalId: null, kind: "charge", discountStatus: null, status: "open", sessionId: null, paid, remaining: r.amount - paid },
+        today,
+        graceDays,
+      );
       return { ...r, paid, remaining: r.amount - paid, state };
     })
     .filter((r) => r.state === "overdue" || r.state === "postponed");
@@ -71,7 +83,14 @@ async function unpaid(db: Db, centreId: string, range: ReportRange): Promise<Rep
       { key: "status", label: "Statut", kind: "text" },
       { key: "remaining", label: "Reste dû (TND)", kind: "money" },
     ],
-    rows: filtered.map((r) => ({ payer: r.payer, label: r.label, dueDate: r.dueDate, originalDueDate: r.originalDueDate, status: r.state === "overdue" ? "En retard" : "Reporté", remaining: r.remaining })),
+    rows: filtered.map((r) => ({
+      payer: r.payer,
+      label: r.label,
+      dueDate: r.dueDate,
+      originalDueDate: r.originalDueDate,
+      status: r.state === "overdue" ? "En retard" : "Reporté",
+      remaining: r.remaining,
+    })),
   };
 }
 
@@ -182,7 +201,13 @@ async function attendance(db: Db, centreId: string, range: ReportRange): Promise
   for (const g of groups) {
     const result = await groupAttendance(db, g.id, centreId, range.from, range.to);
     if (result.sessions.length === 0) continue;
-    rows.push({ group: g.name, sessions: result.sessions.length, counted: result.groupRate.numerator, expected: result.groupRate.denominator, rate: result.groupRateBasisPoints });
+    rows.push({
+      group: g.name,
+      sessions: result.sessions.length,
+      counted: result.groupRate.numerator,
+      expected: result.groupRate.denominator,
+      rate: result.groupRateBasisPoints,
+    });
   }
   return {
     title: REPORTS.attendance.title,
@@ -214,7 +239,11 @@ async function rooms(db: Db, centreId: string, range: ReportRange): Promise<Repo
   const minutes = await db
     .selectFrom("room_bookings")
     .leftJoin("rental_slots", "rental_slots.id", "room_bookings.rental_slot_id")
-    .select(["room_bookings.room_id as roomId", sql<string>`case when room_bookings.session_id is not null then 'course' else 'rental' end`.as("source"), sql<number>`sum(extract(epoch from upper(period) - lower(period)) / 60)::bigint`.as("minutes")])
+    .select([
+      "room_bookings.room_id as roomId",
+      sql<string>`case when room_bookings.session_id is not null then 'course' else 'rental' end`.as("source"),
+      sql<number>`sum(extract(epoch from upper(period) - lower(period)) / 60)::bigint`.as("minutes"),
+    ])
     .where("room_bookings.centre_id", "=", centreId)
     .where("room_bookings.active", "=", true)
     .where(sql<string>`(lower(room_bookings.period) at time zone ${timezone})::date`, ">=", range.from)
@@ -231,7 +260,13 @@ async function rooms(db: Db, centreId: string, range: ReportRange): Promise<Repo
     .where("installments.due_date", "<=", range.to)
     .groupBy("rentals.room_id")
     .execute();
-  const roomList = await db.selectFrom("rooms").select(["id", "name"]).where("centre_id", "=", centreId).where("status", "=", "active").orderBy("name").execute();
+  const roomList = await db
+    .selectFrom("rooms")
+    .select(["id", "name"])
+    .where("centre_id", "=", centreId)
+    .where("status", "=", "active")
+    .orderBy("name")
+    .execute();
   return {
     title: REPORTS.rooms.title,
     subtitle: `${subtitle(range)}. Occupation calculée sur les horaires d'ouverture du centre.`,

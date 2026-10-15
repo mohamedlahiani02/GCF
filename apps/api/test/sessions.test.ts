@@ -22,7 +22,17 @@ beforeAll(async () => {
   const teacher = (n: string) => ({ firstName: n, lastName: "Prof", kind: "teacher", employment: "contractor", subjectIds: [], availability: [] });
   ids.t1 = (await h.call("POST", "/api/instructors", admin, teacher("Rami"))).body.id;
   ids.t2 = (await h.call("POST", "/api/instructors", admin, teacher("Hela"))).body.id;
-  ids.perSession = (await h.call("POST", "/api/catalogue/studies", admin, { subjectId: subject, name: "Physique 3e", billingMode: "per_session", price: 12_000, absenceBilled: false, sessionsPerWeek: 1, capacity: 10 })).body.id;
+  ids.perSession = (
+    await h.call("POST", "/api/catalogue/studies", admin, {
+      subjectId: subject,
+      name: "Physique 3e",
+      billingMode: "per_session",
+      price: 12_000,
+      absenceBilled: false,
+      sessionsPerWeek: 1,
+      capacity: 10,
+    })
+  ).body.id;
   const group = (name: string, instructorId: string, roomId: string, weekday: number) =>
     h.call("POST", "/api/groups", secretariat, {
       kind: "study",
@@ -36,7 +46,11 @@ beforeAll(async () => {
     });
   ids.gA = (await group("Groupe A", ids.t1!, ids.roomA!, 1)).body.id;
   ids.gB = (await group("Groupe B", ids.t2!, ids.roomB!, 2)).body.id;
-  for (const [key, name] of [["s1", "Ines"], ["s2", "Omar"], ["s3", "Sarra"]] as const) {
+  for (const [key, name] of [
+    ["s1", "Ines"],
+    ["s2", "Omar"],
+    ["s3", "Sarra"],
+  ] as const) {
     ids[key] = (await h.call("POST", "/api/students", secretariat, { firstName: name, lastName: "Test" })).body.id;
   }
   for (const s of ["s1", "s2"]) {
@@ -65,13 +79,23 @@ describe("sessions", () => {
   });
 
   it("refuses an extra session in a room that is already booked", async () => {
-    const res = await h.call("POST", `/api/groups/${ids.gB}/sessions`, secretariat, { date: "2026-10-12", startTime: "17:00", endTime: "19:00", roomId: ids.roomA });
+    const res = await h.call("POST", `/api/groups/${ids.gB}/sessions`, secretariat, {
+      date: "2026-10-12",
+      startTime: "17:00",
+      endTime: "19:00",
+      roomId: ids.roomA,
+    });
     expect(res.status).toBe(409);
     expect(res.body.details.conflicts.map((c: { type: string }) => c.type)).toContain("room");
   });
 
   it("refuses to move a session onto the instructor's other session", async () => {
-    const other = await h.call("POST", `/api/groups/${ids.gB}/sessions`, secretariat, { date: "2026-10-14", startTime: "10:00", endTime: "12:00", roomId: ids.roomB });
+    const other = await h.call("POST", `/api/groups/${ids.gB}/sessions`, secretariat, {
+      date: "2026-10-14",
+      startTime: "10:00",
+      endTime: "12:00",
+      roomId: ids.roomB,
+    });
     expect(other.status).toBe(201);
     const moved = await h.call("PATCH", `/api/sessions/${other.body.id}/move`, secretariat, {
       startsAt: "2026-10-19T15:00:00Z",
@@ -108,16 +132,29 @@ describe("attendance sheet", () => {
     await h.call("PUT", `/api/sessions/${ids.sessionA}/attendance`, secretariat, { records: [{ studentId: ids.s1, status: "absent", note: "Malade" }] });
     const validated = await h.call("POST", `/api/sessions/${ids.sessionA}/validate`, secretariat);
     expect(validated.status).toBe(200);
-    const charges = await h.db.selectFrom("installments").innerJoin("enrolments", "enrolments.id", "installments.enrolment_id").select(["enrolments.student_id as studentId", "installments.amount"]).where("installments.session_id", "=", ids.sessionA).execute();
+    const charges = await h.db
+      .selectFrom("installments")
+      .innerJoin("enrolments", "enrolments.id", "installments.enrolment_id")
+      .select(["enrolments.student_id as studentId", "installments.amount"])
+      .where("installments.session_id", "=", ids.sessionA)
+      .execute();
     expect(charges).toEqual([{ studentId: ids.s2, amount: 12_000 }]);
     const locked = await h.call("PUT", `/api/sessions/${ids.sessionA}/attendance`, secretariat, { records: [{ studentId: ids.s1, status: "present" }] });
     expect(locked.status).toBe(409);
   });
 
   it("lets only the admin correct a validated sheet, with a reason, and re-bills", async () => {
-    const bySecretariat = await h.call("POST", `/api/sessions/${ids.sessionA}/attendance/correct`, secretariat, { studentId: ids.s1, status: "present", reason: "Erreur de saisie" });
+    const bySecretariat = await h.call("POST", `/api/sessions/${ids.sessionA}/attendance/correct`, secretariat, {
+      studentId: ids.s1,
+      status: "present",
+      reason: "Erreur de saisie",
+    });
     expect(bySecretariat.status).toBe(403);
-    const corrected = await h.call("POST", `/api/sessions/${ids.sessionA}/attendance/correct`, admin, { studentId: ids.s1, status: "present", reason: "Erreur de saisie" });
+    const corrected = await h.call("POST", `/api/sessions/${ids.sessionA}/attendance/correct`, admin, {
+      studentId: ids.s1,
+      status: "present",
+      reason: "Erreur de saisie",
+    });
     expect(corrected.status).toBe(200);
     const charges = await h.db.selectFrom("installments").select("amount").where("session_id", "=", ids.sessionA).where("status", "=", "open").execute();
     expect(charges).toHaveLength(2);
@@ -142,7 +179,12 @@ describe("attendance sheet", () => {
     const day = (await h.call("GET", "/api/sessions?date=2026-10-19", secretariat)).body[0];
     const cancelled = await h.call("POST", `/api/sessions/${day.id}/cancel`, secretariat, { reason: "Jour férié" });
     expect(cancelled.status).toBe(200);
-    const extra = await h.call("POST", `/api/groups/${ids.gB}/sessions`, secretariat, { date: "2026-10-19", startTime: "16:00", endTime: "18:00", roomId: ids.roomA });
+    const extra = await h.call("POST", `/api/groups/${ids.gB}/sessions`, secretariat, {
+      date: "2026-10-19",
+      startTime: "16:00",
+      endTime: "18:00",
+      roomId: ids.roomA,
+    });
     expect(extra.status).toBe(201);
   });
 

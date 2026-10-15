@@ -15,5 +15,4 @@ export const notFound = (what: string) => new HttpError(404, "not_found", `${wha
 export const forbidden = () => new HttpError(403, "forbidden", "you do not have access to this resource");
 export const unauthenticated = () => new HttpError(401, "unauthenticated", "authentication required");
 export const conflict = (code: string, message: string) => new HttpError(409, code, message);
-export const unprocessable = (code: string, message: string, details?: unknown) =>
-  new HttpError(422, code, message, details);
+export const unprocessable = (code: string, message: string, details?: unknown) => new HttpError(422, code, message, details);

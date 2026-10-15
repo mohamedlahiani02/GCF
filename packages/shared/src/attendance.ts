@@ -30,10 +30,7 @@ export interface Rate {
  * Only records of enrolled students are passed in: guests invited for a make-up belong to the host sheet
  * but never enter the host group's denominator.
  */
-export function attendanceRate(
-  statuses: readonly AttendanceStatus[],
-  settings: AttendanceRateSettings = DEFAULT_ATTENDANCE_RATE_SETTINGS,
-): Rate {
+export function attendanceRate(statuses: readonly AttendanceStatus[], settings: AttendanceRateSettings = DEFAULT_ATTENDANCE_RATE_SETTINGS): Rate {
   let counted = 0;
   for (const status of statuses) {
     if (status === "present") counted += 1;

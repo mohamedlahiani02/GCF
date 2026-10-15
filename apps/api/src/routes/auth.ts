@@ -22,58 +22,50 @@ const invalidCredentials = () => new HttpError(401, "invalid_credentials", "emai
 export const authRoutes: FastifyPluginAsync = async (app) => {
   const { db, config } = app;
 
-  app.post(
-    "/login",
-    { config: { rateLimit: { max: 20, timeWindow: "1 minute" } } },
-    async (request, reply) => {
-      const body = loginBody.parse(request.body);
-      const user = await db.selectFrom("users").selectAll().where("email", "=", body.email).executeTakeFirst();
-      if (!user || !user.active) {
-        // Same answer whether the account exists or not.
-        throw invalidCredentials();
-      }
-      if (user.locked_until && user.locked_until.getTime() > Date.now()) {
-        throw new HttpError(423, "account_locked", "too many failed attempts, try again later", {
-          lockedUntil: user.locked_until.toISOString(),
-        });
-      }
-      const ok = await verifyPassword(user.password_hash, body.password);
-      if (!ok) {
-        const failures = user.failed_login_count + 1;
-        const lock = failures >= config.loginMaxFailures;
-        await db
-          .updateTable("users")
-          .set({
-            failed_login_count: lock ? 0 : failures,
-            locked_until: lock ? new Date(Date.now() + config.loginLockMinutes * 60_000) : null,
-          })
-          .where("id", "=", user.id)
-          .execute();
-        throw invalidCredentials();
-      }
+  app.post("/login", { config: { rateLimit: { max: 20, timeWindow: "1 minute" } } }, async (request, reply) => {
+    const body = loginBody.parse(request.body);
+    const user = await db.selectFrom("users").selectAll().where("email", "=", body.email).executeTakeFirst();
+    if (!user || !user.active) {
+      // Same answer whether the account exists or not.
+      throw invalidCredentials();
+    }
+    if (user.locked_until && user.locked_until.getTime() > Date.now()) {
+      throw new HttpError(423, "account_locked", "too many failed attempts, try again later", {
+        lockedUntil: user.locked_until.toISOString(),
+      });
+    }
+    const ok = await verifyPassword(user.password_hash, body.password);
+    if (!ok) {
+      const failures = user.failed_login_count + 1;
+      const lock = failures >= config.loginMaxFailures;
       await db
         .updateTable("users")
-        .set({ failed_login_count: 0, locked_until: null, last_login_at: new Date() })
+        .set({
+          failed_login_count: lock ? 0 : failures,
+          locked_until: lock ? new Date(Date.now() + config.loginLockMinutes * 60_000) : null,
+        })
         .where("id", "=", user.id)
         .execute();
-      const token = await createSession(
-        db,
-        user.id,
-        { idleMinutes: config.sessionIdleMinutes, absoluteHours: config.sessionAbsoluteHours },
-        request.headers["user-agent"],
-      );
-      reply.setCookie(SESSION_COOKIE, token, {
-        httpOnly: true,
-        secure: config.cookieSecure,
-        sameSite: "strict",
-        path: "/",
-      });
-      return {
-        user: { id: user.id, email: user.email, fullName: user.full_name, role: user.role },
-        permissions: permissionsOf(user.role),
-      };
-    },
-  );
+      throw invalidCredentials();
+    }
+    await db.updateTable("users").set({ failed_login_count: 0, locked_until: null, last_login_at: new Date() }).where("id", "=", user.id).execute();
+    const token = await createSession(
+      db,
+      user.id,
+      { idleMinutes: config.sessionIdleMinutes, absoluteHours: config.sessionAbsoluteHours },
+      request.headers["user-agent"],
+    );
+    reply.setCookie(SESSION_COOKIE, token, {
+      httpOnly: true,
+      secure: config.cookieSecure,
+      sameSite: "strict",
+      path: "/",
+    });
+    return {
+      user: { id: user.id, email: user.email, fullName: user.full_name, role: user.role },
+      permissions: permissionsOf(user.role),
+    };
+  });
 
   app.post("/logout", async (request, reply) => {
     if (request.user) await deleteSession(db, request.user.sessionId);

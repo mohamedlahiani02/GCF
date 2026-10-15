@@ -59,7 +59,21 @@ const ROLE_PERMISSIONS: Record<Role, ReadonlySet<Permission>> = {
     "reports:operational",
     "dashboard:operational",
   ]),
-  accountant: new Set<Permission>(["centre:read", "audit:read", "students:read", "catalogue:read", "instructors:read", "attendance:read", "payments:read", "payroll:read", "payroll:calculate", "cash:read", "cash:close", "reports:financial", "dashboard:financial"]),
+  accountant: new Set<Permission>([
+    "centre:read",
+    "audit:read",
+    "students:read",
+    "catalogue:read",
+    "instructors:read",
+    "attendance:read",
+    "payments:read",
+    "payroll:read",
+    "payroll:calculate",
+    "cash:read",
+    "cash:close",
+    "reports:financial",
+    "dashboard:financial",
+  ]),
 };
 
 export function can(role: Role, permission: Permission): boolean {

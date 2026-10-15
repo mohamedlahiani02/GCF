@@ -37,11 +37,19 @@ export function renderRentalQuote(q: RentalQuote): Promise<Buffer> {
   doc.font("Helvetica-Bold").fontSize(13).text("Contrat de location de salle");
   doc.font("Helvetica").fontSize(10).text(`Référence : ${q.reference}    Émis le : ${q.issuedAt}`);
   doc.moveDown();
-  doc.font("Helvetica-Bold").text("Loueur : ", { continued: true }).font("Helvetica").text(`${q.renter.name}${q.renter.company ? `, ${q.renter.company}` : ""}`);
+  doc
+    .font("Helvetica-Bold")
+    .text("Loueur : ", { continued: true })
+    .font("Helvetica")
+    .text(`${q.renter.name}${q.renter.company ? `, ${q.renter.company}` : ""}`);
   const contact = [q.renter.phone, q.renter.email].filter(Boolean).join(" · ");
   if (contact) doc.text(contact);
   doc.font("Helvetica-Bold").text("Salle : ", { continued: true }).font("Helvetica").text(q.roomName);
-  doc.font("Helvetica-Bold").text("Tarif : ", { continued: true }).font("Helvetica").text(`${money(q.unitPrice)} par ${q.unitLabel}, ${q.quantityLabel}`);
+  doc
+    .font("Helvetica-Bold")
+    .text("Tarif : ", { continued: true })
+    .font("Helvetica")
+    .text(`${money(q.unitPrice)} par ${q.unitLabel}, ${q.quantityLabel}`);
   doc.font("Helvetica-Bold").text("Total : ", { continued: true }).font("Helvetica").text(money(q.total));
   doc.moveDown();
   doc.font("Helvetica-Bold").text("Créneaux réservés");

@@ -36,8 +36,20 @@ export const instructorRoutes: FastifyPluginAsync = async (app) => {
       .where("centre_id", "=", centreId)
       .executeTakeFirst();
     if (!instructor) throw notFound("instructor");
-    const subjects = await db.selectFrom("instructor_subjects").innerJoin("subjects", "subjects.id", "instructor_subjects.subject_id").select(["subjects.id", "subjects.name"]).where("instructor_id", "=", id).orderBy("subjects.name").execute();
-    const slots = await db.selectFrom("instructor_availability").select(["weekday", "start_time", "end_time"]).where("instructor_id", "=", id).orderBy("weekday").orderBy("start_time").execute();
+    const subjects = await db
+      .selectFrom("instructor_subjects")
+      .innerJoin("subjects", "subjects.id", "instructor_subjects.subject_id")
+      .select(["subjects.id", "subjects.name"])
+      .where("instructor_id", "=", id)
+      .orderBy("subjects.name")
+      .execute();
+    const slots = await db
+      .selectFrom("instructor_availability")
+      .select(["weekday", "start_time", "end_time"])
+      .where("instructor_id", "=", id)
+      .orderBy("weekday")
+      .orderBy("start_time")
+      .execute();
     return {
       ...instructor,
       subjects,
@@ -55,7 +67,16 @@ export const instructorRoutes: FastifyPluginAsync = async (app) => {
     const rows = await db
       .selectFrom("instructors")
       .leftJoin("groups", (join) => join.onRef("groups.instructor_id", "=", "instructors.id").on("groups.status", "=", "active"))
-      .select(["instructors.id", "instructors.first_name as firstName", "instructors.last_name as lastName", "instructors.kind", "instructors.employment", "instructors.phone", "instructors.email", "instructors.status"])
+      .select([
+        "instructors.id",
+        "instructors.first_name as firstName",
+        "instructors.last_name as lastName",
+        "instructors.kind",
+        "instructors.employment",
+        "instructors.phone",
+        "instructors.email",
+        "instructors.status",
+      ])
       .select((eb) => eb.fn.count<number>("groups.id").as("activeGroups"))
       .where("instructors.centre_id", "=", request.user!.centreId)
       .groupBy("instructors.id")
@@ -90,12 +111,25 @@ export const instructorRoutes: FastifyPluginAsync = async (app) => {
         .returning("id")
         .executeTakeFirstOrThrow();
       if (body.subjectIds.length) {
-        await trx.insertInto("instructor_subjects").values([...new Set(body.subjectIds)].map((s) => ({ instructor_id: created.id, subject_id: s }))).execute();
+        await trx
+          .insertInto("instructor_subjects")
+          .values([...new Set(body.subjectIds)].map((s) => ({ instructor_id: created.id, subject_id: s })))
+          .execute();
       }
       if (body.availability.length) {
-        await trx.insertInto("instructor_availability").values(body.availability.map((a) => ({ instructor_id: created.id, weekday: a.weekday, start_time: a.startTime, end_time: a.endTime }))).execute();
+        await trx
+          .insertInto("instructor_availability")
+          .values(body.availability.map((a) => ({ instructor_id: created.id, weekday: a.weekday, start_time: a.startTime, end_time: a.endTime })))
+          .execute();
       }
-      await writeAudit(trx, { centreId: actor.centreId, userId: actor.userId, action: "instructor.created", objectType: "instructor", objectId: created.id, after: body });
+      await writeAudit(trx, {
+        centreId: actor.centreId,
+        userId: actor.userId,
+        action: "instructor.created",
+        objectType: "instructor",
+        objectId: created.id,
+        after: body,
+      });
       return created.id;
     });
     return reply.status(201).send(await load(id, actor.centreId));
@@ -125,16 +159,30 @@ export const instructorRoutes: FastifyPluginAsync = async (app) => {
       if (body.subjectIds) {
         await trx.deleteFrom("instructor_subjects").where("instructor_id", "=", id).execute();
         if (body.subjectIds.length) {
-          await trx.insertInto("instructor_subjects").values([...new Set(body.subjectIds)].map((s) => ({ instructor_id: id, subject_id: s }))).execute();
+          await trx
+            .insertInto("instructor_subjects")
+            .values([...new Set(body.subjectIds)].map((s) => ({ instructor_id: id, subject_id: s })))
+            .execute();
         }
       }
       if (body.availability) {
         await trx.deleteFrom("instructor_availability").where("instructor_id", "=", id).execute();
         if (body.availability.length) {
-          await trx.insertInto("instructor_availability").values(body.availability.map((a) => ({ instructor_id: id, weekday: a.weekday, start_time: a.startTime, end_time: a.endTime }))).execute();
+          await trx
+            .insertInto("instructor_availability")
+            .values(body.availability.map((a) => ({ instructor_id: id, weekday: a.weekday, start_time: a.startTime, end_time: a.endTime })))
+            .execute();
         }
       }
-      await writeAudit(trx, { centreId: actor.centreId, userId: actor.userId, action: "instructor.updated", objectType: "instructor", objectId: id, before, after: body });
+      await writeAudit(trx, {
+        centreId: actor.centreId,
+        userId: actor.userId,
+        action: "instructor.updated",
+        objectType: "instructor",
+        objectId: id,
+        before,
+        after: body,
+      });
     });
     return load(id, actor.centreId);
   });
@@ -146,7 +194,12 @@ export const instructorRoutes: FastifyPluginAsync = async (app) => {
     await db.transaction().execute(async (trx) => {
       const active = await trx.selectFrom("groups").select("id").where("instructor_id", "=", id).where("status", "=", "active").executeTakeFirst();
       if (active) throw unprocessable("has_active_groups", "reassign the active groups of this instructor first");
-      const result = await trx.updateTable("instructors").set({ status: "archived", updated_at: new Date() }).where("id", "=", id).where("centre_id", "=", actor.centreId).executeTakeFirst();
+      const result = await trx
+        .updateTable("instructors")
+        .set({ status: "archived", updated_at: new Date() })
+        .where("id", "=", id)
+        .where("centre_id", "=", actor.centreId)
+        .executeTakeFirst();
       if (result.numUpdatedRows === 0n) throw notFound("instructor");
       await writeAudit(trx, { centreId: actor.centreId, userId: actor.userId, action: "instructor.archived", objectType: "instructor", objectId: id, reason });
     });

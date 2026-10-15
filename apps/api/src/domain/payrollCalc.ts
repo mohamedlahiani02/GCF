@@ -16,7 +16,11 @@ export function monthBounds(month: string): { start: string; end: string } {
 }
 
 /** Rule priority: group, then study or training, then the instructor's default; the most recent wins a tie. */
-export function pickRule(rules: PayRuleRow[], instructorId: string, group: { id: string; studyId: string | null; trainingId: string | null }): PayRuleRow | undefined {
+export function pickRule(
+  rules: PayRuleRow[],
+  instructorId: string,
+  group: { id: string; studyId: string | null; trainingId: string | null },
+): PayRuleRow | undefined {
   return rules
     .filter(
       (r) =>
@@ -48,7 +52,12 @@ export function toPayRule(rule: PayRuleRow, inputs: { collected: number; session
   })();
   const presence =
     rule.presence_kind === "threshold"
-      ? { kind: "threshold" as const, minRateBasisPoints: rule.min_rate_basis_points!, prorataAbove: rule.prorata_above!, ...(rule.floor_amount === null ? {} : { floor: rule.floor_amount }) }
+      ? {
+          kind: "threshold" as const,
+          minRateBasisPoints: rule.min_rate_basis_points!,
+          prorataAbove: rule.prorata_above!,
+          ...(rule.floor_amount === null ? {} : { floor: rule.floor_amount }),
+        }
       : { kind: rule.presence_kind };
   return { base, presence };
 }
@@ -86,7 +95,11 @@ interface HeldSession {
  */
 export async function computeMonth(db: Db, centreId: string, month: string): Promise<{ lines: ComputedLine[]; warnings: CalculationWarning[] }> {
   const { start, end } = monthBounds(month);
-  const centre = await db.selectFrom("centres").select(["timezone", "count_justified_as_present", "count_makeup_as_present"]).where("id", "=", centreId).executeTakeFirstOrThrow();
+  const centre = await db
+    .selectFrom("centres")
+    .select(["timezone", "count_justified_as_present", "count_makeup_as_present"])
+    .where("id", "=", centreId)
+    .executeTakeFirstOrThrow();
   const localDate = sql<string>`(class_sessions.starts_at at time zone ${centre.timezone})::date`;
   const sessions: HeldSession[] = (
     await db
@@ -124,7 +137,11 @@ export async function computeMonth(db: Db, centreId: string, month: string): Pro
 
   const groupSettings = new Map<string, { countJustifiedAsPresent: boolean; countOtherGroupAsPresent: boolean }>();
   if (groups.size) {
-    const rows = await db.selectFrom("groups").select(["id", "count_justified_override", "count_makeup_override"]).where("id", "in", [...groups.keys()]).execute();
+    const rows = await db
+      .selectFrom("groups")
+      .select(["id", "count_justified_override", "count_makeup_override"])
+      .where("id", "in", [...groups.keys()])
+      .execute();
     for (const r of rows) {
       groupSettings.set(r.id, {
         countJustifiedAsPresent: r.count_justified_override ?? centre.count_justified_as_present,
@@ -133,13 +150,25 @@ export async function computeMonth(db: Db, centreId: string, month: string): Pro
     }
   }
   const records = sessions.length
-    ? await db.selectFrom("attendance_records").select(["session_id as sessionId", "status"]).where("session_id", "in", sessions.map((s) => s.id)).where("is_guest", "=", false).execute()
+    ? await db
+        .selectFrom("attendance_records")
+        .select(["session_id as sessionId", "status"])
+        .where(
+          "session_id",
+          "in",
+          sessions.map((s) => s.id),
+        )
+        .where("is_guest", "=", false)
+        .execute()
     : [];
   const statusesBySession = new Map<string, AttendanceStatus[]>();
   for (const r of records) statusesBySession.set(r.sessionId, [...(statusesBySession.get(r.sessionId) ?? []), r.status]);
 
   const rateFor = (sessionIds: string[], settings: { countJustifiedAsPresent: boolean; countOtherGroupAsPresent: boolean }) =>
-    attendanceRate(sessionIds.flatMap((id) => statusesBySession.get(id) ?? []), settings);
+    attendanceRate(
+      sessionIds.flatMap((id) => statusesBySession.get(id) ?? []),
+      settings,
+    );
 
   const collectedByGroup = async (groupId: string, basis: "collected" | "invoiced"): Promise<number> => {
     if (basis === "collected") {
@@ -171,14 +200,37 @@ export async function computeMonth(db: Db, centreId: string, month: string): Pro
   const lines: ComputedLine[] = [];
   const warnings: CalculationWarning[] = [];
 
-  const build = (instructorId: string, groupId: string | null, rule: PayRuleRow, rate: Rate, inputs: { collected: number; sessions: number; minutes: number }, extra: Record<string, unknown>) => {
+  const build = (
+    instructorId: string,
+    groupId: string | null,
+    rule: PayRuleRow,
+    rate: Rate,
+    inputs: { collected: number; sessions: number; minutes: number },
+    extra: Record<string, unknown>,
+  ) => {
     try {
       const result = computePay(toPayRule(rule, inputs), rate);
-      lines.push({ instructorId, groupId, rule, base: result.base, rate: result.factor, amount: result.amount, details: { ...inputs, ...extra, rateBasisPoints: rateToBasisPoints(rate) ?? null } });
+      lines.push({
+        instructorId,
+        groupId,
+        rule,
+        base: result.base,
+        rate: result.factor,
+        amount: result.amount,
+        details: { ...inputs, ...extra, rateBasisPoints: rateToBasisPoints(rate) ?? null },
+      });
     } catch (error) {
       if (!(error instanceof PayrollError)) throw error;
       warnings.push({ instructorId, groupId, code: "no_attendance", message: error.message });
-      lines.push({ instructorId, groupId, rule, base: 0, rate: { numerator: 0, denominator: 1 }, amount: 0, details: { ...inputs, ...extra, error: error.message } });
+      lines.push({
+        instructorId,
+        groupId,
+        rule,
+        base: 0,
+        rate: { numerator: 0, denominator: 1 },
+        amount: 0,
+        details: { ...inputs, ...extra, error: error.message },
+      });
     }
   };
 
@@ -190,8 +242,21 @@ export async function computeMonth(db: Db, centreId: string, month: string): Pro
     flatInstructors.add(rule.instructor_id);
     const own = sessions.filter((s) => s.instructorId === rule.instructor_id);
     const settings = { countJustifiedAsPresent: centre.count_justified_as_present, countOtherGroupAsPresent: centre.count_makeup_as_present };
-    const rate = rule.presence_kind === "ignore" || rule.presence_kind === "session_due" ? { numerator: 1, denominator: 1 } : rateFor(own.map((s) => s.id), settings);
-    build(rule.instructor_id, null, rule, rate, { collected: 0, sessions: own.length, minutes: own.reduce((t, s) => t + s.minutes, 0) }, { scope: "instructor" });
+    const rate =
+      rule.presence_kind === "ignore" || rule.presence_kind === "session_due"
+        ? { numerator: 1, denominator: 1 }
+        : rateFor(
+            own.map((s) => s.id),
+            settings,
+          );
+    build(
+      rule.instructor_id,
+      null,
+      rule,
+      rate,
+      { collected: 0, sessions: own.length, minutes: own.reduce((t, s) => t + s.minutes, 0) },
+      { scope: "instructor" },
+    );
   }
 
   const pairs = new Map<string, HeldSession[]>();
@@ -207,7 +272,10 @@ export async function computeMonth(db: Db, centreId: string, month: string): Pro
     if (rule.scope === "instructor" && rule.base_kind === "monthly_flat") continue;
     if (rule.base_kind === "training_flat" && !(group.groupEnd >= start && group.groupEnd <= end)) continue;
     const settings = groupSettings.get(groupId)!;
-    const rate = rateFor(own.map((s) => s.id), settings);
+    const rate = rateFor(
+      own.map((s) => s.id),
+      settings,
+    );
     let collected = 0;
     let share: { mine: number; total: number } | null = null;
     if (rule.base_kind === "pct_collections") {
@@ -216,7 +284,14 @@ export async function computeMonth(db: Db, centreId: string, month: string): Pro
       collected = mulDivRound(groupTotal, own.length, total);
       share = { mine: own.length, total };
     }
-    build(instructorId, groupId, rule, rate, { collected, sessions: own.length, minutes: own.reduce((t, s) => t + s.minutes, 0) }, { scope: rule.scope, share });
+    build(
+      instructorId,
+      groupId,
+      rule,
+      rate,
+      { collected, sessions: own.length, minutes: own.reduce((t, s) => t + s.minutes, 0) },
+      { scope: rule.scope, share },
+    );
   }
   return { lines, warnings };
 }

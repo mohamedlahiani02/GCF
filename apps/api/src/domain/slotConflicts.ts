@@ -60,7 +60,13 @@ export async function findSlotConflicts(db: Kysely<Database> | Transaction<Datab
       if (other.weekday !== slot.weekday) continue;
       const overlaps = toClock(other.startTime) < slot.endTime && slot.startTime < toClock(other.endTime);
       if (!overlaps) continue;
-      const base = { groupId: other.groupId, groupName: other.groupName, weekday: other.weekday, startTime: toClock(other.startTime), endTime: toClock(other.endTime) };
+      const base = {
+        groupId: other.groupId,
+        groupName: other.groupName,
+        weekday: other.weekday,
+        startTime: toClock(other.startTime),
+        endTime: toClock(other.endTime),
+      };
       const otherRoom = other.slotRoomId ?? other.groupRoomId;
       if (room !== null && otherRoom === room) conflicts.push({ type: "room", ...base });
       if (other.instructorId === check.instructorId) conflicts.push({ type: "instructor", ...base });
@@ -70,7 +76,14 @@ export async function findSlotConflicts(db: Kysely<Database> | Transaction<Datab
   check.slots.forEach((a, i) => {
     check.slots.slice(i + 1).forEach((b) => {
       if (a.weekday === b.weekday && a.startTime < b.endTime && b.startTime < a.endTime) {
-        conflicts.push({ type: "instructor", groupId: check.excludeGroupId ?? "new", groupName: "this group", weekday: a.weekday, startTime: b.startTime, endTime: b.endTime });
+        conflicts.push({
+          type: "instructor",
+          groupId: check.excludeGroupId ?? "new",
+          groupName: "this group",
+          weekday: a.weekday,
+          startTime: b.startTime,
+          endTime: b.endTime,
+        });
       }
     });
   });

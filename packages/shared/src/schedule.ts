@@ -92,7 +92,10 @@ export function planAmounts(price: Millimes, items: readonly PlanItemInput[]): M
 
   let percentAmounts: Millimes[];
   if (percents.length > 0 && fixedTotal === 0 && percentTotalBp === 10_000) {
-    percentAmounts = allocate(price, percents.map((p) => p.value));
+    percentAmounts = allocate(
+      price,
+      percents.map((p) => p.value),
+    );
   } else {
     percentAmounts = percents.map((p) => percentOf(price, p.value));
   }

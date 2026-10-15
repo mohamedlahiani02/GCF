@@ -14,10 +14,17 @@ const singleBody = z
   .object({ date: isoDate, startTime: clockTime, endTime: clockTime, roomId: uuid.nullable().optional(), instructorId: uuid.optional() })
   .strict()
   .refine((s) => s.endTime > s.startTime, "the end time must be after the start time");
-const moveBody = z.object({ startsAt: z.iso.datetime({ offset: true }), endsAt: z.iso.datetime({ offset: true }), roomId: uuid.nullable(), instructorId: uuid.optional() }).strict();
+const moveBody = z
+  .object({ startsAt: z.iso.datetime({ offset: true }), endsAt: z.iso.datetime({ offset: true }), roomId: uuid.nullable(), instructorId: uuid.optional() })
+  .strict();
 const cancelBody = z.object({ reason }).strict();
 const record = z
-  .object({ studentId: uuid, status: z.enum(ATTENDANCE_STATUSES), note: z.string().trim().max(500).nullable().optional(), hostSessionId: uuid.nullable().optional() })
+  .object({
+    studentId: uuid,
+    status: z.enum(ATTENDANCE_STATUSES),
+    note: z.string().trim().max(500).nullable().optional(),
+    hostSessionId: uuid.nullable().optional(),
+  })
   .strict();
 const recordsBody = z.object({ records: z.array(record).max(500) }).strict();
 const correctBody = record.extend({ reason }).strict();
@@ -65,7 +72,14 @@ export const sessionRoutes: FastifyPluginAsync = async (app) => {
     if (body.to < body.from) throw unprocessable("invalid_range", "the end date cannot be before the start date");
     return db.transaction().execute(async (trx) => {
       const result = await generateGroupSessions(trx, actor.centreId, id, body.from, body.to, body.skipConflicts);
-      await writeAudit(trx, { centreId: actor.centreId, userId: actor.userId, action: "group.sessions_generated", objectType: "group", objectId: id, after: { ...body, created: result.created, conflicts: result.conflicts.length } });
+      await writeAudit(trx, {
+        centreId: actor.centreId,
+        userId: actor.userId,
+        action: "group.sessions_generated",
+        objectType: "group",
+        objectId: id,
+        after: { ...body, created: result.created, conflicts: result.conflicts.length },
+      });
       return result;
     });
   });
@@ -75,8 +89,21 @@ export const sessionRoutes: FastifyPluginAsync = async (app) => {
     const { id } = idParam.parse(request.params);
     const body = singleBody.parse(request.body);
     const sessionId = await db.transaction().execute(async (trx) => {
-      const created = await createSingleSession(trx, actor.centreId, id, { date: body.date, startTime: body.startTime, endTime: body.endTime, roomId: body.roomId ?? null, instructorId: body.instructorId });
-      await writeAudit(trx, { centreId: actor.centreId, userId: actor.userId, action: "session.created", objectType: "session", objectId: created, after: body });
+      const created = await createSingleSession(trx, actor.centreId, id, {
+        date: body.date,
+        startTime: body.startTime,
+        endTime: body.endTime,
+        roomId: body.roomId ?? null,
+        instructorId: body.instructorId,
+      });
+      await writeAudit(trx, {
+        centreId: actor.centreId,
+        userId: actor.userId,
+        action: "session.created",
+        objectType: "session",
+        objectId: created,
+        after: body,
+      });
       return created;
     });
     return reply.status(201).send({ id: sessionId });
@@ -88,8 +115,21 @@ export const sessionRoutes: FastifyPluginAsync = async (app) => {
     const body = moveBody.parse(request.body);
     await db.transaction().execute(async (trx) => {
       const before = await loadSession(trx, id, actor.centreId);
-      await moveSession(trx, actor.centreId, id, { startsAt: new Date(body.startsAt), endsAt: new Date(body.endsAt), roomId: body.roomId, instructorId: body.instructorId });
-      await writeAudit(trx, { centreId: actor.centreId, userId: actor.userId, action: "session.moved", objectType: "session", objectId: id, before: { startsAt: before.startsAt, endsAt: before.endsAt, roomId: before.roomId, instructorId: before.instructorId }, after: body });
+      await moveSession(trx, actor.centreId, id, {
+        startsAt: new Date(body.startsAt),
+        endsAt: new Date(body.endsAt),
+        roomId: body.roomId,
+        instructorId: body.instructorId,
+      });
+      await writeAudit(trx, {
+        centreId: actor.centreId,
+        userId: actor.userId,
+        action: "session.moved",
+        objectType: "session",
+        objectId: id,
+        before: { startsAt: before.startsAt, endsAt: before.endsAt, roomId: before.roomId, instructorId: before.instructorId },
+        after: body,
+      });
     });
     return { id };
   });
@@ -100,7 +140,14 @@ export const sessionRoutes: FastifyPluginAsync = async (app) => {
     const body = cancelBody.parse(request.body);
     await db.transaction().execute(async (trx) => {
       await cancelSession(trx, actor.centreId, id, body.reason);
-      await writeAudit(trx, { centreId: actor.centreId, userId: actor.userId, action: "session.cancelled", objectType: "session", objectId: id, reason: body.reason });
+      await writeAudit(trx, {
+        centreId: actor.centreId,
+        userId: actor.userId,
+        action: "session.cancelled",
+        objectType: "session",
+        objectId: id,
+        reason: body.reason,
+      });
     });
     return { id, status: "cancelled" };
   });
@@ -111,7 +158,16 @@ export const sessionRoutes: FastifyPluginAsync = async (app) => {
     const rows = await sheetRows(db, session);
     const counted = rows.filter((r) => !r.isGuest);
     return {
-      session: { id: session.id, groupId: session.groupId, groupName: session.groupName, startsAt: session.startsAt, endsAt: session.endsAt, localDate: session.localDate, status: session.status, sheetStatus: session.sheetStatus },
+      session: {
+        id: session.id,
+        groupId: session.groupId,
+        groupName: session.groupName,
+        startsAt: session.startsAt,
+        endsAt: session.endsAt,
+        localDate: session.localDate,
+        status: session.status,
+        sheetStatus: session.sheetStatus,
+      },
       rows,
       counters: {
         present: counted.filter((r) => r.status === "present").length,
@@ -146,8 +202,18 @@ export const sessionRoutes: FastifyPluginAsync = async (app) => {
       if (session.startsAt.getTime() > Date.now()) throw unprocessable("session_not_started", "a sheet can be validated once the session has started");
       const rows = await sheetRows(trx, session);
       const missing = rows.filter((r) => !r.saved && !r.isGuest);
-      if (missing.length) await saveRecords(trx, session, missing.map((r) => ({ studentId: r.studentId, status: "present" as const })), actor.userId);
-      await trx.updateTable("class_sessions").set({ sheet_status: "validated", status: "held", validated_at: new Date(), validated_by: actor.userId }).where("id", "=", id).execute();
+      if (missing.length)
+        await saveRecords(
+          trx,
+          session,
+          missing.map((r) => ({ studentId: r.studentId, status: "present" as const })),
+          actor.userId,
+        );
+      await trx
+        .updateTable("class_sessions")
+        .set({ sheet_status: "validated", status: "held", validated_at: new Date(), validated_by: actor.userId })
+        .where("id", "=", id)
+        .execute();
       await syncSessionCharges(trx, { ...session, sheetStatus: "validated", status: "held" }, actor.userId);
       await writeAudit(trx, { centreId: actor.centreId, userId: actor.userId, action: "attendance.validated", objectType: "session", objectId: id });
       return { id, sheetStatus: "validated" };
@@ -161,10 +227,24 @@ export const sessionRoutes: FastifyPluginAsync = async (app) => {
     return db.transaction().execute(async (trx) => {
       const session = await loadSession(trx, id, actor.centreId, true);
       if (session.sheetStatus !== "validated") throw conflict("sheet_not_validated", "use the normal sheet until it is validated");
-      const before = await trx.selectFrom("attendance_records").select(["status", "note", "host_session_id"]).where("session_id", "=", id).where("student_id", "=", body.studentId).executeTakeFirst();
+      const before = await trx
+        .selectFrom("attendance_records")
+        .select(["status", "note", "host_session_id"])
+        .where("session_id", "=", id)
+        .where("student_id", "=", body.studentId)
+        .executeTakeFirst();
       await saveRecords(trx, session, [body], actor.userId);
       await syncSessionCharges(trx, session, actor.userId);
-      await writeAudit(trx, { centreId: actor.centreId, userId: actor.userId, action: "attendance.corrected", objectType: "session", objectId: id, before: before ?? null, after: { studentId: body.studentId, status: body.status, note: body.note ?? null }, reason: body.reason });
+      await writeAudit(trx, {
+        centreId: actor.centreId,
+        userId: actor.userId,
+        action: "attendance.corrected",
+        objectType: "session",
+        objectId: id,
+        before: before ?? null,
+        after: { studentId: body.studentId, status: body.status, note: body.note ?? null },
+        reason: body.reason,
+      });
       return { id, studentId: body.studentId, status: body.status };
     });
   });

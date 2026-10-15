@@ -24,7 +24,13 @@ export function createMailer(config: Config): Mailer | null {
   });
   return {
     async send(mail) {
-      await transport.sendMail({ from: smtp.from, to: mail.to, subject: mail.subject, text: mail.text, ...(mail.attachments ? { attachments: mail.attachments } : {}) });
+      await transport.sendMail({
+        from: smtp.from,
+        to: mail.to,
+        subject: mail.subject,
+        text: mail.text,
+        ...(mail.attachments ? { attachments: mail.attachments } : {}),
+      });
     },
   };
 }

@@ -32,15 +32,26 @@ export const reportRoutes: FastifyPluginAsync = async (app) => {
     if (!allowed) throw forbidden();
     const table = await buildReport(db, name, user.centreId, { from: q.from, to: q.to });
     if (q.format === "json") return table;
-    await writeAudit(db, { centreId: user.centreId, userId: user.userId, action: "report.exported", objectType: "report", objectId: name, after: { from: q.from, to: q.to, format: q.format } });
+    await writeAudit(db, {
+      centreId: user.centreId,
+      userId: user.userId,
+      action: "report.exported",
+      objectType: "report",
+      objectId: name,
+      after: { from: q.from, to: q.to, format: q.format },
+    });
     const file = `${name}-${q.from}-${q.to}`;
-    if (q.format === "csv") return reply.header("content-type", "text/csv; charset=utf-8").header("content-disposition", `attachment; filename="${file}.csv"`).send(toCsv(table));
+    if (q.format === "csv")
+      return reply.header("content-type", "text/csv; charset=utf-8").header("content-disposition", `attachment; filename="${file}.csv"`).send(toCsv(table));
     if (q.format === "xlsx") {
       return reply
         .header("content-type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
         .header("content-disposition", `attachment; filename="${file}.xlsx"`)
         .send(await toXlsx(table));
     }
-    return reply.header("content-type", "application/pdf").header("content-disposition", `attachment; filename="${file}.pdf"`).send(await toPdf(table));
+    return reply
+      .header("content-type", "application/pdf")
+      .header("content-disposition", `attachment; filename="${file}.pdf"`)
+      .send(await toPdf(table));
   });
 };

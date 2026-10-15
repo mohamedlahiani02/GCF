@@ -33,8 +33,24 @@ export const dashboardRoutes: FastifyPluginAsync = async (app) => {
       .selectFrom("installments")
       .leftJoin("enrolments", "enrolments.id", "installments.enrolment_id")
       .leftJoin("rentals", "rentals.id", "installments.rental_id")
-      .leftJoin(db.selectFrom("effective_allocations").select(["installment_id", sql<number>`sum(amount)::bigint`.as("paid")]).groupBy("installment_id").as("p"), "p.installment_id", "installments.id")
-      .select(["installments.amount", "installments.due_date as dueDate", "installments.original_due_date as originalDueDate", "installments.postponement_count as postponementCount", "installments.label", sql<string | null>`coalesce(enrolments.student_id::text, rentals.renter_id::text)`.as("payerId"), sql<number>`coalesce(p.paid, 0)`.as("paid")])
+      .leftJoin(
+        db
+          .selectFrom("effective_allocations")
+          .select(["installment_id", sql<number>`sum(amount)::bigint`.as("paid")])
+          .groupBy("installment_id")
+          .as("p"),
+        "p.installment_id",
+        "installments.id",
+      )
+      .select([
+        "installments.amount",
+        "installments.due_date as dueDate",
+        "installments.original_due_date as originalDueDate",
+        "installments.postponement_count as postponementCount",
+        "installments.label",
+        sql<string | null>`coalesce(enrolments.student_id::text, rentals.renter_id::text)`.as("payerId"),
+        sql<number>`coalesce(p.paid, 0)`.as("paid"),
+      ])
       .where("installments.centre_id", "=", centreId)
       .where("installments.kind", "=", "charge")
       .where("installments.status", "=", "open")
@@ -42,14 +58,46 @@ export const dashboardRoutes: FastifyPluginAsync = async (app) => {
       .execute();
     const states = openCharges.map((c) => {
       const paid = Number(c.paid);
-      return { ...c, remaining: c.amount - paid, state: stateOf({ id: "", enrolmentId: null, rentalId: null, label: c.label, kind: "charge", amount: c.amount, dueDate: c.dueDate, originalDueDate: c.originalDueDate, postponementCount: c.postponementCount, discountStatus: null, status: "open", sessionId: null, paid, remaining: c.amount - paid }, today, graceDays) };
+      return {
+        ...c,
+        remaining: c.amount - paid,
+        state: stateOf(
+          {
+            id: "",
+            enrolmentId: null,
+            rentalId: null,
+            label: c.label,
+            kind: "charge",
+            amount: c.amount,
+            dueDate: c.dueDate,
+            originalDueDate: c.originalDueDate,
+            postponementCount: c.postponementCount,
+            discountStatus: null,
+            status: "open",
+            sessionId: null,
+            paid,
+            remaining: c.amount - paid,
+          },
+          today,
+          graceDays,
+        ),
+      };
     });
     const overdue = states.filter((s) => s.state === "overdue");
 
     if (financial) {
       const sumBetween = async (from: string, to: string) =>
         Number(
-          (await db.selectFrom("payments").select(sql<number>`coalesce(sum(amount), 0)::bigint`.as("t")).where("centre_id", "=", centreId).where(validPayment).where(receivedDay, ">=", from).where(receivedDay, "<=", to).executeTakeFirstOrThrow()).t,
+          (
+            await db
+              .selectFrom("payments")
+              .select(sql<number>`coalesce(sum(amount), 0)::bigint`.as("t"))
+              .where("centre_id", "=", centreId)
+              .where(validPayment)
+              .where(receivedDay, ">=", from)
+              .where(receivedDay, "<=", to)
+              .executeTakeFirstOrThrow()
+          ).t,
         );
       const unit = granularity;
       const series = await sql<{ bucket: string; total: number }>`
@@ -73,7 +121,11 @@ export const dashboardRoutes: FastifyPluginAsync = async (app) => {
         .executeTakeFirst();
       let upcomingPayroll: { periodId: string; month: string; status: string; total: number } | null = null;
       if (payroll) {
-        const adj = await db.selectFrom("pay_adjustments").select(sql<number>`coalesce(sum(case when kind = 'bonus' then amount else -amount end), 0)::bigint`.as("net")).where("period_id", "=", payroll.id).executeTakeFirstOrThrow();
+        const adj = await db
+          .selectFrom("pay_adjustments")
+          .select(sql<number>`coalesce(sum(case when kind = 'bonus' then amount else -amount end), 0)::bigint`.as("net"))
+          .where("period_id", "=", payroll.id)
+          .executeTakeFirstOrThrow();
         upcomingPayroll = { periodId: payroll.id, month: payroll.month, status: payroll.status, total: Number(payroll.lines) + Number(adj.net) };
       }
       result.financial = {
@@ -106,7 +158,16 @@ export const dashboardRoutes: FastifyPluginAsync = async (app) => {
         .where(sql<string>`(lower(period) at time zone ${timezone})::date`, ">=", weekStart)
         .where(sql<string>`(lower(period) at time zone ${timezone})::date`, "<=", weekEnd)
         .executeTakeFirstOrThrow();
-      const roomCount = Number((await db.selectFrom("rooms").select(sql<number>`count(*)::integer`.as("n")).where("centre_id", "=", centreId).where("status", "=", "active").executeTakeFirstOrThrow()).n);
+      const roomCount = Number(
+        (
+          await db
+            .selectFrom("rooms")
+            .select(sql<number>`count(*)::integer`.as("n"))
+            .where("centre_id", "=", centreId)
+            .where("status", "=", "active")
+            .executeTakeFirstOrThrow()
+        ).n,
+      );
       const capacity = (await openMinutes(db, centreId, { from: weekStart, to: weekEnd })) * roomCount;
 
       const sessionDay = sql<string>`(class_sessions.starts_at at time zone ${timezone})::date`;
@@ -136,7 +197,16 @@ export const dashboardRoutes: FastifyPluginAsync = async (app) => {
         .where("payments.centre_id", "=", centreId)
         .where(receivedDay, "<", today)
         .where(receivedDay, ">=", addDays(today, -30))
-        .where(({ not, exists, selectFrom }) => not(exists(selectFrom("cash_closings").select("id").where("cash_closings.centre_id", "=", centreId).whereRef(sql`cash_closings.day`, "=", receivedDay))))
+        .where(({ not, exists, selectFrom }) =>
+          not(
+            exists(
+              selectFrom("cash_closings")
+                .select("id")
+                .where("cash_closings.centre_id", "=", centreId)
+                .whereRef(sql`cash_closings.day`, "=", receivedDay),
+            ),
+          ),
+        )
         .distinct()
         .execute();
       const agenda = await db
@@ -144,7 +214,15 @@ export const dashboardRoutes: FastifyPluginAsync = async (app) => {
         .innerJoin("groups", "groups.id", "class_sessions.group_id")
         .innerJoin("instructors", "instructors.id", "class_sessions.instructor_id")
         .leftJoin("rooms", "rooms.id", "class_sessions.room_id")
-        .select(["class_sessions.id", "class_sessions.starts_at as startsAt", "class_sessions.ends_at as endsAt", "groups.name as label", sql<string>`instructors.first_name || ' ' || instructors.last_name`.as("instructorName"), "rooms.name as roomName", "class_sessions.sheet_status as sheetStatus"])
+        .select([
+          "class_sessions.id",
+          "class_sessions.starts_at as startsAt",
+          "class_sessions.ends_at as endsAt",
+          "groups.name as label",
+          sql<string>`instructors.first_name || ' ' || instructors.last_name`.as("instructorName"),
+          "rooms.name as roomName",
+          "class_sessions.sheet_status as sheetStatus",
+        ])
         .where("class_sessions.centre_id", "=", centreId)
         .where("class_sessions.status", "!=", "cancelled")
         .where(sessionDay, "=", today)
@@ -168,7 +246,10 @@ export const dashboardRoutes: FastifyPluginAsync = async (app) => {
           remindersToSend: new Set(overdue.map((o) => o.payerId).filter((id) => id !== null && !reminded.has(id))).size,
           unclosedCashDays: unclosedDays.map((d) => d.day).sort(),
         },
-        agenda: [...agenda.map((a) => ({ type: "session" as const, ...a })), ...rentalsToday.map((r) => ({ type: "rental" as const, instructorName: null, sheetStatus: null, ...r }))].sort((a, b) => new Date(a.startsAt).getTime() - new Date(b.startsAt).getTime()),
+        agenda: [
+          ...agenda.map((a) => ({ type: "session" as const, ...a })),
+          ...rentalsToday.map((r) => ({ type: "rental" as const, instructorName: null, sheetStatus: null, ...r })),
+        ].sort((a, b) => new Date(a.startsAt).getTime() - new Date(b.startsAt).getTime()),
       };
     }
     return result;
