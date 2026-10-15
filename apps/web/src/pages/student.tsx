@@ -86,6 +86,7 @@ function TransferModal({ enrolment, onClose }: { enrolment: EnrolmentRow; onClos
   const options = (candidates.data ?? []).filter((g) => g.id !== enrolment.groupId);
   return (
     <Modal
+      wide
       title="Changer de groupe"
       onClose={onClose}
       footer={

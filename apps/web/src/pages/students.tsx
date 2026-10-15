@@ -93,6 +93,7 @@ export function StudentFormModal({
   const guardianMissing = v.isMinor && (!v.guardianName.trim() || (!v.guardianPhone.trim() && !v.guardianEmail.trim()));
   return (
     <Modal
+      wide
       title={studentId ? "Modifier l'élève" : "Nouvel élève"}
       onClose={onClose}
       footer={

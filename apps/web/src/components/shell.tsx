@@ -3,14 +3,16 @@ import { createContext, useContext, useEffect, useState, type ReactNode } from "
 import { Link, NavLink, Navigate, Outlet, useLocation, useNavigate } from "react-router";
 import { api } from "../api/client";
 import { useSession } from "../auth/session";
+import { setTimeZone } from "../lib/format";
 import { ROLE } from "../lib/labels";
+import { PasswordModal } from "../pages/admin";
 import { CollectDrawer } from "../pages/collect";
 
 interface NavItem {
   to: string;
   label: string;
   icon: string;
-  permission: string;
+  permission: string | string[];
 }
 
 const NAV: NavItem[] = [
@@ -26,7 +28,7 @@ const NAV: NavItem[] = [
   { to: "/salles", label: "Salles et locations", icon: "M4 21V5l8-2v18M12 9h8v12M7 9h2M7 13h2M7 17h2", permission: "catalogue:read" },
   { to: "/planning", label: "Planning", icon: "M8 2v4M16 2v4M3 10h18M5 4h14a2 2 0 0 1 2 2v14H3V6a2 2 0 0 1 2-2z", permission: "catalogue:read" },
   { to: "/caisse", label: "Caisse", icon: "M2 6h20v12H2zM12 9.5a2.5 2.5 0 1 0 0 5 2.5 2.5 0 0 0 0-5", permission: "cash:read" },
-  { to: "/rapports", label: "Rapports", icon: "M3 3v18h18M7 15l4-4 3 3 5-6", permission: "students:read" },
+  { to: "/rapports", label: "Rapports", icon: "M3 3v18h18M7 15l4-4 3 3 5-6", permission: ["reports:operational", "reports:financial"] },
   {
     to: "/administration",
     label: "Administration",
@@ -50,6 +52,14 @@ const Icon = ({ d }: { d: string }) => (
     <path d={d} />
   </svg>
 );
+
+const initials = (name: string) =>
+  name
+    .split(/\s+/)
+    .filter((w) => w.length > 2)
+    .slice(0, 2)
+    .map((w) => w[0]!.toUpperCase())
+    .join("");
 
 /* Page breadcrumb */
 
@@ -139,9 +149,12 @@ export function Shell() {
   const [crumbs, setCrumbs] = useState<string[]>([]);
   const [collapsed, setCollapsed] = useState(false);
   const [collect, setCollect] = useState<{ studentId?: string; renterId?: string } | null>(null);
+  const [changingPassword, setChangingPassword] = useState(false);
   const location = useLocation();
   const client = useQueryClient();
   const navigate = useNavigate();
+  const centre = useQuery({ queryKey: ["centre"], queryFn: () => api.get<{ name: string; timezone: string }>("/centre"), enabled: !!session });
+  if (centre.data) setTimeZone(centre.data.timezone);
   const logout = useMutation({
     mutationFn: () => api.post("/auth/logout"),
     onSettled: async () => {
@@ -165,13 +178,13 @@ export function Shell() {
           <aside className={`side${collapsed ? " collapsed" : ""}`} aria-label="Navigation principale">
             <div className="brand">
               <span className="logo" aria-hidden="true">
-                GC
+                {initials(centre.data?.name ?? "Gestion du centre")}
               </span>
-              <span className="lbl">Gestion du centre</span>
+              <span className="lbl">{centre.data?.name ?? "Gestion du centre"}</span>
             </div>
             <GlobalSearch />
             <nav style={{ display: "flex", flexDirection: "column", gap: 2 }}>
-              {NAV.filter((n) => can(n.permission)).map((n) => (
+              {NAV.filter((n) => (Array.isArray(n.permission) ? n.permission.some(can) : can(n.permission))).map((n) => (
                 <NavLink key={n.to} to={n.to} end={n.to === "/"} className={({ isActive }) => `navi${isActive ? " on" : ""}`} title={n.label}>
                   <Icon d={n.icon} />
                   <span>{n.label}</span>
@@ -221,6 +234,9 @@ export function Shell() {
                     + Nouvelle location
                   </Link>
                 ) : null}
+                <button type="button" className="btn btn-g" onClick={() => setChangingPassword(true)}>
+                  Mot de passe
+                </button>
                 <button type="button" className="btn btn-g" onClick={() => logout.mutate()}>
                   Déconnexion
                 </button>
@@ -232,6 +248,7 @@ export function Shell() {
           </div>
         </div>
         {collect ? <CollectDrawer payer={collect} onClose={() => setCollect(null)} /> : null}
+        {changingPassword ? <PasswordModal onClose={() => setChangingPassword(false)} /> : null}
       </CollectContext.Provider>
     </CrumbContext.Provider>
   );

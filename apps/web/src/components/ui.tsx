@@ -35,7 +35,7 @@ export function PageHeader({ title, actions, subtitle }: { title: string; action
         {subtitle ? <div className="cap">{subtitle}</div> : null}
       </div>
       {actions ? (
-        <div className="row center" style={{ gap: 8 }}>
+        <div className="row center ph-actions" style={{ gap: 8 }}>
           {actions}
         </div>
       ) : null}
@@ -150,7 +150,7 @@ export function ConflictBanner({ conflicts }: { conflicts: ConflictItem[] }) {
   );
 }
 
-export function Field({ label, children, error, hint }: { label: string; children: ReactNode; error?: string | null | undefined; hint?: string }) {
+export function Field({ label, children, error, hint }: { label: string; children: ReactNode; error?: string | null | undefined; hint?: string | undefined }) {
   return (
     <label className="field">
       <span className="lab">{label}</span>
@@ -227,11 +227,23 @@ export function Drawer({ title, onClose, children, footer }: { title: string; on
   );
 }
 
-export function Modal({ title, onClose, children, footer }: { title: string; onClose: () => void; children: ReactNode; footer?: ReactNode }) {
+export function Modal({
+  title,
+  onClose,
+  children,
+  footer,
+  wide,
+}: {
+  title: string;
+  onClose: () => void;
+  children: ReactNode;
+  footer?: ReactNode;
+  wide?: boolean;
+}) {
   useEscape(onClose);
   return (
     <div className="overlay center" onMouseDown={(e) => e.target === e.currentTarget && onClose()}>
-      <div className="modal" role="dialog" aria-modal="true" aria-label={title}>
+      <div className={wide ? "modal wide" : "modal"} role="dialog" aria-modal="true" aria-label={title}>
         <div className="card-h">
           <h3 className="h2">{title}</h3>
         </div>

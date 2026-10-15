@@ -1,31 +1,57 @@
-# Hypothèses à valider avec le client
+# Décisions et points ouverts
 
-Points où le cahier des charges laisse plusieurs lectures possibles. Chaque point a une valeur par défaut implémentée
-et paramétrable ; aucun n'est figé tant que le client ne l'a pas confirmé.
+Chaque règle ci-dessous est implémentée telle qu'écrite. Les réglages marqués « paramétrable » se changent dans
+Administration, sans intervention technique.
 
-## Élèves
+## Décisions validées par le client
 
-1. **Âge de la majorité** : 18 ans par défaut, réglable par centre (`centres.majority_age`). Un élève mineur doit avoir
-   un parent ou tuteur avec un nom et au moins un téléphone ou un e-mail.
+### Élèves
 
-## Présences
+1. **Âge** : aucune règle d'âge. La fiche porte une case « élève mineur » ; un mineur doit avoir un parent ou tuteur
+   avec un nom et au moins un téléphone ou un e-mail. La date de naissance est facultative et sert d'information.
 
-2. **Taux de présence** = présences comptées / (inscrits x séances tenues).
-   Par défaut l'absence justifiée n'est pas comptée comme présente, le rattrapage dans un autre groupe l'est
-   (pour le groupe d'origine). Un élève invité en rattrapage n'entre pas dans le taux du groupe d'accueil.
+### Présences
 
-## Paie (`packages/shared/src/payroll.ts`)
+2. **Taux de présence** = présences comptées / présences attendues, sur les feuilles validées uniquement.
+   Par défaut l'absence justifiée n'est pas comptée comme présente et le rattrapage dans un autre groupe l'est,
+   pour le groupe d'origine (paramétrable par centre et par groupe). Un élève invité en rattrapage n'entre pas dans le
+   taux du groupe d'accueil.
 
-3. **Pourcentage du tarif de séance** : calculé comme pourcentage de (tarif d'une séance x séances tenues).
-   La définition du « tarif de séance » d'un groupe (par élève ou pour le groupe) reste à confirmer.
-4. **« Ignorée » et « Séance due »** donnent aujourd'hui le même montant (facteur 100 %). Le client doit préciser la
-   différence attendue entre ces deux effets.
-5. **Seuil minimum** : sous le seuil, la paie est nulle, ou égale au plancher s'il est configuré. Au-dessus, la paie
-   est complète par défaut, ou au prorata si l'option « prorata au-dessus du seuil » est activée.
-6. **Arrondi** : un seul arrondi au millime, au demi supérieur, à l'application du facteur de présence.
-7. **Statut de l'intervenant** : payer un salarié au prorata de la présence des élèves peut poser un problème en droit
-   du travail tunisien. À faire valider par un juriste ; l'application ne bloque pas cette combinaison.
+### Paie
 
-## Comptabilité et reçus
+3. **Séance annulée** : une séance annulée n'est jamais due ni payée, quel que soit l'effet de présence. Seules les
+   séances tenues dont la feuille est validée entrent dans la paie.
+4. **« Ignorée » et « Séance due »** paient toutes les deux chaque séance tenue à 100 %, même sans élève présent.
+5. **Seuil minimum** : sous le seuil, rien n'est payé, ou le plancher s'il est renseigné. Au-dessus, la paie est
+   complète, ou au prorata si l'option « au-dessus du seuil, payer au prorata » est cochée sur la règle.
+6. **Tarif de séance** : c'est un montant saisi sur la règle de rémunération. La base vaut
+   pourcentage x tarif de séance x séances tenues.
+7. **Arrondi** : un seul arrondi au millime, au demi supérieur, à l'application du facteur de présence.
 
-8. Le plan comptable (SCE tunisien supposé) et les mentions légales des reçus sont à fournir par le comptable du centre.
+### Reçus
+
+8. **Mentions des reçus** : un texte par défaut est imprimé en pied de reçu (numérotation continue, archivage, document
+   non modifiable, correction par reçu d'annulation). Il se remplace dans Administration, ainsi que le préfixe de
+   numérotation (`REC` par défaut).
+
+### Comptabilité
+
+9. **Écritures comptables légales** : prévues en phase 2. Tout mouvement d'argent (échéance émise ou annulée,
+   paiement, annulation, remboursement, chèque impayé, paie validée et payée, clôture de caisse) est déjà enregistré
+   dans le journal `financial_events`, en ajout seul et avec ses axes (élève, loueur, groupe, étude, formation,
+   intervenant). Les écritures au plan comptable tunisien pourront en être produites sans reprise des données.
+
+## Valeurs par défaut (paramétrables)
+
+| Réglage                                    | Défaut                                                                                                                          |
+| ------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------- |
+| Reports par échéance                       | 2 au maximum ; ceux du secrétariat attendent la validation d'un administrateur                                                  |
+| Délai de grâce avant retard                | 0 jour                                                                                                                          |
+| Heures d'ouverture (occupation des salles) | 08:00 à 20:00, du lundi au samedi                                                                                               |
+| Changement de groupe                       | Conserver le plan, ou recalculer au tarif du nouveau groupe les mois non payés à partir du mois d'effet (facturation mensuelle) |
+| Abandon                                    | Les échéances non payées dues après la date d'abandon sont annulées ; aucun remboursement automatique                           |
+
+## Point encore ouvert
+
+10. **Statut de l'intervenant** : payer un salarié au prorata de la présence des élèves peut poser un problème en droit
+    du travail tunisien. À faire valider par un juriste ; l'application ne bloque pas cette combinaison.

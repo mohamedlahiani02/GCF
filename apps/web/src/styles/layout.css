@@ -233,3 +233,95 @@ textarea.input {
     display: none;
   }
 }
+
+/* Modal sizes: forms with several columns use the wide variant. Both stay inside the viewport. */
+.modal {
+  max-width: calc(100vw - 32px);
+  max-height: calc(100vh - 32px);
+  display: flex;
+  flex-direction: column;
+}
+.modal > .card-b {
+  overflow-y: auto;
+}
+.modal.wide {
+  width: 880px;
+}
+
+/* Planning blocks (legend colours of the mockups). */
+.blk {
+  border: 1px solid;
+  border-radius: 6px;
+  font-size: 12px;
+  padding: 4px 8px;
+  overflow: hidden;
+}
+.blk-course {
+  background: #e1ecfb;
+  color: #1d4f9e;
+  border-color: #afc8ee;
+}
+.blk-training {
+  background: #ddf2f0;
+  color: #0b5b55;
+  border-color: #a5d8d3;
+}
+.blk-rental {
+  background: #fde8d6;
+  color: #8a3b00;
+  border-color: #efc3a0;
+}
+.blk-conflict {
+  background: #fbe4e1;
+  color: #a3261b;
+  border-color: #e7a59d;
+}
+button.blk {
+  font: inherit;
+  text-align: start;
+  cursor: pointer;
+}
+.timeline-row {
+  position: relative;
+  min-height: 64px;
+  border-top: 1px solid var(--line);
+}
+.timeline-row .blk {
+  position: absolute;
+  top: 6px;
+  bottom: 6px;
+}
+
+/* Filters placed in a page header keep their natural width. */
+.ph-actions {
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+.ph-actions .input {
+  width: auto;
+}
+
+/* Filters placed in a card header keep their natural width. */
+.card-h .input {
+  width: auto;
+}
+/* A select followed by an inline "+" button stays on one line. */
+.input-with-action {
+  display: flex;
+  gap: 6px;
+  flex-wrap: nowrap;
+}
+.input-with-action > .input {
+  flex: 1;
+  min-width: 0;
+}
+
+/* Footer actions never wrap or shrink; the explanatory text takes the remaining width. */
+.card-f > .row {
+  flex: 0 0 auto;
+  flex-wrap: nowrap;
+}
+.card-f > .cap {
+  flex: 1 1 auto;
+  min-width: 0;
+}
