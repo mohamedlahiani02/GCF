@@ -46,6 +46,7 @@ export const api = {
   post: <T>(path: string, body: unknown = {}) => request<T>("POST", path, body),
   patch: <T>(path: string, body: unknown) => request<T>("PATCH", path, body),
   put: <T>(path: string, body: unknown) => request<T>("PUT", path, body),
+  del: <T>(path: string) => request<T>("DELETE", path),
   /** URL of a file served by the API (PDF, exports), opened in a new tab or downloaded by the browser. */
   fileUrl: (path: string, query?: Query) => withQuery(`/api${path}`, query),
 };

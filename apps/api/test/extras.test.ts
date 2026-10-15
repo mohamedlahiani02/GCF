@@ -147,3 +147,41 @@ describe("group management", () => {
     expect(sessions.body[0]).toMatchObject({ status: "scheduled", sheetStatus: "none", instructorName: "Sana Ben Salah" });
   });
 });
+
+describe("centre logo", () => {
+  const PNG_1PX = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==";
+
+  it("lets the admin upload a PNG, JPEG or WebP logo that every user then sees", async () => {
+    expect((await h.call("GET", "/api/centre", secretariat)).body.logoVersion).toBeNull();
+    expect((await h.call("GET", "/api/centre/logo", secretariat)).status).toBe(404);
+    const denied = await h.call("PUT", "/api/centre/logo", secretariat, { image: `data:image/png;base64,${PNG_1PX}` });
+    expect(denied.status).toBe(403);
+    const saved = await h.call("PUT", "/api/centre/logo", admin, { image: `data:image/png;base64,${PNG_1PX}` });
+    expect(saved.status).toBe(200);
+    expect(typeof saved.body.logoVersion).toBe("number");
+    const image = await h.app.inject({ method: "GET", url: "/api/centre/logo", headers: { cookie: secretariat } });
+    expect(image.statusCode).toBe(200);
+    expect(image.headers["content-type"]).toBe("image/png");
+    expect(image.rawPayload.equals(Buffer.from(PNG_1PX, "base64"))).toBe(true);
+    const audit = await h.db.selectFrom("audit_log").select("action").where("action", "=", "centre.logo_updated").execute();
+    expect(audit).toHaveLength(1);
+  });
+
+  it("refuses a file that is not the image it claims to be, an SVG, or one above 512 KB", async () => {
+    const mismatch = await h.call("PUT", "/api/centre/logo", admin, { image: `data:image/jpeg;base64,${PNG_1PX}` });
+    expect(mismatch.body.code).toBe("invalid_logo");
+    const svg = Buffer.from('<svg xmlns="http://www.w3.org/2000/svg"><script>alert(1)</script></svg>').toString("base64");
+    expect((await h.call("PUT", "/api/centre/logo", admin, { image: `data:image/svg+xml;base64,${svg}` })).body.code).toBe("invalid_logo");
+    const large = Buffer.concat([Buffer.from(PNG_1PX, "base64"), Buffer.alloc(520 * 1024)]).toString("base64");
+    const tooLarge = await h.call("PUT", "/api/centre/logo", admin, { image: `data:image/png;base64,${large}` });
+    expect(tooLarge.status).toBe(422);
+    expect(tooLarge.body.code).toBe("logo_too_large");
+  });
+
+  it("removes the logo, back to the initials", async () => {
+    const removed = await h.call("DELETE", "/api/centre/logo", admin);
+    expect(removed.status).toBe(200);
+    expect(removed.body.logoVersion).toBeNull();
+    expect((await h.call("GET", "/api/centre/logo", admin)).status).toBe(404);
+  });
+});

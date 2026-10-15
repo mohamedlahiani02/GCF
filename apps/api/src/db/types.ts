@@ -24,6 +24,9 @@ export interface CentresTable {
   open_from: Generated<string>;
   open_to: Generated<string>;
   open_weekdays: Generated<number[]>;
+  logo: Buffer | null;
+  logo_mime: "image/png" | "image/jpeg" | "image/webp" | null;
+  logo_updated_at: NullableTimestamp;
   created_at: Timestamp;
   updated_at: Timestamp;
 }

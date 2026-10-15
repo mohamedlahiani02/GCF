@@ -19,7 +19,7 @@ export interface Harness {
   centreId: string;
   createUser(role: Role, email: string): Promise<string>;
   login(email: string, password?: string): Promise<string>;
-  call(method: "GET" | "POST" | "PATCH" | "PUT", url: string, cookie: string, payload?: unknown): Promise<{ status: number; body: any }>;
+  call(method: "GET" | "POST" | "PATCH" | "PUT" | "DELETE", url: string, cookie: string, payload?: unknown): Promise<{ status: number; body: any }>;
   close(): Promise<void>;
 }
 

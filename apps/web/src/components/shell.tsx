@@ -15,10 +15,11 @@ interface NavItem {
   permission: string | string[];
 }
 
-interface NavGroup {
-  label: string;
-  icon: string;
-  children: NavItem[];
+interface NavSection {
+  title: string;
+  /** A collapsible section folds away unless one of its pages is open. */
+  collapsible?: boolean;
+  items: NavItem[];
 }
 
 const ICONS = {
@@ -41,28 +42,38 @@ const ICONS = {
 };
 
 /** Daily work first, reference data folded under "Référentiels", then the other modules. */
-const NAV: (NavItem | NavGroup)[] = [
-  { to: "/", label: "Tableau de bord", icon: ICONS.dashboard, permission: "students:read" },
-  { to: "/groupes", label: "Gestion des groupes", icon: ICONS.groups, permission: "catalogue:read" },
-  { to: "/presences", label: "Présences", icon: ICONS.attendance, permission: "attendance:read" },
-  { to: "/encaissements", label: "Encaissements", icon: ICONS.payments, permission: "payments:read" },
-  { to: "/paie", label: "Paie", icon: ICONS.payroll, permission: "payroll:read" },
+const NAV: NavSection[] = [
   {
-    label: "Référentiels",
-    icon: ICONS.referentials,
-    children: [
+    title: "Quotidien",
+    items: [
+      { to: "/", label: "Tableau de bord", icon: ICONS.dashboard, permission: "students:read" },
+      { to: "/groupes", label: "Gestion des groupes", icon: ICONS.groups, permission: "catalogue:read" },
+      { to: "/presences", label: "Présences", icon: ICONS.attendance, permission: "attendance:read" },
+      { to: "/encaissements", label: "Encaissements", icon: ICONS.payments, permission: "payments:read" },
+      { to: "/paie", label: "Paie", icon: ICONS.payroll, permission: "payroll:read" },
+    ],
+  },
+  {
+    title: "Référentiels",
+    collapsible: true,
+    items: [
       { to: "/eleves", label: "Élèves", icon: ICONS.students, permission: "students:read" },
       { to: "/intervenants", label: "Intervenants", icon: ICONS.instructors, permission: "instructors:read" },
       { to: "/cours-particuliers", label: "Cours particuliers", icon: ICONS.lessons, permission: "catalogue:read" },
       { to: "/formations", label: "Formations", icon: ICONS.trainings, permission: "catalogue:read" },
     ],
   },
-  { to: "/recus", label: "Reçus", icon: ICONS.receipts, permission: "payments:read" },
-  { to: "/salles", label: "Salles et locations", icon: ICONS.rooms, permission: "catalogue:read" },
-  { to: "/planning", label: "Planning", icon: ICONS.planning, permission: "catalogue:read" },
-  { to: "/caisse", label: "Caisse", icon: ICONS.cash, permission: "cash:read" },
-  { to: "/rapports", label: "Rapports", icon: ICONS.reports, permission: ["reports:operational", "reports:financial"] },
-  { to: "/administration", label: "Administration", icon: ICONS.admin, permission: ["audit:read", "users:manage"] },
+  {
+    title: "Gestion",
+    items: [
+      { to: "/recus", label: "Reçus", icon: ICONS.receipts, permission: "payments:read" },
+      { to: "/salles", label: "Salles et locations", icon: ICONS.rooms, permission: "catalogue:read" },
+      { to: "/planning", label: "Planning", icon: ICONS.planning, permission: "catalogue:read" },
+      { to: "/caisse", label: "Caisse", icon: ICONS.cash, permission: "cash:read" },
+      { to: "/rapports", label: "Rapports", icon: ICONS.reports, permission: ["reports:operational", "reports:financial"] },
+      { to: "/administration", label: "Administration", icon: ICONS.admin, permission: ["audit:read", "users:manage"] },
+    ],
+  },
 ];
 
 const Icon = ({ d }: { d: string }) => (
@@ -85,6 +96,14 @@ const initials = (name: string) =>
   name
     .split(/\s+/)
     .filter((w) => w.length > 2)
+    .slice(0, 2)
+    .map((w) => w[0]!.toUpperCase())
+    .join("");
+
+const personInitials = (fullName: string) =>
+  fullName
+    .split(/\s+/)
+    .filter(Boolean)
     .slice(0, 2)
     .map((w) => w[0]!.toUpperCase())
     .join("");
@@ -142,17 +161,13 @@ function GlobalSearch() {
   const empty = data && !data.students.length && !data.instructors.length && !data.receipts.length;
   return (
     <div className="gsearch" style={{ position: "relative" }}>
+      <span className="gsearch-icon">
+        <Icon d="M11 18a7 7 0 1 0 0-14 7 7 0 0 0 0 14zM21 21l-5-5" />
+      </span>
       <label className="visually-hidden" htmlFor="global-search">
         Recherche globale
       </label>
-      <input
-        id="global-search"
-        className="input"
-        type="search"
-        placeholder="Élève, intervenant, reçu REC-…"
-        value={text}
-        onChange={(e) => setText(e.target.value)}
-      />
+      <input id="global-search" className="input" type="search" placeholder="Rechercher…" value={text} onChange={(e) => setText(e.target.value)} />
       {debounced.length >= 2 && data ? (
         <div className="search-results">
           {data.students.map((s) => (
@@ -187,12 +202,16 @@ export function Shell() {
   const [collapsed, setCollapsed] = useState(false);
   const [collect, setCollect] = useState<{ studentId?: string; renterId?: string } | null>(null);
   const [changingPassword, setChangingPassword] = useState(false);
-  const [referentialsOpen, setReferentialsOpen] = useState(false);
+  const [openSections, setOpenSections] = useState<string[]>([]);
   const allowed = (n: NavItem) => (Array.isArray(n.permission) ? n.permission.some(can) : can(n.permission));
   const location = useLocation();
   const client = useQueryClient();
   const navigate = useNavigate();
-  const centre = useQuery({ queryKey: ["centre"], queryFn: () => api.get<{ name: string; timezone: string }>("/centre"), enabled: !!session });
+  const centre = useQuery({
+    queryKey: ["centre"],
+    queryFn: () => api.get<{ name: string; timezone: string; logoVersion: number | null }>("/centre"),
+    enabled: !!session,
+  });
   if (centre.data) setTimeZone(centre.data.timezone);
   const logout = useMutation({
     mutationFn: () => api.post("/auth/logout"),
@@ -215,56 +234,70 @@ export function Shell() {
       <CollectContext.Provider value={(payer) => setCollect(payer ?? {})}>
         <div className="app">
           <aside className={`side${collapsed ? " collapsed" : ""}`} aria-label="Navigation principale">
-            <div className="brand">
-              <span className="logo" aria-hidden="true">
-                {initials(centre.data?.name ?? "Gestion du centre")}
+            <div className={`side-brand${centre.data?.logoVersion ? " has-logo" : ""}`}>
+              {centre.data?.logoVersion ? (
+                <span className="brand-logo">
+                  <img src={api.fileUrl("/centre/logo", { v: centre.data.logoVersion })} alt="" />
+                </span>
+              ) : (
+                <span className="logo" aria-hidden="true">
+                  {initials(centre.data?.name ?? "Gestion du centre")}
+                </span>
+              )}
+              <span className="lbl brand-text">
+                <strong>{centre.data?.name ?? "Gestion du centre"}</strong>
+                <span className="cap">Back-office</span>
               </span>
-              <span className="lbl">{centre.data?.name ?? "Gestion du centre"}</span>
             </div>
             <GlobalSearch />
-            <nav style={{ display: "flex", flexDirection: "column", gap: 2 }}>
-              {NAV.map((entry) => {
-                if (!("children" in entry)) return allowed(entry) ? <NavEntry key={entry.to} item={entry} /> : null;
-                const children = entry.children.filter(allowed);
-                if (!children.length) return null;
-                const open = referentialsOpen || children.some((c) => location.pathname.startsWith(c.to));
+            <nav className="side-nav">
+              {NAV.map((section) => {
+                const items = section.items.filter(allowed);
+                if (!items.length) return null;
+                const active = items.some((c) => (c.to === "/" ? location.pathname === "/" : location.pathname.startsWith(c.to)));
+                const open = !section.collapsible || collapsed || active || openSections.includes(section.title);
+                const id = `nav-${section.title}`;
                 return (
-                  <div key={entry.label}>
-                    <button
-                      type="button"
-                      className="navi"
-                      aria-expanded={open}
-                      title={entry.label}
-                      onClick={() => setReferentialsOpen(!open)}
-                      style={{ width: "100%", border: 0, background: "transparent", cursor: "pointer", font: "inherit" }}
-                    >
-                      <Icon d={entry.icon} />
-                      <span style={{ flex: 1, textAlign: "start" }}>{entry.label}</span>
-                      <span className="lbl" aria-hidden="true">
-                        {open ? "▾" : "▸"}
-                      </span>
-                    </button>
+                  <div key={section.title} className="nav-section">
+                    {section.collapsible ? (
+                      <button
+                        type="button"
+                        className="nav-title"
+                        aria-expanded={open}
+                        aria-controls={id}
+                        onClick={() => setOpenSections((list) => (open ? list.filter((t) => t !== section.title) : [...list, section.title]))}
+                      >
+                        <span>{section.title}</span>
+                        <span aria-hidden="true">{open ? "▾" : "▸"}</span>
+                      </button>
+                    ) : (
+                      <span className="nav-title">{section.title}</span>
+                    )}
                     {open ? (
-                      <div className="nav-children">
-                        {children.map((c) => (
-                          <NavEntry key={c.to} item={c} />
+                      <div id={id} className="nav-items">
+                        {items.map((item) => (
+                          <NavEntry key={item.to} item={item} />
                         ))}
                       </div>
                     ) : null}
                   </div>
                 );
               })}
-              <span className="navi off" aria-disabled="true" title="Coworking : phase 2" style={{ marginTop: 8, justifyContent: "space-between" }}>
-                <span style={{ display: "flex", alignItems: "center", gap: 10 }}>
-                  <Icon d="M5 11h14v10H5zM8 11V7a4 4 0 0 1 8 0v4" />
-                  <span>Coworking</span>
+              <span className="navi off" aria-disabled="true" title="Coworking : phase 2">
+                <Icon d="M5 11h14v10H5zM8 11V7a4 4 0 0 1 8 0v4" />
+                <span>Coworking</span>
+                <span className="b b-gray lbl" style={{ marginInlineStart: "auto" }}>
+                  Phase 2
                 </span>
-                <span className="b b-gray lbl">Phase 2</span>
               </span>
             </nav>
             <div className="side-foot">
-              <span className="cap">
-                {ROLE[session.user.role]} · {session.user.fullName}
+              <span className="avatar" aria-hidden="true">
+                {personInitials(session.user.fullName)}
+              </span>
+              <span className="lbl user-text">
+                <strong>{session.user.fullName}</strong>
+                <span className="cap">{ROLE[session.user.role]}</span>
               </span>
               <button
                 type="button"
