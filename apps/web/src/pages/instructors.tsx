@@ -137,7 +137,7 @@ function InstructorModal({ instructor, onClose, onSaved }: { instructor: Instruc
                 {s.name}
               </label>
             ))}
-          {subjects.data?.length === 0 ? <span className="cap">Aucune matière : créez-les depuis Études privées.</span> : null}
+          {subjects.data?.length === 0 ? <span className="cap">Aucune matière : créez-les depuis Cours particuliers.</span> : null}
         </div>
       </div>
       <div>
@@ -223,7 +223,7 @@ function InstructorModal({ instructor, onClose, onSaved }: { instructor: Instruc
 }
 
 export function InstructorsPage() {
-  usePage(["Intervenants"]);
+  usePage(["Référentiels", "Intervenants"]);
   const { can } = useSession();
   const navigate = useNavigate();
   const [creating, setCreating] = useState(false);
@@ -301,7 +301,7 @@ export function InstructorPage() {
   const instructor = useQuery({ queryKey: ["instructor", id], queryFn: () => api.get<InstructorDetail>(`/instructors/${id}`) });
   const groups = useQuery({ queryKey: ["groups", "all"], queryFn: () => api.get<GroupRow[]>("/groups", { status: "all" }) });
   const name = instructor.data ? `${instructor.data.firstName} ${instructor.data.lastName}` : "Intervenant";
-  usePage(["Intervenants", name]);
+  usePage(["Référentiels", "Intervenants", name]);
   if (instructor.isPending) return <Loading />;
   if (instructor.error) return <ErrorBanner error={instructor.error} retry={() => instructor.refetch()} />;
   const i = instructor.data;
@@ -322,9 +322,14 @@ export function InstructorPage() {
         actions={
           <>
             {can("payroll:read") ? (
-              <Link className="btn" to={`/paie?intervenant=${id}`}>
-                Règles de rémunération
-              </Link>
+              <>
+                <Link className="btn" to={`/paie/intervenants/${id}`}>
+                  Rémunération
+                </Link>
+                <Link className="btn btn-g" to={`/paie?onglet=regles&intervenant=${id}`}>
+                  Règles de rémunération
+                </Link>
+              </>
             ) : null}
             {can("instructors:write") ? (
               <>

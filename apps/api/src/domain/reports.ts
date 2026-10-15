@@ -17,7 +17,7 @@ export type Audience = "operational" | "financial";
 
 export const REPORTS: Record<ReportName, { title: string; audiences: Audience[] }> = {
   unpaid: { title: "Impayés et échéances reportées", audiences: ["operational", "financial"] },
-  revenue: { title: "Chiffre d'affaires par formation, étude et location", audiences: ["financial"] },
+  revenue: { title: "Chiffre d'affaires par formation, cours particulier et location", audiences: ["financial"] },
   collections: { title: "Encaissements par mode et par utilisateur", audiences: ["financial"] },
   payroll: { title: "Paie par intervenant", audiences: ["financial"] },
   attendance: { title: "Taux de présence par groupe", audiences: ["operational", "financial"] },
@@ -96,7 +96,7 @@ async function unpaid(db: Db, centreId: string, range: ReportRange): Promise<Rep
 
 async function revenue(db: Db, centreId: string, range: ReportRange): Promise<ReportTable> {
   const { timezone } = await centreClock(db, centreId);
-  const offer = sql<string>`coalesce('Étude : ' || studies.name, 'Formation : ' || trainings.title, 'Location : ' || rooms.name)`;
+  const offer = sql<string>`coalesce('Cours particulier : ' || studies.name, 'Formation : ' || trainings.title, 'Location : ' || rooms.name)`;
   const base = db
     .selectFrom("installments")
     .leftJoin("enrolments", "enrolments.id", "installments.enrolment_id")

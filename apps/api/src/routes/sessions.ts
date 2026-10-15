@@ -84,6 +84,36 @@ export const sessionRoutes: FastifyPluginAsync = async (app) => {
     });
   });
 
+  /** A group's sessions over a period (all of them by default), with the state of their attendance sheet. */
+  app.get("/groups/:id/sessions", { preHandler: attendanceRead }, async (request) => {
+    const centreId = request.user!.centreId;
+    const { id } = idParam.parse(request.params);
+    const q = z.object({ from: isoDate.optional(), to: isoDate.optional() }).parse(request.query);
+    const centre = await db.selectFrom("centres").select("timezone").where("id", "=", centreId).executeTakeFirstOrThrow();
+    const localDay = sql<string>`(class_sessions.starts_at at time zone ${centre.timezone})::date`;
+    return db
+      .selectFrom("class_sessions")
+      .innerJoin("instructors", "instructors.id", "class_sessions.instructor_id")
+      .leftJoin("rooms", "rooms.id", "class_sessions.room_id")
+      .select([
+        "class_sessions.id",
+        "class_sessions.starts_at as startsAt",
+        "class_sessions.ends_at as endsAt",
+        "class_sessions.status",
+        "class_sessions.sheet_status as sheetStatus",
+        "class_sessions.room_id as roomId",
+        "rooms.name as roomName",
+        "class_sessions.instructor_id as instructorId",
+        sql<string>`instructors.first_name || ' ' || instructors.last_name`.as("instructorName"),
+      ])
+      .where("class_sessions.group_id", "=", id)
+      .where("class_sessions.centre_id", "=", centreId)
+      .$if(q.from !== undefined, (qb) => qb.where(localDay, ">=", q.from!))
+      .$if(q.to !== undefined, (qb) => qb.where(localDay, "<=", q.to!))
+      .orderBy("class_sessions.starts_at")
+      .execute();
+  });
+
   app.post("/groups/:id/sessions", { preHandler: planningWrite }, async (request, reply) => {
     const actor = request.user!;
     const { id } = idParam.parse(request.params);
@@ -162,6 +192,7 @@ export const sessionRoutes: FastifyPluginAsync = async (app) => {
         id: session.id,
         groupId: session.groupId,
         groupName: session.groupName,
+        instructorId: session.instructorId,
         startsAt: session.startsAt,
         endsAt: session.endsAt,
         localDate: session.localDate,

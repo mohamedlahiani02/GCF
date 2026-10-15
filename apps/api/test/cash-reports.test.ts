@@ -123,7 +123,7 @@ describe("reports", () => {
 
   it("splits invoiced and collected revenue by offer", async () => {
     const res = await h.call("GET", `/api/reports/revenue?from=2026-09-01&to=2026-12-31`, accountant);
-    expect(res.body.rows).toEqual([{ offer: "Étude : Français", invoiced: 320_000, collected: 180_000 }]);
+    expect(res.body.rows).toEqual([{ offer: "Cours particulier : Français", invoiced: 320_000, collected: 180_000 }]);
   });
 
   it("exports to Excel, CSV and PDF", async () => {

@@ -142,16 +142,37 @@ export interface GroupRow {
   kind: "study" | "training";
   name: string;
   studyId: string | null;
+  studyName: string | null;
   trainingSessionId: string | null;
+  trainingSessionName: string | null;
+  trainingId: string | null;
+  trainingTitle: string | null;
   instructorId: string;
   instructorFirstName: string;
   instructorLastName: string;
+  roomId: string | null;
   roomName: string | null;
   capacity: number;
   startDate: string;
   endDate: string;
   status: string;
   enrolledCount: number;
+  nextSessionId: string | null;
+  nextSessionAt: string | null;
+  attendanceSessionId: string | null;
+  slots: Slot[];
+}
+
+export interface GroupSession {
+  id: string;
+  startsAt: string;
+  endsAt: string;
+  status: "scheduled" | "held" | "cancelled";
+  sheetStatus: "none" | "in_progress" | "validated";
+  roomId: string | null;
+  roomName: string | null;
+  instructorId: string;
+  instructorName: string;
 }
 
 export interface Room {
@@ -205,9 +226,18 @@ export interface TrainingDetail {
   durationHours: number;
   price: number;
   capacity: number;
-  paymentModes: "full" | "installments" | "both";
   status: string;
-  plans: { id: string; name: string; isDefault: boolean; status: string; items: PlanItem[]; amounts: number[] }[];
+  plans: {
+    id: string;
+    name: string;
+    isDefault: boolean;
+    kind: "full" | "installments" | "monthly" | "per_session";
+    amount: number | null;
+    absenceBilled: boolean | null;
+    status: string;
+    items: PlanItem[];
+    amounts: number[];
+  }[];
   sessions: { id: string; name: string; startDate: string; endDate: string; status: string }[];
 }
 
@@ -229,6 +259,7 @@ export interface Sheet {
     id: string;
     groupId: string;
     groupName: string;
+    instructorId: string;
     startsAt: string;
     endsAt: string;
     localDate: string;

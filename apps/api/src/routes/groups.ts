@@ -181,37 +181,103 @@ export const groupRoutes: FastifyPluginAsync = async (app) => {
     };
   };
 
+  /**
+   * Groups with what the daily screens need: the offer, the weekly slots, the next session and the oldest session
+   * whose attendance is still to be entered (started, not cancelled, sheet not validated, in the last 30 days).
+   */
   app.get("/", { preHandler: read }, async (request) => {
     const query = listQuery.parse(request.query);
+    const centreId = request.user!.centreId;
     const rows = await db
       .selectFrom("groups")
       .innerJoin("instructors", "instructors.id", "groups.instructor_id")
       .leftJoin("rooms", "rooms.id", "groups.room_id")
-      .leftJoin("enrolments", (join) => join.onRef("enrolments.group_id", "=", "groups.id").on("enrolments.status", "=", "active"))
+      .leftJoin("studies", "studies.id", "groups.study_id")
+      .leftJoin("training_sessions", "training_sessions.id", "groups.training_session_id")
+      .leftJoin("trainings", "trainings.id", "training_sessions.training_id")
       .select([
         "groups.id",
         "groups.kind",
         "groups.name",
         "groups.study_id as studyId",
+        "studies.name as studyName",
         "groups.training_session_id as trainingSessionId",
+        "training_sessions.name as trainingSessionName",
+        "trainings.id as trainingId",
+        "trainings.title as trainingTitle",
         "groups.instructor_id as instructorId",
         "instructors.first_name as instructorFirstName",
         "instructors.last_name as instructorLastName",
+        "groups.room_id as roomId",
         "rooms.name as roomName",
         "groups.capacity",
         "groups.start_date as startDate",
         "groups.end_date as endDate",
         "groups.status",
       ])
-      .select((eb) => eb.fn.count<number>("enrolments.id").as("enrolledCount"))
-      .where("groups.centre_id", "=", request.user!.centreId)
+      .select((eb) => [
+        eb
+          .selectFrom("enrolments")
+          .select(sql<number>`count(*)::integer`.as("n"))
+          .whereRef("enrolments.group_id", "=", "groups.id")
+          .where("enrolments.status", "=", "active")
+          .as("enrolledCount"),
+        eb
+          .selectFrom("class_sessions")
+          .select("class_sessions.id")
+          .whereRef("class_sessions.group_id", "=", "groups.id")
+          .where("class_sessions.status", "=", "scheduled")
+          .where("class_sessions.starts_at", ">=", new Date())
+          .orderBy("class_sessions.starts_at")
+          .limit(1)
+          .as("nextSessionId"),
+        eb
+          .selectFrom("class_sessions")
+          .select("class_sessions.starts_at")
+          .whereRef("class_sessions.group_id", "=", "groups.id")
+          .where("class_sessions.status", "=", "scheduled")
+          .where("class_sessions.starts_at", ">=", new Date())
+          .orderBy("class_sessions.starts_at")
+          .limit(1)
+          .as("nextSessionAt"),
+        eb
+          .selectFrom("class_sessions")
+          .select("class_sessions.id")
+          .whereRef("class_sessions.group_id", "=", "groups.id")
+          .where("class_sessions.status", "!=", "cancelled")
+          .where("class_sessions.sheet_status", "!=", "validated")
+          .where("class_sessions.starts_at", "<=", new Date())
+          .where("class_sessions.starts_at", ">=", new Date(Date.now() - 30 * 86_400_000))
+          .orderBy("class_sessions.starts_at")
+          .limit(1)
+          .as("attendanceSessionId"),
+      ])
+      .where("groups.centre_id", "=", centreId)
       .$if(query.status !== "all", (qb) => qb.where("groups.status", "=", query.status as "active" | "archived"))
       .$if(query.studyId !== undefined, (qb) => qb.where("groups.study_id", "=", query.studyId!))
       .$if(query.trainingSessionId !== undefined, (qb) => qb.where("groups.training_session_id", "=", query.trainingSessionId!))
-      .groupBy(["groups.id", "instructors.id", "rooms.id"])
       .orderBy("groups.name")
       .execute();
-    return rows.map((r) => ({ ...r, enrolledCount: Number(r.enrolledCount) }));
+    const slots = rows.length
+      ? await db
+          .selectFrom("group_slots")
+          .select(["group_id as groupId", "weekday", "start_time", "end_time", "room_id as roomId"])
+          .where(
+            "group_id",
+            "in",
+            rows.map((r) => r.id),
+          )
+          .orderBy("weekday")
+          .orderBy("start_time")
+          .execute()
+      : [];
+    return rows.map((r) => ({
+      ...r,
+      enrolledCount: Number(r.enrolledCount ?? 0),
+      slots: slots
+        .filter((s) => s.groupId === r.id)
+        .map((s) => ({ weekday: s.weekday, startTime: toClock(s.start_time), endTime: toClock(s.end_time), roomId: s.roomId })),
+    }));
   });
 
   app.get("/:id", { preHandler: read }, async (request) => {

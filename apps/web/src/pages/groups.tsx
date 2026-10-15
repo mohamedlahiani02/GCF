@@ -2,7 +2,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useState } from "react";
 import { Link, useNavigate, useParams, useSearchParams } from "react-router";
 import { api } from "../api/client";
-import type { GroupDetail, GroupRow, Instructor, Room, Slot, Study, TrainingDetail } from "../api/types";
+import type { GroupDetail, GroupRow, GroupSession, Instructor, Room, Slot, Study, TrainingDetail } from "../api/types";
 import { useSession } from "../auth/session";
 import { usePage } from "../components/shell";
 import { useToast } from "../components/toasts";
@@ -122,103 +122,324 @@ const slotPayload = (slots: Slot[]) => slots.map((s) => ({ weekday: s.weekday, s
 
 /* List */
 
-export function GroupsPage() {
-  usePage(["Groupes"]);
+type Category = "cours" | "formations";
+type TrainingGrouping = "formation" | "formateur";
+
+const slotsText = (slots: Slot[]) => slots.map((s) => `${weekdayLabel(s.weekday).slice(0, 3)}. ${s.startTime}-${s.endTime}`).join(", ");
+
+/** One group with the shortcuts the secretariat uses every day. */
+function GroupLine({ g, showInstructor, showOffer }: { g: GroupRow; showInstructor: boolean; showOffer: boolean }) {
   const { can } = useSession();
   const navigate = useNavigate();
-  const [params] = useSearchParams();
-  const studyId = params.get("etude");
+  const [adding, setAdding] = useState(false);
+  const attendanceTarget = g.attendanceSessionId ?? g.nextSessionId;
+  return (
+    <tr>
+      <td>
+        <Link to={`/groupes/${g.id}`}>
+          <strong>{g.name}</strong>
+        </Link>{" "}
+        {g.status === "archived" ? <Badge tone="gray">Archivé</Badge> : null}
+        <div className="cap">
+          {[
+            showOffer ? (g.kind === "study" ? g.studyName : `${g.trainingTitle} · ${g.trainingSessionName}`) : null,
+            showInstructor ? `${g.instructorFirstName} ${g.instructorLastName}` : null,
+            g.roomName,
+            slotsText(g.slots),
+          ]
+            .filter(Boolean)
+            .join(" · ")}
+        </div>
+      </td>
+      <td style={{ minWidth: 120 }}>
+        <div className="row center" style={{ gap: 8 }}>
+          <Bar value={(g.enrolledCount / g.capacity) * 100} tone={g.enrolledCount >= g.capacity ? "r" : undefined} />
+          <span className="num">
+            {g.enrolledCount}/{g.capacity}
+          </span>
+        </div>
+      </td>
+      <td>
+        {g.nextSessionAt ? (
+          <>
+            {frDate(g.nextSessionAt)} {frTime(g.nextSessionAt)}
+          </>
+        ) : (
+          <span className="cap">Aucune séance prévue</span>
+        )}
+        {g.attendanceSessionId ? (
+          <div>
+            <Badge tone="amber">Présences à saisir</Badge>
+          </div>
+        ) : null}
+      </td>
+      <td style={{ textAlign: "right", whiteSpace: "nowrap" }}>
+        <Link className="btn btn-g" to={`/groupes/${g.id}?onglet=eleves`}>
+          Élèves
+        </Link>
+        <Link className="btn btn-g" to={`/groupes/${g.id}?onglet=seances`}>
+          Séances
+        </Link>
+        {can("groups:write") && g.status === "active" ? (
+          <button type="button" className="btn btn-g" onClick={() => setAdding(true)}>
+            + Séance
+          </button>
+        ) : null}
+        {can("attendance:write") ? (
+          <button
+            type="button"
+            className="btn btn-g"
+            disabled={!attendanceTarget}
+            title={attendanceTarget ? undefined : "Aucune séance à saisir"}
+            onClick={() => navigate(`/presences/${attendanceTarget}`)}
+          >
+            Saisir les présences
+          </button>
+        ) : null}
+        {adding ? <AddSessionModal group={g} onClose={() => setAdding(false)} /> : null}
+      </td>
+    </tr>
+  );
+}
+
+function GroupTable({ groups, showInstructor, showOffer }: { groups: GroupRow[]; showInstructor: boolean; showOffer: boolean }) {
+  return (
+    <div className="xs">
+      <table className="tbl">
+        <thead>
+          <tr>
+            <th>Groupe</th>
+            <th>Élèves</th>
+            <th>Prochaine séance</th>
+            <th />
+          </tr>
+        </thead>
+        <tbody>
+          {groups.map((g) => (
+            <GroupLine key={g.id} g={g} showInstructor={showInstructor} showOffer={showOffer} />
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+/**
+ * Gestion des groupes: private lessons grouped by teacher, trainings grouped by training or by trainer. Every group
+ * gives its students, its sessions, a new session and the attendance to enter in one click.
+ */
+export function GroupsPage() {
+  usePage(["Gestion des groupes"]);
+  const { can } = useSession();
+  const [params, setParams] = useSearchParams();
+  const studyId = params.get("cours");
   const sessionId = params.get("session");
+  const category: Category = params.get("categorie") === "formations" || sessionId ? "formations" : "cours";
+  const grouping: TrainingGrouping = params.get("par") === "formateur" ? "formateur" : "formation";
   const [status, setStatus] = useState<"active" | "archived" | "all">("active");
+  const update = (patch: Record<string, string>) => setParams({ categorie: category, par: grouping, ...patch });
   const groups = useQuery({
-    queryKey: ["groups", studyId, sessionId, status],
+    queryKey: ["groups", "management", studyId, sessionId, status],
     queryFn: () => api.get<GroupRow[]>("/groups", { studyId, trainingSessionId: sessionId, status }),
   });
+  const list = (groups.data ?? []).filter((g) => (category === "cours" ? g.kind === "study" : g.kind === "training"));
+  const sections = new Map<string, { title: string; sub: string; groups: GroupRow[] }>();
+  for (const g of list) {
+    const byInstructor = category === "cours" || grouping === "formateur";
+    const key = byInstructor ? g.instructorId : (g.trainingId ?? "");
+    const section = sections.get(key) ?? {
+      title: byInstructor ? `${g.instructorLastName} ${g.instructorFirstName}` : (g.trainingTitle ?? ""),
+      sub: "",
+      groups: [],
+    };
+    section.groups.push(g);
+    sections.set(key, section);
+  }
+  for (const section of sections.values()) {
+    section.sub = `${section.groups.length} groupe(s) · ${section.groups.reduce((s, g) => s + g.enrolledCount, 0)} élève(s)`;
+  }
+  const sorted = [...sections.values()].sort((a, b) => a.title.localeCompare(b.title, "fr"));
+  const newGroupLink = `/groupes/nouveau?type=${category === "cours" ? "cours" : "formation"}${studyId ? `&cours=${studyId}` : ""}`;
   return (
     <>
       <PageHeader
-        title="Groupes"
+        title="Gestion des groupes"
         subtitle={studyId || sessionId ? <Link to="/groupes">Voir tous les groupes</Link> : undefined}
         actions={
           can("groups:write") ? (
-            <Link className="btn btn-p" to={`/groupes/nouveau${studyId ? `?etude=${studyId}` : ""}`}>
-              + Nouveau groupe
+            <Link className="btn btn-p btn-l" to={newGroupLink}>
+              + Créer un groupe
             </Link>
           ) : null
         }
       />
-      <Card
-        title={
-          <select className="input" style={{ width: 160 }} aria-label="Statut" value={status} onChange={(e) => setStatus(e.target.value as typeof status)}>
+      <div className="row between center" style={{ flexWrap: "wrap", gap: 12 }}>
+        <Segmented
+          label="Catégorie"
+          value={category}
+          onChange={(c) => setParams({ categorie: c, par: grouping })}
+          options={[
+            { value: "cours", label: "Cours particuliers" },
+            { value: "formations", label: "Formations" },
+          ]}
+        />
+        <div className="row center" style={{ gap: 8 }}>
+          {category === "formations" ? (
+            <>
+              <span className="lab">Regrouper par</span>
+              <Segmented
+                label="Regrouper par"
+                value={grouping}
+                onChange={(p) => update({ par: p })}
+                options={[
+                  { value: "formation", label: "Formation" },
+                  { value: "formateur", label: "Formateur" },
+                ]}
+              />
+            </>
+          ) : (
+            <span className="cap">Groupes regroupés par enseignant</span>
+          )}
+          <select className="input" style={{ width: 140 }} aria-label="Statut" value={status} onChange={(e) => setStatus(e.target.value as typeof status)}>
             <option value="active">Actifs</option>
             <option value="archived">Archivés</option>
             <option value="all">Tous</option>
           </select>
-        }
-      >
-        <ErrorBanner error={groups.error} retry={() => groups.refetch()} />
-        {groups.isPending ? (
-          <Loading />
-        ) : groups.data?.length === 0 ? (
-          <Empty title="Aucun groupe" />
-        ) : (
-          <div className="xs">
-            <table className="tbl">
-              <thead>
-                <tr>
-                  <th>Groupe</th>
-                  <th>Type</th>
-                  <th>Intervenant</th>
-                  <th>Salle</th>
-                  <th>Période</th>
-                  <th>Remplissage</th>
-                </tr>
-              </thead>
-              <tbody>
-                {groups.data?.map((g) => (
-                  <tr key={g.id} className="clickable" onClick={() => navigate(`/groupes/${g.id}`)}>
-                    <td>
-                      <Link to={`/groupes/${g.id}`} onClick={(e) => e.stopPropagation()}>
-                        {g.name}
-                      </Link>{" "}
-                      {g.status === "archived" ? <Badge tone="gray">Archivé</Badge> : null}
-                    </td>
-                    <td>{g.kind === "study" ? "Étude" : "Formation"}</td>
-                    <td>
-                      {g.instructorLastName} {g.instructorFirstName}
-                    </td>
-                    <td>{g.roomName ?? ""}</td>
-                    <td>
-                      {frDate(g.startDate)} au {frDate(g.endDate)}
-                    </td>
-                    <td style={{ minWidth: 140 }}>
-                      <div className="row center" style={{ gap: 8 }}>
-                        <Bar value={(g.enrolledCount / g.capacity) * 100} tone={g.enrolledCount >= g.capacity ? "r" : undefined} />
-                        <span className="num">
-                          {g.enrolledCount}/{g.capacity}
-                        </span>
-                      </div>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
-      </Card>
+        </div>
+      </div>
+      <ErrorBanner error={groups.error} retry={() => groups.refetch()} />
+      {groups.isPending ? (
+        <Loading />
+      ) : sorted.length === 0 ? (
+        <Card>
+          <Empty
+            title={category === "cours" ? "Aucun groupe de cours particulier" : "Aucun groupe de formation"}
+            text="Un groupe réunit des élèves autour d'un intervenant, avec ses propres séances."
+            action={
+              can("groups:write") ? (
+                <Link className="btn btn-p" to={newGroupLink}>
+                  + Créer un groupe
+                </Link>
+              ) : undefined
+            }
+          />
+        </Card>
+      ) : (
+        sorted.map((section) => (
+          <Card key={section.title} title={section.title} actions={<span className="cap">{section.sub}</span>}>
+            <GroupTable
+              groups={section.groups}
+              showInstructor={category === "formations" && grouping === "formation"}
+              showOffer={category === "cours" || grouping === "formateur"}
+            />
+          </Card>
+        ))
+      )}
     </>
+  );
+}
+
+/** "Ajouter une séance", prefilled with the group's next weekly slot, instructor and room; all three can be changed. */
+export function AddSessionModal({ group, onClose }: { group: Pick<GroupRow, "id" | "name" | "instructorId" | "roomId" | "slots">; onClose: () => void }) {
+  const client = useQueryClient();
+  const toast = useToast();
+  const instructors = useQuery({ queryKey: ["instructors"], queryFn: () => api.get<Instructor[]>("/instructors") });
+  const rooms = useQuery({ queryKey: ["rooms"], queryFn: () => api.get<Room[]>("/catalogue/rooms") });
+  const today = todayIso();
+  const next = (() => {
+    for (let i = 0; i < 7; i += 1) {
+      const date = addDaysIso(today, i);
+      const weekday = new Date(`${date}T00:00:00Z`).getUTCDay() || 7;
+      const slot = group.slots.find((s) => s.weekday === weekday);
+      if (slot) return { date, startTime: slot.startTime, endTime: slot.endTime, roomId: slot.roomId ?? group.roomId };
+    }
+    return { date: today, startTime: "17:00", endTime: "18:30", roomId: group.roomId };
+  })();
+  const [date, setDate] = useState(next.date);
+  const [startTime, setStartTime] = useState(next.startTime);
+  const [endTime, setEndTime] = useState(next.endTime);
+  const [instructorId, setInstructorId] = useState(group.instructorId);
+  const [roomId, setRoomId] = useState(next.roomId ?? "");
+  const add = useMutation({
+    mutationFn: () => api.post<{ id: string }>(`/groups/${group.id}/sessions`, { date, startTime, endTime, roomId: roomId || null, instructorId }),
+    onSuccess: async () => {
+      await client.invalidateQueries();
+      toast(`Séance ajoutée le ${frDate(date)} à ${startTime}.`);
+      onClose();
+    },
+  });
+  const conflicts = conflictsOf(add.error);
+  return (
+    <Modal
+      wide
+      title={`Ajouter une séance : ${group.name}`}
+      onClose={onClose}
+      footer={
+        <>
+          <span className="cap">Les conflits de salle et d'intervenant sont vérifiés à l'enregistrement</span>
+          <div className="row" style={{ gap: 8 }}>
+            <button type="button" className="btn" onClick={onClose}>
+              Annuler
+            </button>
+            <button type="button" className="btn btn-p" disabled={!date || endTime <= startTime || add.isPending} onClick={() => add.mutate()}>
+              Ajouter la séance
+            </button>
+          </div>
+        </>
+      }
+    >
+      <div className="grid3">
+        <Field label="Date">
+          <input className="input" type="date" value={date} onChange={(e) => setDate(e.target.value)} />
+        </Field>
+        <Field label="Début">
+          <input className="input" type="time" value={startTime} onChange={(e) => setStartTime(e.target.value)} />
+        </Field>
+        <Field label="Fin" error={endTime <= startTime ? "La fin doit suivre le début." : null}>
+          <input className="input" type="time" value={endTime} onChange={(e) => setEndTime(e.target.value)} />
+        </Field>
+      </div>
+      <div className="grid2">
+        <Field label="Intervenant">
+          <select className="input" value={instructorId} onChange={(e) => setInstructorId(e.target.value)}>
+            {(instructors.data ?? [])
+              .filter((i) => i.status === "active" || i.id === group.instructorId)
+              .map((i) => (
+                <option key={i.id} value={i.id}>
+                  {i.lastName} {i.firstName}
+                  {i.id === group.instructorId ? " (intervenant du groupe)" : ""}
+                </option>
+              ))}
+          </select>
+        </Field>
+        <Field label="Salle">
+          <select className="input" value={roomId} onChange={(e) => setRoomId(e.target.value)}>
+            <option value="">Salle par défaut du groupe</option>
+            {(rooms.data ?? [])
+              .filter((r) => r.status === "active")
+              .map((r) => (
+                <option key={r.id} value={r.id}>
+                  {r.name}
+                </option>
+              ))}
+          </select>
+        </Field>
+      </div>
+      <ConflictBanner conflicts={conflicts} />
+      {conflicts.length === 0 ? <ErrorBanner error={add.error} /> : null}
+    </Modal>
   );
 }
 
 /* Creation */
 
 export function GroupCreatePage() {
-  usePage(["Groupes", "Nouveau groupe"]);
+  usePage(["Gestion des groupes", "Nouveau groupe"]);
   const [params] = useSearchParams();
   const navigate = useNavigate();
   const toast = useToast();
-  const [kind, setKind] = useState<"study" | "training">(params.get("session") ? "training" : "study");
-  const [studyId, setStudyId] = useState(params.get("etude") ?? "");
+  const [kind, setKind] = useState<"study" | "training">(params.get("session") || params.get("type") === "formation" ? "training" : "study");
+  const [studyId, setStudyId] = useState(params.get("cours") ?? "");
   const [trainingId, setTrainingId] = useState(params.get("formation") ?? "");
   const [trainingSessionId, setTrainingSessionId] = useState(params.get("session") ?? "");
   const [name, setName] = useState("");
@@ -313,14 +534,14 @@ export function GroupCreatePage() {
               value={kind}
               onChange={setKind}
               options={[
-                { value: "study", label: "Étude privée" },
+                { value: "study", label: "Cours particulier" },
                 { value: "training", label: "Formation" },
               ]}
             />
             {kind === "study" ? (
-              <Field label="Étude *">
+              <Field label="Cours particulier *">
                 <select className="input" value={studyId} onChange={(e) => setStudyId(e.target.value)}>
-                  <option value="">Choisir une étude</option>
+                  <option value="">Choisir un cours particulier</option>
                   {(studies.data ?? [])
                     .filter((s) => s.status === "active")
                     .map((s) => (
@@ -438,6 +659,96 @@ export function GroupCreatePage() {
 /* Detail */
 
 type Tab = "students" | "planning" | "attendance" | "finance" | "pay";
+const TAB_PARAM: Record<string, Tab> = { eleves: "students", seances: "planning", presences: "attendance", finances: "finance", remuneration: "pay" };
+const PARAM_OF: Record<Tab, string> = { students: "eleves", planning: "seances", attendance: "presences", finance: "finances", pay: "remuneration" };
+
+/**
+ * The group's next sessions with the three daily actions: see every session, add one (prefilled with the group,
+ * its instructor and room) and enter attendance (the oldest started session still to fill, else the next one).
+ */
+function NextSessions({ group, onSeeAll }: { group: GroupDetail; onSeeAll: () => void }) {
+  const { can } = useSession();
+  const navigate = useNavigate();
+  const [adding, setAdding] = useState(false);
+  const today = todayIso();
+  const sessions = useQuery({
+    queryKey: ["group-sessions", group.id, addDaysIso(today, -30), addDaysIso(today, 60)],
+    queryFn: () => api.get<GroupSession[]>(`/groups/${group.id}/sessions`, { from: addDaysIso(today, -30), to: addDaysIso(today, 60) }),
+  });
+  const now = Date.now();
+  const list = sessions.data ?? [];
+  const pending = list.find((s) => s.status !== "cancelled" && s.sheetStatus !== "validated" && new Date(s.startsAt).getTime() <= now);
+  const upcoming = list.filter((s) => s.status === "scheduled" && new Date(s.startsAt).getTime() > now).slice(0, 3);
+  const attendanceTarget = pending ?? upcoming[0];
+  return (
+    <Card
+      title="Prochaines séances"
+      actions={
+        <>
+          <button type="button" className="btn btn-g" onClick={onSeeAll}>
+            Voir toutes les séances
+          </button>
+          {can("groups:write") && group.status === "active" ? (
+            <button type="button" className="btn" onClick={() => setAdding(true)}>
+              + Ajouter une séance
+            </button>
+          ) : null}
+          {can("attendance:write") ? (
+            <button
+              type="button"
+              className="btn btn-p"
+              disabled={!attendanceTarget}
+              onClick={() => attendanceTarget && navigate(`/presences/${attendanceTarget.id}`)}
+            >
+              Saisir les présences
+            </button>
+          ) : null}
+        </>
+      }
+    >
+      <ErrorBanner error={sessions.error} />
+      {pending ? (
+        <div className="card-b">
+          <div className="ban ban-amber">
+            <span>
+              Présences à saisir pour la séance du {frDate(pending.startsAt)} à {frTime(pending.startsAt)}.
+            </span>
+          </div>
+        </div>
+      ) : null}
+      {sessions.isPending ? (
+        <Loading />
+      ) : upcoming.length === 0 ? (
+        <div className="card-b cap">Aucune séance prévue. Générez les séances depuis l'onglet Séances, ou ajoutez une séance.</div>
+      ) : (
+        <div className="xs">
+          <table className="tbl">
+            <tbody>
+              {upcoming.map((s) => (
+                <tr key={s.id}>
+                  <td>
+                    {weekdayLabel(new Date(`${localParts(s.startsAt).date}T00:00:00Z`).getUTCDay() || 7)} {frDate(s.startsAt)}
+                  </td>
+                  <td>
+                    {frTime(s.startsAt)}-{frTime(s.endsAt)}
+                  </td>
+                  <td>{s.roomName ?? "Sans salle"}</td>
+                  <td>{s.instructorName}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+      {adding ? (
+        <AddSessionModal
+          group={{ id: group.id, name: group.name, instructorId: group.instructorId, roomId: group.roomId, slots: group.slots }}
+          onClose={() => setAdding(false)}
+        />
+      ) : null}
+    </Card>
+  );
+}
 
 function EditGroupModal({ group, onClose }: { group: GroupDetail; onClose: () => void }) {
   const client = useQueryClient();
@@ -638,19 +949,24 @@ function PlanningTab({ group }: { group: GroupDetail }) {
   const [editingSlots, setEditingSlots] = useState<Slot[] | null>(null);
   const [moving, setMoving] = useState<PlanningItem | null>(null);
   const [cancelling, setCancelling] = useState<PlanningItem | null>(null);
-  const [extra, setExtra] = useState<{ date: string; startTime: string; endTime: string } | null>(null);
+  const [adding, setAdding] = useState(false);
   const [windowFrom, setWindowFrom] = useState(today);
   const windowTo = addDaysIso(windowFrom, 27);
   const planning = useQuery({
-    queryKey: ["planning", windowFrom, windowTo],
-    queryFn: () => api.get<{ items: PlanningItem[] }>("/planning", { from: windowFrom, to: windowTo }),
+    queryKey: ["group-sessions", group.id, windowFrom, windowTo],
+    queryFn: () => api.get<GroupSession[]>(`/groups/${group.id}/sessions`, { from: windowFrom, to: windowTo }),
   });
-  const sessions = (planning.data?.items ?? []).filter((i) => i.type !== "rental" && i.groupId === group.id);
+  const sessions: (PlanningItem & { status: GroupSession["status"] })[] = (planning.data ?? []).map((s) => ({
+    ...s,
+    type: group.kind === "study" ? ("course" as const) : ("training" as const),
+    groupId: group.id,
+    groupName: group.name,
+  }));
   const generate = useMutation({
     mutationFn: (skipConflicts: boolean) =>
       api.post<{ created: number; skippedExisting: number; conflicts: unknown[] }>(`/groups/${group.id}/sessions/generate`, { from, to, skipConflicts }),
     onSuccess: async (r) => {
-      await client.invalidateQueries({ queryKey: ["planning"] });
+      await client.invalidateQueries();
       toast(
         `${r.created} séance(s) créée(s)${r.skippedExisting ? `, ${r.skippedExisting} déjà existante(s)` : ""}${r.conflicts.length ? `, ${r.conflicts.length} écartée(s) pour conflit` : ""}.`,
       );
@@ -662,14 +978,6 @@ function PlanningTab({ group }: { group: GroupDetail }) {
       await client.invalidateQueries({ queryKey: ["group", group.id] });
       toast("Créneaux enregistrés. Les séances déjà générées ne changent pas.");
       setEditingSlots(null);
-    },
-  });
-  const addSession = useMutation({
-    mutationFn: (input: { date: string; startTime: string; endTime: string }) => api.post(`/groups/${group.id}/sessions`, input),
-    onSuccess: async () => {
-      await client.invalidateQueries({ queryKey: ["planning"] });
-      toast("Séance ajoutée.");
-      setExtra(null);
     },
   });
   const generateConflicts = conflictsOf(generate.error);
@@ -744,8 +1052,8 @@ function PlanningTab({ group }: { group: GroupDetail }) {
                     Générer en écartant les conflits
                   </button>
                 ) : null}
-                <button type="button" className="btn btn-g" onClick={() => setExtra({ date: today, startTime: "17:00", endTime: "18:30" })}>
-                  + Séance ponctuelle
+                <button type="button" className="btn btn-g" onClick={() => setAdding(true)}>
+                  + Ajouter une séance
                 </button>
               </div>
             </div>
@@ -796,13 +1104,21 @@ function PlanningTab({ group }: { group: GroupDetail }) {
                     <td>{s.roomName ?? ""}</td>
                     <td>{s.instructorName}</td>
                     <td>
-                      <Badge tone={SHEET[s.sheetStatus ?? "none"]!.tone}>{SHEET[s.sheetStatus ?? "none"]!.label}</Badge>
+                      {s.status === "cancelled" ? (
+                        <Badge tone="gray" strike>
+                          Annulée
+                        </Badge>
+                      ) : (
+                        <Badge tone={SHEET[s.sheetStatus ?? "none"]!.tone}>{SHEET[s.sheetStatus ?? "none"]!.label}</Badge>
+                      )}
                     </td>
                     <td style={{ textAlign: "right", whiteSpace: "nowrap" }}>
-                      <Link className="btn btn-g" to={`/presences/${s.id}`}>
-                        Feuille
-                      </Link>
-                      {can("groups:write") && s.sheetStatus !== "validated" ? (
+                      {s.status !== "cancelled" ? (
+                        <Link className="btn btn-g" to={`/presences/${s.id}`}>
+                          {s.sheetStatus === "validated" ? "Feuille" : "Saisir les présences"}
+                        </Link>
+                      ) : null}
+                      {can("groups:write") && s.status === "scheduled" && s.sheetStatus !== "validated" ? (
                         <>
                           <button type="button" className="btn btn-g" onClick={() => setMoving(s)}>
                             Déplacer
@@ -830,48 +1146,16 @@ function PlanningTab({ group }: { group: GroupDetail }) {
           onClose={() => setCancelling(null)}
           onConfirm={async (reason) => {
             await api.post(`/sessions/${cancelling.id}/cancel`, { reason });
-            await client.invalidateQueries({ queryKey: ["planning"] });
+            await client.invalidateQueries();
             toast("Séance annulée.");
           }}
         />
       ) : null}
-      {extra ? (
-        <Modal
-          title="Séance ponctuelle"
-          onClose={() => setExtra(null)}
-          footer={
-            <>
-              <span className="cap">Dans la salle par défaut du groupe</span>
-              <div className="row" style={{ gap: 8 }}>
-                <button type="button" className="btn" onClick={() => setExtra(null)}>
-                  Annuler
-                </button>
-                <button
-                  type="button"
-                  className="btn btn-p"
-                  disabled={extra.endTime <= extra.startTime || addSession.isPending}
-                  onClick={() => addSession.mutate(extra)}
-                >
-                  Ajouter
-                </button>
-              </div>
-            </>
-          }
-        >
-          <div className="grid3">
-            <Field label="Date">
-              <input className="input" type="date" value={extra.date} onChange={(e) => setExtra({ ...extra, date: e.target.value })} />
-            </Field>
-            <Field label="Début">
-              <input className="input" type="time" value={extra.startTime} onChange={(e) => setExtra({ ...extra, startTime: e.target.value })} />
-            </Field>
-            <Field label="Fin">
-              <input className="input" type="time" value={extra.endTime} onChange={(e) => setExtra({ ...extra, endTime: e.target.value })} />
-            </Field>
-          </div>
-          <ConflictBanner conflicts={conflictsOf(addSession.error)} />
-          {conflictsOf(addSession.error).length === 0 ? <ErrorBanner error={addSession.error} /> : null}
-        </Modal>
+      {adding ? (
+        <AddSessionModal
+          group={{ id: group.id, name: group.name, instructorId: group.instructorId, roomId: group.roomId, slots: group.slots }}
+          onClose={() => setAdding(false)}
+        />
       ) : null}
     </div>
   );
@@ -1004,40 +1288,85 @@ function PayTab({ group }: { group: GroupDetail }) {
       api.get<{
         lines: {
           instructorId: string;
-          rule: { base_kind: string; presence_kind: string };
+          label: string;
+          periodicity: "session" | "month" | "training";
+          rule: { base_kind: string };
           base: number;
           rate: { numerator: number; denominator: number };
           amount: number;
-          details: Record<string, unknown>;
+          dueOn: string;
+          details: { sessions?: number; rateBasisPoints?: number | null };
         }[];
-        warnings: { code: string; message: string }[];
+        warnings: { code: string }[];
       }>("/payroll/estimate", { groupId: group.id, month }),
   });
+  const lines = estimate.data?.lines ?? [];
   return (
-    <Card title={<MonthPicker value={month} onChange={setMonth} />} actions={<span className="cap">Estimation sur les séances tenues et validées à date</span>}>
-      <div className="card-b stack">
-        <ErrorBanner error={estimate.error} />
-        {estimate.data?.warnings.map((w, i) => (
-          <div key={i} className="ban ban-amber">
-            <span>
-              {w.code === "no_rule" ? "Aucune règle de rémunération ne s'applique à ce groupe." : "Pas de présence validée : le taux de présence est indéfini."}
-            </span>
+    <Card
+      title={<MonthPicker value={month} onChange={setMonth} />}
+      actions={
+        <>
+          <span className="cap">Estimation sur les séances tenues et validées, sans rien enregistrer</span>
+          <Link className="btn" to={`/paie/intervenants/${group.instructorId}?mois=${month}`}>
+            Paie de l'intervenant
+          </Link>
+        </>
+      }
+    >
+      <ErrorBanner error={estimate.error} />
+      {estimate.data?.warnings.some((w) => w.code === "no_rule") ? (
+        <div className="card-b">
+          <div className="ban ban-amber">
+            <span>Aucune règle de rémunération ne s'applique à ce groupe.</span>
           </div>
-        ))}
-        {estimate.data?.lines.map((l, i) => (
-          <div key={i} className="grid4">
-            <Kpi label="Base" value={<span className="num">{tnd(l.base)}</span>} sub={PAY_BASE[l.rule.base_kind] ?? l.rule.base_kind} />
-            <Kpi
-              label="Facteur de présence"
-              value={percent(Math.round((l.rate.numerator * 10000) / l.rate.denominator))}
-              sub={`Taux élèves : ${percent((l.details.rateBasisPoints as number | null) ?? null)}`}
-            />
-            <Kpi label="Montant estimé" value={<span className="num">{tnd(l.amount)}</span>} sub="TND" />
-            <Kpi label="Séances tenues" value={String(l.details.sessions ?? "-")} sub={monthLabel(month)} />
-          </div>
-        ))}
-        {estimate.data && !estimate.data.lines.length && !estimate.data.warnings.length ? <Empty title="Rien à estimer ce mois-ci" /> : null}
-      </div>
+        </div>
+      ) : null}
+      {estimate.isPending ? (
+        <Loading />
+      ) : lines.length === 0 ? (
+        <Empty title="Rien à estimer ce mois-ci" />
+      ) : (
+        <div className="xs">
+          <table className="tbl">
+            <thead>
+              <tr>
+                <th>Élément</th>
+                <th>Base</th>
+                <th>Présence</th>
+                <th className="num">Montant (TND)</th>
+                <th>Échéance</th>
+              </tr>
+            </thead>
+            <tbody>
+              {lines.map((l, i) => (
+                <tr key={i}>
+                  <td>
+                    {l.label}
+                    <div className="cap">{l.details.sessions ?? 0} séance(s)</div>
+                  </td>
+                  <td>
+                    {tnd(l.base)}
+                    <div className="cap">{PAY_BASE[l.rule.base_kind] ?? l.rule.base_kind}</div>
+                  </td>
+                  <td>
+                    × {percent(Math.round((l.rate.numerator * 10000) / l.rate.denominator))}
+                    <div className="cap">taux élèves {percent(l.details.rateBasisPoints ?? null)}</div>
+                  </td>
+                  <td className="num">{tnd(l.amount)}</td>
+                  <td>{frDate(l.dueOn)}</td>
+                </tr>
+              ))}
+            </tbody>
+            <tfoot>
+              <tr>
+                <td colSpan={3}>Total estimé</td>
+                <td className="num">{tnd(lines.reduce((s, l) => s + l.amount, 0))}</td>
+                <td />
+              </tr>
+            </tfoot>
+          </table>
+        </div>
+      )}
     </Card>
   );
 }
@@ -1047,18 +1376,20 @@ export function GroupPage() {
   const { can } = useSession();
   const client = useQueryClient();
   const toast = useToast();
-  const [tab, setTab] = useState<Tab>("students");
+  const [params, setParams] = useSearchParams();
+  const tab: Tab = TAB_PARAM[params.get("onglet") ?? ""] ?? "students";
+  const setTab = (t: Tab) => setParams({ onglet: PARAM_OF[t] }, { replace: true });
   const [editing, setEditing] = useState(false);
   const [archiving, setArchiving] = useState(false);
   const group = useQuery({ queryKey: ["group", id], queryFn: () => api.get<GroupDetail>(`/groups/${id}`) });
-  usePage(["Groupes", group.data?.name ?? "Groupe"]);
+  usePage(["Gestion des groupes", group.data?.name ?? "Groupe"]);
   if (group.isPending) return <Loading />;
   if (group.error) return <ErrorBanner error={group.error} retry={() => group.refetch()} />;
   const g = group.data;
   const offer = g.kind === "study" ? g.studyName : `${g.trainingTitle} · ${g.trainingSessionName}`;
   const tabs: { value: Tab; label: string }[] = [
     { value: "students", label: `Élèves (${g.enrolledCount})` },
-    { value: "planning", label: "Planning" },
+    { value: "planning", label: "Séances et planning" },
     { value: "attendance", label: "Présences" },
     ...(can("payments:read") ? [{ value: "finance" as const, label: "Finances" }] : []),
     ...(can("payroll:read") ? [{ value: "pay" as const, label: "Rémunération" }] : []),
@@ -1096,6 +1427,7 @@ export function GroupPage() {
           ) : null
         }
       />
+      <NextSessions group={g} onSeeAll={() => setTab("planning")} />
       <Tabs value={tab} tabs={tabs} onChange={setTab} />
       {tab === "students" ? (
         <Card
@@ -1109,7 +1441,7 @@ export function GroupPage() {
           }
           actions={
             can("enrolments:write") && g.status === "active" ? (
-              <Link className="btn" to="/inscriptions/nouvelle">
+              <Link className="btn" to={`/inscriptions/nouvelle?groupe=${g.id}`}>
                 + Inscrire un élève
               </Link>
             ) : null

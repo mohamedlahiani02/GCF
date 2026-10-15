@@ -145,4 +145,24 @@ describe("training formulas", () => {
       .execute();
     expect(charges).toEqual([{ studentId: ids.sami, amount: 25_000 }]);
   });
+
+  it("waits for the end of the group before counting a training fee as due", async () => {
+    const rule = await h.call("POST", "/api/payroll/rules", admin, {
+      instructorId: ids.trainer,
+      scope: "group",
+      scopeId: ids.group,
+      baseKind: "training_flat",
+      amount: 1_200_000,
+      presenceKind: "ignore",
+      validFrom: "2026-09-01",
+    });
+    expect(rule.body.periodicity).toBe("training");
+    const trainerIn = async (month: string) =>
+      (await h.call("GET", `/api/payroll/summary?month=${month}`, admin)).body.instructors.find((i: { id: string }) => i.id === ids.trainer);
+    expect(await trainerIn("2026-09")).toMatchObject({ sessionsToCalculate: 0, groupsWithoutRule: 0 });
+    expect(await trainerIn("2026-12")).toMatchObject({ sessionsToCalculate: 1 });
+    const calculated = await h.call("POST", "/api/payroll/calculate", admin, { instructorId: ids.trainer, month: "2026-12" });
+    expect(calculated.body.created).toBe(1);
+    expect(await trainerIn("2026-12")).toMatchObject({ sessionsToCalculate: 0, calculated: 1_200_000 });
+  });
 });

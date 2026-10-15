@@ -161,7 +161,7 @@ export function StudentFormModal({
 }
 
 export function StudentsPage() {
-  usePage(["Élèves"]);
+  usePage(["Référentiels", "Élèves"]);
   const { can } = useSession();
   const navigate = useNavigate();
   const toast = useToast();

@@ -1,6 +1,6 @@
 import { computePay, PayrollError, type PayRule } from "@gcf/shared";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Fragment, useState } from "react";
+import { useState } from "react";
 import { Link, useNavigate, useParams, useSearchParams } from "react-router";
 import { api } from "../api/client";
 import type { GroupRow, Instructor, Study } from "../api/types";
@@ -8,11 +8,28 @@ import { useSession } from "../auth/session";
 import { usePage } from "../components/shell";
 import { useToast } from "../components/toasts";
 import { Badge, Card, Empty, ErrorBanner, Field, Kpi, Loading, Modal, PageHeader, ReasonDialog, Segmented, Tabs } from "../components/ui";
-import { frDate, frDateTime, percent, tnd, todayIso, tryParseTnd } from "../lib/format";
-import { EMPLOYMENT, METHOD, PAY_BASE, PAYROLL, PRESENCE_EFFECT } from "../lib/labels";
+import { errorMessage } from "../lib/errors";
+import { frDate, frDateTime, frTime, monthLabel, percent, tnd, todayIso, tryParseTnd } from "../lib/format";
+import { EMPLOYMENT, METHOD, PAY_BASE, PRESENCE_EFFECT } from "../lib/labels";
 
 type BaseKind = "pct_collections" | "pct_session_tariff" | "fixed_per_session" | "monthly_flat" | "hourly" | "training_flat";
 type PresenceKind = "ignore" | "prorata" | "session_due" | "threshold";
+type Periodicity = "session" | "month" | "training";
+
+/** When a rule's items fall due; the first rhythm of each base is its default. */
+export const PERIODICITY: Record<Periodicity, string> = {
+  session: "Par séance, dès la validation des présences",
+  month: "Par mois, à partir du dernier jour du mois",
+  training: "À la fin de la formation (date de fin du groupe)",
+};
+const PERIODICITIES: Record<BaseKind, Periodicity[]> = {
+  fixed_per_session: ["session", "month"],
+  pct_session_tariff: ["session", "month"],
+  hourly: ["month", "session"],
+  pct_collections: ["month"],
+  monthly_flat: ["month"],
+  training_flat: ["training"],
+};
 
 interface RuleRow {
   id: string;
@@ -29,57 +46,17 @@ interface RuleRow {
   min_rate_basis_points: number | null;
   floor_amount: number | null;
   prorata_above: boolean | null;
+  periodicity: Periodicity;
   valid_from: string;
   valid_to: string | null;
   status: "active" | "archived";
-}
-interface PeriodRow {
-  id: string;
-  month: string;
-  label: string;
-  status: keyof typeof PAYROLL;
-  instructors: number;
-  total: number;
-}
-interface PeriodLine {
-  id: string;
-  groupId: string | null;
-  groupName: string | null;
-  rule: RuleRow;
-  base: number;
-  rateNumerator: number;
-  rateDenominator: number;
-  amount: number;
-  details: { sessions: number; minutes: number; collected: number; rateBasisPoints: number | null; error?: string };
-}
-interface PeriodDetail {
-  id: string;
-  month: string;
-  label: string;
-  status: keyof typeof PAYROLL;
-  calculatedAt: string | null;
-  validatedAt: string | null;
-  total: number;
-  instructors: {
-    id: string;
-    firstName: string;
-    lastName: string;
-    employment: Instructor["employment"];
-    calculated: number;
-    adjustments: number;
-    net: number;
-    lines: PeriodLine[];
-    adjustmentLines: { id: string; kind: "bonus" | "deduction"; amount: number; reason: string; createdAt: string }[];
-    payslip: { total: number; issuedAt: string; paidOn: string | null; paymentMethod: string | null; paymentReference: string | null } | null;
-  }[];
-  warnings?: { instructorId: string; groupId: string | null; code: "no_rule" | "no_attendance"; message: string }[];
 }
 interface TrainingRow {
   id: string;
   title: string;
 }
 
-const SCOPE: Record<RuleRow["scope"], string> = { instructor: "Par défaut (intervenant)", study: "Étude", training: "Formation", group: "Groupe" };
+const SCOPE: Record<RuleRow["scope"], string> = { instructor: "Par défaut (intervenant)", study: "Cours particulier", training: "Formation", group: "Groupe" };
 
 export function describeBase(r: Pick<RuleRow, "base_kind" | "basis_points" | "amount" | "collection_basis">): string {
   switch (r.base_kind) {
@@ -117,6 +94,7 @@ interface RuleDraft {
   minRateText: string;
   floorText: string;
   prorataAbove: boolean;
+  periodicity: Periodicity;
   validFrom: string;
   validTo: string;
 }
@@ -144,6 +122,7 @@ function RuleModal({ instructors, initialInstructorId, onClose }: { instructors:
     minRateText: "50",
     floorText: "",
     prorataAbove: false,
+    periodicity: "month",
     validFrom: `${todayIso().slice(0, 7)}-01`,
     validTo: "",
   });
@@ -207,6 +186,7 @@ function RuleModal({ instructors, initialInstructorId, onClose }: { instructors:
         ...(usesAmount ? { amount } : {}),
         ...(d.baseKind === "pct_collections" ? { collectionBasis: d.collectionBasis } : {}),
         presenceKind: d.presenceKind,
+        periodicity: d.periodicity,
         ...(d.presenceKind === "threshold"
           ? { minRateBasisPoints: minRate, prorataAbove: d.prorataAbove, ...(floor !== null ? { floorAmount: floor } : {}) }
           : {}),
@@ -274,7 +254,7 @@ function RuleModal({ instructors, initialInstructorId, onClose }: { instructors:
             </Field>
           </div>
           {d.scope !== "instructor" ? (
-            <Field label={`${SCOPE[d.scope]} *`} hint="Priorité : groupe, puis étude ou formation, puis règle par défaut de l'intervenant.">
+            <Field label={`${SCOPE[d.scope]} *`} hint="Priorité : groupe, puis cours particulier ou formation, puis règle par défaut de l'intervenant.">
               <select className="input" value={d.scopeId} onChange={(e) => set("scopeId", e.target.value)}>
                 <option value="">Choisir</option>
                 {scopeOptions.map((o) => (
@@ -286,7 +266,14 @@ function RuleModal({ instructors, initialInstructorId, onClose }: { instructors:
             </Field>
           ) : null}
           <Field label="Base de calcul">
-            <select className="input" value={d.baseKind} onChange={(e) => set("baseKind", e.target.value as BaseKind)}>
+            <select
+              className="input"
+              value={d.baseKind}
+              onChange={(e) => {
+                const kind = e.target.value as BaseKind;
+                setD((o) => ({ ...o, baseKind: kind, periodicity: PERIODICITIES[kind][0]! }));
+              }}
+            >
               {(Object.keys(PAY_BASE) as BaseKind[]).map((b) => (
                 <option key={b} value={b} disabled={b === "training_flat" && d.scope === "study"}>
                   {PAY_BASE[b]}
@@ -325,6 +312,15 @@ function RuleModal({ instructors, initialInstructorId, onClose }: { instructors:
               </Field>
             ) : null}
           </div>
+          <Field label="Rythme de calcul et de paiement" hint="Chaque élément est calculé, validé et réglé séparément, sans attendre les autres intervenants.">
+            <select className="input" value={d.periodicity} onChange={(e) => set("periodicity", e.target.value as Periodicity)}>
+              {PERIODICITIES[d.baseKind].map((p) => (
+                <option key={p} value={p}>
+                  {PERIODICITY[p]}
+                </option>
+              ))}
+            </select>
+          </Field>
           <Field label="Effet de la présence des élèves">
             <select className="input" value={d.presenceKind} onChange={(e) => set("presenceKind", e.target.value as PresenceKind)}>
               {(Object.keys(PRESENCE_EFFECT) as PresenceKind[]).map((p) => (
@@ -492,6 +488,7 @@ function RulesTab() {
                 <th>Portée</th>
                 <th>Base</th>
                 <th>Présence</th>
+                <th>Rythme</th>
                 <th>Validité</th>
                 <th />
               </tr>
@@ -508,6 +505,7 @@ function RulesTab() {
                   </td>
                   <td>{describeBase(r)}</td>
                   <td>{describePresence(r)}</td>
+                  <td>{PERIODICITY[r.periodicity]}</td>
                   <td>
                     {frDate(r.valid_from)}
                     {r.valid_to ? ` au ${frDate(r.valid_to)}` : ", sans fin"} {r.status === "archived" ? <Badge tone="gray">Archivée</Badge> : null}
@@ -543,114 +541,356 @@ function RulesTab() {
   );
 }
 
-function PeriodsTab() {
-  const { can } = useSession();
+/* Monthly follow-up: a view, never a global validation */
+
+interface SummaryRow {
+  id: string;
+  firstName: string;
+  lastName: string;
+  employment: Instructor["employment"];
+  calculated: number;
+  validated: number;
+  paid: number;
+  remaining: number;
+  outstanding: number;
+  toValidate: number;
+  sessionsToCalculate: number;
+  groupsWithoutRule: number;
+}
+
+function SummaryTab() {
   const navigate = useNavigate();
-  const [month, setMonth] = useState(todayIso().slice(0, 7));
-  const periods = useQuery({ queryKey: ["pay-periods"], queryFn: () => api.get<PeriodRow[]>("/payroll/periods") });
-  const create = useMutation({
-    mutationFn: () => api.post<{ id: string }>("/payroll/periods", { month }),
-    onSuccess: (p) => navigate(`/paie/${p.id}`),
+  const [params, setParams] = useSearchParams();
+  const month = params.get("mois") ?? todayIso().slice(0, 7);
+  const summary = useQuery({
+    queryKey: ["pay-summary", month],
+    queryFn: () =>
+      api.get<{ instructors: SummaryRow[]; totals: Record<"calculated" | "validated" | "paid" | "remaining" | "outstanding", number> }>("/payroll/summary", {
+        month,
+      }),
   });
+  const t = summary.data?.totals;
   return (
-    <Card
-      title="Périodes de paie"
-      actions={
-        can("payroll:calculate") ? (
-          <div className="row center" style={{ gap: 8 }}>
-            <input className="input" type="month" aria-label="Mois" value={month} onChange={(e) => setMonth(e.target.value)} />
-            <button type="button" className="btn btn-p" disabled={!month || create.isPending} onClick={() => create.mutate()}>
-              Ouvrir la période
-            </button>
-          </div>
-        ) : null
-      }
-    >
-      <ErrorBanner error={create.error ?? periods.error} />
-      {periods.isPending ? (
-        <Loading />
-      ) : periods.data?.length === 0 ? (
-        <Empty title="Aucune période" text="Ouvrez le mois à payer, puis lancez le calcul." />
-      ) : (
-        <div className="xs">
-          <table className="tbl">
-            <thead>
-              <tr>
-                <th>Mois</th>
-                <th>Statut</th>
-                <th>Intervenants</th>
-                <th className="num">Total (TND)</th>
-              </tr>
-            </thead>
-            <tbody>
-              {periods.data?.map((p) => (
-                <tr key={p.id} className="clickable" onClick={() => navigate(`/paie/${p.id}`)}>
-                  <td>
-                    <Link to={`/paie/${p.id}`} onClick={(e) => e.stopPropagation()}>
-                      {p.label}
-                    </Link>
-                  </td>
-                  <td>
-                    <Badge tone={PAYROLL[p.status]!.tone}>{PAYROLL[p.status]!.label}</Badge>
-                  </td>
-                  <td>{p.instructors}</td>
-                  <td className="num">{tnd(p.total)}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+    <>
+      <div className="row between center">
+        <input
+          className="input"
+          type="month"
+          aria-label="Mois"
+          style={{ width: 180 }}
+          value={month}
+          onChange={(e) => e.target.value && setParams({ mois: e.target.value })}
+        />
+        <span className="cap">Vue de suivi : chaque intervenant est calculé, validé et réglé séparément, sans validation globale du mois.</span>
+      </div>
+      {t ? (
+        <div className="grid4">
+          <Kpi label="Calculé, à valider" value={<span className="num">{tnd(t.calculated)}</span>} sub={`TND, ${monthLabel(month)}`} />
+          <Kpi label="Validé" value={<span className="num">{tnd(t.validated)}</span>} sub={`TND, ${monthLabel(month)}`} />
+          <Kpi label="Payé" value={<span className="num">{tnd(t.paid)}</span>} sub={`TND, éléments de ${monthLabel(month)}`} />
+          <Kpi
+            label="Reste à payer"
+            value={<span className="num">{tnd(t.outstanding)}</span>}
+            sub="TND, tous mois confondus"
+            tone={t.outstanding > 0 ? "amber" : undefined}
+          />
         </div>
-      )}
-    </Card>
+      ) : null}
+      <Card title={`Intervenants, ${monthLabel(month)}`}>
+        <ErrorBanner error={summary.error} retry={() => summary.refetch()} />
+        {summary.isPending ? (
+          <Loading />
+        ) : summary.data?.instructors.length === 0 ? (
+          <Empty title="Aucun intervenant" />
+        ) : (
+          <div className="xs">
+            <table className="tbl">
+              <thead>
+                <tr>
+                  <th>Intervenant</th>
+                  <th>À calculer</th>
+                  <th className="num">À valider (TND)</th>
+                  <th className="num">Validé (TND)</th>
+                  <th className="num">Payé (TND)</th>
+                  <th className="num">Reste du mois (TND)</th>
+                  <th className="num">Reste total (TND)</th>
+                </tr>
+              </thead>
+              <tbody>
+                {summary.data?.instructors.map((r) => (
+                  <tr key={r.id} className="clickable" onClick={() => navigate(`/paie/intervenants/${r.id}?mois=${month}`)}>
+                    <td>
+                      <Link to={`/paie/intervenants/${r.id}?mois=${month}`} onClick={(e) => e.stopPropagation()}>
+                        {r.lastName} {r.firstName}
+                      </Link>
+                      <div className="cap">{EMPLOYMENT[r.employment]}</div>
+                    </td>
+                    <td>
+                      {r.sessionsToCalculate ? <Badge tone="amber">{r.sessionsToCalculate} séance(s)</Badge> : null}{" "}
+                      {r.groupsWithoutRule ? <Badge tone="red">{r.groupsWithoutRule} groupe(s) sans règle</Badge> : null}
+                      {!r.sessionsToCalculate && !r.groupsWithoutRule ? <span className="cap">-</span> : null}
+                    </td>
+                    <td className="num">
+                      {tnd(r.calculated)}
+                      {r.toValidate ? <div className="cap">{r.toValidate} élément(s)</div> : null}
+                    </td>
+                    <td className="num">{tnd(r.validated)}</td>
+                    <td className="num">{tnd(r.paid)}</td>
+                    <td className="num">{tnd(r.remaining)}</td>
+                    <td className="num">{r.outstanding ? <strong>{tnd(r.outstanding)}</strong> : tnd(0)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </Card>
+    </>
   );
 }
 
 export function PayrollPage() {
   usePage(["Paie"]);
   const [params, setParams] = useSearchParams();
-  const tab = params.get("onglet") === "regles" || params.get("intervenant") ? "rules" : "periods";
+  const tab = params.get("onglet") === "regles" || params.get("intervenant") ? "rules" : "summary";
   return (
     <>
-      <PageHeader title="Paie des intervenants" subtitle="Paie = Base × facteur de présence, calculée sur les séances tenues et validées" />
+      <PageHeader title="Paie des intervenants" subtitle="Paie = Base × facteur de présence, sur les séances tenues dont les présences sont validées" />
       <Tabs
         value={tab}
         onChange={(t) => setParams(t === "rules" ? { onglet: "regles" } : {})}
         tabs={[
-          { value: "periods", label: "Périodes" },
+          { value: "summary", label: "Suivi mensuel" },
           { value: "rules", label: "Règles de rémunération" },
         ]}
       />
-      {tab === "periods" ? <PeriodsTab /> : <RulesTab />}
+      {tab === "summary" ? <SummaryTab /> : <RulesTab />}
     </>
   );
 }
 
-/* Period */
+/* One instructor: items to calculate, validate and settle */
 
-function AdjustmentModal({ periodId, instructor, onClose }: { periodId: string; instructor: PeriodDetail["instructors"][number] | null; onClose: () => void }) {
-  const client = useQueryClient();
+interface PayItem {
+  id: string;
+  kind: "rule" | "bonus" | "deduction";
+  rule: RuleRow | null;
+  groupId: string | null;
+  groupName: string | null;
+  periodKey: string;
+  periodStart: string;
+  periodEnd: string;
+  dueOn: string;
+  label: string;
+  base: number;
+  rateNumerator: number;
+  rateDenominator: number;
+  amount: number;
+  details: {
+    sessions?: number;
+    minutes?: number;
+    collected?: number;
+    rateBasisPoints?: number | null;
+    share?: { mine: number; total: number } | null;
+    error?: string;
+  };
+  status: "calculated" | "validated" | "cancelled";
+  reason: string | null;
+  calculatedAt: string;
+  validatedAt: string | null;
+  cancelledAt: string | null;
+  cancelReason: string | null;
+  paid: number;
+  remaining: number;
+  sessions: number;
+  earlierMonth: boolean;
+}
+interface Settlement {
+  id: string;
+  number: string;
+  paidOn: string;
+  method: "cash" | "transfer" | "cheque";
+  reference: string | null;
+  amount: number;
+  status: "valid" | "cancelled";
+  cancelReason: string | null;
+}
+interface InstructorPay {
+  instructor: { id: string; firstName: string; lastName: string; employment: Instructor["employment"] };
+  month: string;
+  today: string;
+  items: PayItem[];
+  settlements: Settlement[];
+  rules: RuleRow[];
+}
+interface CalculationResult {
+  created: number;
+  unchanged: number;
+  replaced: number;
+  warnings: { groupName: string | null; code: "no_rule" | "no_attendance" }[];
+}
+
+const ITEM_STATUS: Record<PayItem["status"], { label: string; tone: "blue" | "teal" | "gray" }> = {
+  calculated: { label: "Calculé", tone: "blue" },
+  validated: { label: "Validé", tone: "teal" },
+  cancelled: { label: "Annulé", tone: "gray" },
+};
+
+/** What the item pays for, in words: base, presence effect, sessions and attendance. */
+function perimeter(i: PayItem): string {
+  if (i.kind !== "rule" || !i.rule) return i.reason ?? "";
+  const parts = [describeBase(i.rule), describePresence(i.rule)];
+  if (i.details.sessions !== undefined) parts.push(`${i.details.sessions} séance(s)`);
+  if (i.details.share) parts.push(`part de ${i.details.share.mine} séance(s) sur ${i.details.share.total}`);
+  if (i.details.rateBasisPoints !== undefined && i.details.rateBasisPoints !== null) parts.push(`présence ${percent(i.details.rateBasisPoints)}`);
+  if (i.details.error) parts.push("taux de présence indéfini");
+  return parts.join(" · ");
+}
+
+function itemState(i: PayItem): { label: string; tone: "blue" | "teal" | "gray" | "green" | "amber" } {
+  if (i.status !== "validated") return ITEM_STATUS[i.status];
+  if (i.remaining === 0) return { label: "Payé", tone: "green" };
+  if (i.paid !== 0) return { label: "Payé en partie", tone: "amber" };
+  return ITEM_STATUS.validated;
+}
+
+function SettleModal({ instructorId, items, onClose }: { instructorId: string; items: PayItem[]; onClose: () => void }) {
   const toast = useToast();
-  const instructors = useQuery({ queryKey: ["instructors"], queryFn: () => api.get<Instructor[]>("/instructors") });
-  const [instructorId, setInstructorId] = useState(instructor?.id ?? "");
-  const [kind, setKind] = useState<"bonus" | "deduction">("bonus");
-  const [amountText, setAmountText] = useState("");
-  const [reason, setReason] = useState("");
-  const amount = tryParseTnd(amountText);
-  const save = useMutation({
-    mutationFn: () => api.post(`/payroll/periods/${periodId}/adjustments`, { instructorId, kind, amount, reason: reason.trim() }),
-    onSuccess: async () => {
-      await client.invalidateQueries({ queryKey: ["pay-period", periodId] });
-      toast(kind === "bonus" ? "Prime ajoutée." : "Retenue ajoutée.");
+  const client = useQueryClient();
+  const [texts, setTexts] = useState<Record<string, string>>(Object.fromEntries(items.map((i) => [i.id, tnd(Math.abs(i.remaining))])));
+  const [paidOn, setPaidOn] = useState(todayIso());
+  const [method, setMethod] = useState<"cash" | "transfer" | "cheque">("transfer");
+  const [reference, setReference] = useState("");
+  const lines = items.map((i) => {
+    if (i.amount < 0) return { item: i, amount: i.remaining as number | null };
+    const parsed = tryParseTnd(texts[i.id] ?? "");
+    return { item: i, amount: parsed !== null && parsed > 0 && parsed <= i.remaining ? parsed : null };
+  });
+  const valid = lines.every((l) => l.amount !== null);
+  const total = lines.reduce((s, l) => s + (l.amount ?? 0), 0);
+  const settle = useMutation({
+    mutationFn: () =>
+      api.post<{ id: string; number: string; amount: number }>("/payroll/settlements", {
+        instructorId,
+        paidOn,
+        method,
+        ...(reference.trim() ? { reference: reference.trim() } : {}),
+        lines: lines.map((l) => ({ itemId: l.item.id, amount: l.amount })),
+      }),
+    onSuccess: async (r) => {
+      await client.invalidateQueries();
+      toast(`Règlement ${r.number} enregistré : ${tnd(r.amount)} TND.`);
+      window.open(api.fileUrl(`/payroll/settlements/${r.id}/pdf`), "_blank", "noopener");
       onClose();
     },
   });
   return (
     <Modal
-      title="Ajustement de paie"
+      wide
+      title="Régler des éléments de rémunération"
       onClose={onClose}
       footer={
         <>
-          <span className="cap">Tracé au journal d'audit</span>
+          <span className="cap">Un justificatif de paiement numéroté est émis</span>
+          <div className="row" style={{ gap: 8 }}>
+            <button type="button" className="btn" onClick={onClose}>
+              Annuler
+            </button>
+            <button type="button" className="btn btn-p" disabled={!valid || total <= 0 || !paidOn || settle.isPending} onClick={() => settle.mutate()}>
+              Régler {valid ? `${tnd(total)} TND` : ""}
+            </button>
+          </div>
+        </>
+      }
+    >
+      <div className="card xs">
+        <table className="tbl">
+          <thead>
+            <tr>
+              <th>Élément</th>
+              <th className="num">Dû</th>
+              <th className="num">Déjà payé</th>
+              <th className="num">Reste</th>
+              <th className="num">Payé maintenant (TND)</th>
+            </tr>
+          </thead>
+          <tbody>
+            {lines.map(({ item, amount }) => (
+              <tr key={item.id}>
+                <td>{item.label}</td>
+                <td className="num">{tnd(item.amount)}</td>
+                <td className="num">{tnd(item.paid)}</td>
+                <td className="num">{tnd(item.remaining)}</td>
+                <td className="num">
+                  {item.amount < 0 ? (
+                    <span title="Une retenue est déduite en totalité">{tnd(item.remaining)}</span>
+                  ) : (
+                    <input
+                      className={`input num${amount === null ? " err" : ""}`}
+                      style={{ width: 130 }}
+                      inputMode="decimal"
+                      aria-label={`Montant payé pour ${item.label}`}
+                      value={texts[item.id] ?? ""}
+                      onChange={(e) => setTexts({ ...texts, [item.id]: e.target.value })}
+                    />
+                  )}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+          <tfoot>
+            <tr>
+              <td colSpan={4}>Total du règlement</td>
+              <td className="num">{tnd(total)}</td>
+            </tr>
+          </tfoot>
+        </table>
+      </div>
+      {!valid ? <div className="err-text">Chaque montant doit être positif et ne pas dépasser le reste à payer de l'élément.</div> : null}
+      <div className="grid3">
+        <Field label="Date du paiement">
+          <input className="input" type="date" value={paidOn} onChange={(e) => setPaidOn(e.target.value)} />
+        </Field>
+        <Field label="Mode">
+          <select className="input" value={method} onChange={(e) => setMethod(e.target.value as typeof method)}>
+            {(["transfer", "cash", "cheque"] as const).map((m) => (
+              <option key={m} value={m}>
+                {METHOD[m]}
+              </option>
+            ))}
+          </select>
+        </Field>
+        <Field label="Référence (facultatif)">
+          <input className="input" value={reference} onChange={(e) => setReference(e.target.value)} />
+        </Field>
+      </div>
+      <ErrorBanner error={settle.error} />
+    </Modal>
+  );
+}
+
+function AdjustmentModal({ instructorId, month, onClose }: { instructorId: string; month: string; onClose: () => void }) {
+  const client = useQueryClient();
+  const toast = useToast();
+  const [kind, setKind] = useState<"bonus" | "deduction">("bonus");
+  const [amountText, setAmountText] = useState("");
+  const [reason, setReason] = useState("");
+  const amount = tryParseTnd(amountText);
+  const save = useMutation({
+    mutationFn: () => api.post("/payroll/adjustments", { instructorId, month, kind, amount, reason: reason.trim() }),
+    onSuccess: async () => {
+      await client.invalidateQueries();
+      toast(kind === "bonus" ? "Prime ajoutée : validez-la pour pouvoir la régler." : "Retenue ajoutée : validez-la pour l'appliquer au prochain règlement.");
+      onClose();
+    },
+  });
+  return (
+    <Modal
+      title="Prime ou retenue"
+      onClose={onClose}
+      footer={
+        <>
+          <span className="cap">Tracée au journal d'audit</span>
           <div className="row" style={{ gap: 8 }}>
             <button type="button" className="btn" onClick={onClose}>
               Annuler
@@ -658,7 +898,7 @@ function AdjustmentModal({ periodId, instructor, onClose }: { periodId: string; 
             <button
               type="button"
               className="btn btn-p"
-              disabled={!instructorId || amount === null || amount <= 0 || !reason.trim() || save.isPending}
+              disabled={amount === null || amount <= 0 || !reason.trim() || save.isPending}
               onClick={() => save.mutate()}
             >
               Ajouter
@@ -667,16 +907,6 @@ function AdjustmentModal({ periodId, instructor, onClose }: { periodId: string; 
         </>
       }
     >
-      <Field label="Intervenant">
-        <select className="input" value={instructorId} onChange={(e) => setInstructorId(e.target.value)}>
-          <option value="">Choisir</option>
-          {(instructors.data ?? []).map((i) => (
-            <option key={i.id} value={i.id}>
-              {i.lastName} {i.firstName}
-            </option>
-          ))}
-        </select>
-      </Field>
       <Segmented
         label="Type"
         value={kind}
@@ -692,276 +922,443 @@ function AdjustmentModal({ periodId, instructor, onClose }: { periodId: string; 
       <Field label="Motif (obligatoire)">
         <textarea className="input" value={reason} maxLength={500} onChange={(e) => setReason(e.target.value)} />
       </Field>
+      <span className="cap">Rattachée au suivi de {monthLabel(month)}.</span>
       <ErrorBanner error={save.error} />
     </Modal>
   );
 }
 
-function PayModal({ periodId, instructor, onClose }: { periodId: string; instructor: PeriodDetail["instructors"][number]; onClose: () => void }) {
-  const client = useQueryClient();
-  const toast = useToast();
-  const [paidOn, setPaidOn] = useState(todayIso());
-  const [method, setMethod] = useState<"cash" | "transfer" | "cheque">("transfer");
-  const [reference, setReference] = useState("");
-  const pay = useMutation({
-    mutationFn: () =>
-      api.post(`/payroll/periods/${periodId}/payslips/${instructor.id}/pay`, { paidOn, method, ...(reference.trim() ? { reference: reference.trim() } : {}) }),
-    onSuccess: async () => {
-      await client.invalidateQueries();
-      toast("Paiement de l'intervenant enregistré.");
-      onClose();
-    },
+function ItemDetailModal({ itemId, onClose }: { itemId: string; onClose: () => void }) {
+  const detail = useQuery({
+    queryKey: ["pay-item", itemId],
+    queryFn: () =>
+      api.get<
+        PayItem & {
+          sessions: { id: string; groupName: string; startsAt: string; endsAt: string; localDate: string; active: boolean }[];
+          settlements: { id: string; number: string; paidOn: string; status: string; amount: number }[];
+        }
+      >(`/payroll/items/${itemId}`),
   });
+  const d = detail.data;
   return (
-    <Modal
-      title={`Payer ${instructor.firstName} ${instructor.lastName}`}
-      onClose={onClose}
-      footer={
+    <Modal wide title={d ? d.label : "Élément de rémunération"} onClose={onClose}>
+      <ErrorBanner error={detail.error} />
+      {!d ? (
+        <Loading />
+      ) : (
         <>
-          <span className="cap">Net à payer : {tnd(instructor.net)} TND</span>
-          <div className="row" style={{ gap: 8 }}>
-            <button type="button" className="btn" onClick={onClose}>
-              Annuler
-            </button>
-            <button type="button" className="btn btn-p" disabled={!paidOn || pay.isPending} onClick={() => pay.mutate()}>
-              Marquer payé
-            </button>
+          <div className="grid4">
+            <Kpi label="Base" value={<span className="num">{tnd(d.base)}</span>} sub="TND" />
+            <Kpi label="Facteur de présence" value={percent(Math.round((d.rateNumerator * 10_000) / d.rateDenominator))} />
+            <Kpi label="Montant" value={<span className="num">{tnd(d.amount)}</span>} sub="TND" />
+            <Kpi label="Reste à payer" value={<span className="num">{tnd(d.remaining)}</span>} sub={`TND, payé ${tnd(d.paid)}`} />
+          </div>
+          <div className="cap">{perimeter(d)}</div>
+          {d.rule ? (
+            <div className="cap">
+              Rythme : {PERIODICITY[d.rule.periodicity]}. Période du {frDate(d.periodStart)} au {frDate(d.periodEnd)}, validable dès le {frDate(d.dueOn)}.
+            </div>
+          ) : null}
+          {d.sessions.length ? (
+            <div className="card xs">
+              <table className="tbl">
+                <thead>
+                  <tr>
+                    <th>Séance payée</th>
+                    <th>Groupe</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {d.sessions.map((s) => (
+                    <tr key={s.id} className={s.active ? "" : "dim"}>
+                      <td>
+                        <Link to={`/presences/${s.id}`}>
+                          {frDate(s.localDate)} {frTime(s.startsAt)}-{frTime(s.endsAt)}
+                        </Link>
+                      </td>
+                      <td>{s.groupName}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          ) : null}
+          <div>
+            <div className="lab">Historique</div>
+            <ol className="tl">
+              <li>
+                <div className="cap">{frDateTime(d.calculatedAt)}</div>
+                <div>{d.kind === "rule" ? "Calculé" : "Saisi"}</div>
+              </li>
+              {d.validatedAt ? (
+                <li>
+                  <div className="cap">{frDateTime(d.validatedAt)}</div>
+                  <div>Validé</div>
+                </li>
+              ) : null}
+              {d.settlements.map((s) => (
+                <li key={s.id}>
+                  <div className="cap">{frDate(s.paidOn)}</div>
+                  <div>
+                    Règlement {s.number} : {tnd(s.amount)} TND {s.status === "cancelled" ? <Badge tone="gray">Annulé</Badge> : null}
+                  </div>
+                </li>
+              ))}
+              {d.cancelledAt ? (
+                <li>
+                  <div className="cap">{frDateTime(d.cancelledAt)}</div>
+                  <div>Annulé : {d.cancelReason}</div>
+                </li>
+              ) : null}
+            </ol>
           </div>
         </>
-      }
-    >
-      <Field label="Date du paiement">
-        <input className="input" type="date" value={paidOn} onChange={(e) => setPaidOn(e.target.value)} />
-      </Field>
-      <Segmented
-        label="Mode"
-        value={method}
-        onChange={setMethod}
-        options={(["transfer", "cash", "cheque"] as const).map((m) => ({ value: m, label: METHOD[m] ?? m }))}
-      />
-      <Field label="Référence (facultatif)">
-        <input className="input" value={reference} onChange={(e) => setReference(e.target.value)} />
-      </Field>
-      <ErrorBanner error={pay.error} />
+      )}
     </Modal>
   );
 }
 
-export function PayPeriodPage() {
+export function InstructorPayPage() {
   const { id = "" } = useParams();
   const { can } = useSession();
-  const client = useQueryClient();
   const toast = useToast();
-  const [warnings, setWarnings] = useState<PeriodDetail["warnings"]>([]);
-  const [open, setOpen] = useState<string | null>(null);
-  const [adjusting, setAdjusting] = useState<PeriodDetail["instructors"][number] | null | "new">(null);
-  const [paying, setPaying] = useState<PeriodDetail["instructors"][number] | null>(null);
-  const [confirmValidate, setConfirmValidate] = useState(false);
-  const period = useQuery({ queryKey: ["pay-period", id], queryFn: () => api.get<PeriodDetail>(`/payroll/periods/${id}`) });
-  const instructors = useQuery({ queryKey: ["instructors"], queryFn: () => api.get<Instructor[]>("/instructors") });
-  usePage(["Paie", period.data ? `Paie de ${period.data.label}` : "Période"]);
+  const client = useQueryClient();
+  const [params, setParams] = useSearchParams();
+  const month = params.get("mois") ?? todayIso().slice(0, 7);
+  const [selected, setSelected] = useState<string[]>([]);
+  const [settling, setSettling] = useState<PayItem[] | null>(null);
+  const [adjusting, setAdjusting] = useState(false);
+  const [cancelling, setCancelling] = useState<PayItem | null>(null);
+  const [cancellingSettlement, setCancellingSettlement] = useState<Settlement | null>(null);
+  const [detail, setDetail] = useState<string | null>(null);
+  const [warnings, setWarnings] = useState<CalculationResult["warnings"]>([]);
+  const [showCancelled, setShowCancelled] = useState(false);
+  const pay = useQuery({ queryKey: ["instructor-pay", id, month], queryFn: () => api.get<InstructorPay>(`/payroll/instructors/${id}`, { month }) });
+  const name = pay.data ? `${pay.data.instructor.firstName} ${pay.data.instructor.lastName}` : "Intervenant";
+  usePage(["Paie", name]);
   const calculate = useMutation({
-    mutationFn: () => api.post<PeriodDetail>(`/payroll/periods/${id}/calculate`),
-    onSuccess: async (p) => {
-      setWarnings(p.warnings ?? []);
-      await client.invalidateQueries({ queryKey: ["pay-period", id] });
-      await client.invalidateQueries({ queryKey: ["pay-periods"] });
-      toast("Paie calculée.");
+    mutationFn: () => api.post<CalculationResult>("/payroll/calculate", { instructorId: id, month }),
+    onSuccess: async (r) => {
+      setWarnings(r.warnings);
+      await client.invalidateQueries();
+      toast(`${r.created} élément(s) calculé(s), ${r.unchanged} inchangé(s)${r.replaced ? `, ${r.replaced} recalculé(s)` : ""}.`);
     },
   });
   const validate = useMutation({
-    mutationFn: () => api.post(`/payroll/periods/${id}/validate`),
-    onSuccess: async () => {
+    mutationFn: (itemIds: string[]) => api.post<{ validated: number }>("/payroll/items/validate", { itemIds }),
+    onSuccess: async (r) => {
+      setSelected([]);
       await client.invalidateQueries();
-      setConfirmValidate(false);
-      toast("Période validée. Les bulletins sont émis.");
+      toast(`${r.validated} élément(s) validé(s).`);
     },
+    onError: (error) => toast(errorMessage(error), "error"),
   });
-  if (period.isPending) return <Loading />;
-  if (period.error) return <ErrorBanner error={period.error} retry={() => period.refetch()} />;
-  const p = period.data;
-  const locked = p.status === "validated" || p.status === "paid";
-  const nameOf = (instructorId: string) => {
-    const i = instructors.data?.find((x) => x.id === instructorId);
-    return i ? `${i.firstName} ${i.lastName}` : "";
-  };
+  if (pay.isPending) return <Loading />;
+  if (pay.error) return <ErrorBanner error={pay.error} retry={() => pay.refetch()} />;
+  const data = pay.data;
+  const writable = can("payroll:calculate");
+  const visible = data.items.filter((i) => showCancelled || i.status !== "cancelled");
+  const current = visible.filter((i) => !i.earlierMonth);
+  const earlier = visible.filter((i) => i.earlierMonth);
+  const chosen = data.items.filter((i) => selected.includes(i.id));
+  const toValidate = chosen.filter((i) => i.status === "calculated" && i.dueOn <= data.today);
+  const toSettle = chosen.filter((i) => i.status === "validated" && i.remaining !== 0);
+  const sum = (list: PayItem[], pick: (i: PayItem) => number) => list.reduce((s, i) => s + pick(i), 0);
+  const active = data.items.filter((i) => i.status !== "cancelled" && !i.earlierMonth);
+  const toggle = (itemId: string, on: boolean) => setSelected((list) => (on ? [...list, itemId] : list.filter((x) => x !== itemId)));
+
+  const table = (items: PayItem[]) => (
+    <div className="xs">
+      <table className="tbl">
+        <thead>
+          <tr>
+            {writable ? <th style={{ width: 32 }} /> : null}
+            <th>Élément de rémunération</th>
+            <th>Échéance</th>
+            <th>Statut</th>
+            <th className="num">Montant</th>
+            <th className="num">Payé</th>
+            <th className="num">Reste</th>
+            <th />
+          </tr>
+        </thead>
+        <tbody>
+          {items.map((i) => {
+            const state = itemState(i);
+            const selectable = (i.status === "calculated" && i.dueOn <= data.today) || (i.status === "validated" && i.remaining !== 0);
+            return (
+              <tr key={i.id} className={i.status === "cancelled" ? "dim" : selected.includes(i.id) ? "sel" : ""}>
+                {writable ? (
+                  <td>
+                    <input
+                      type="checkbox"
+                      className="chk"
+                      aria-label={i.label}
+                      disabled={!selectable}
+                      checked={selected.includes(i.id)}
+                      onChange={(e) => toggle(i.id, e.target.checked)}
+                    />
+                  </td>
+                ) : null}
+                <td>
+                  <button type="button" className="btn btn-g" style={{ padding: 0, minHeight: 0, textAlign: "start" }} onClick={() => setDetail(i.id)}>
+                    {i.label}
+                  </button>
+                  <div className="cap">{perimeter(i)}</div>
+                  {i.cancelReason ? <div className="cap">Annulé : {i.cancelReason}</div> : null}
+                </td>
+                <td>
+                  {frDate(i.dueOn)}
+                  {i.status === "calculated" && i.dueOn > data.today ? <div className="cap">validable dès cette date</div> : null}
+                </td>
+                <td>
+                  <Badge tone={state.tone}>{state.label}</Badge>
+                </td>
+                <td className="num">{tnd(i.amount)}</td>
+                <td className="num">{i.status === "validated" ? tnd(i.paid) : ""}</td>
+                <td className="num">{i.status === "validated" ? tnd(i.remaining) : ""}</td>
+                <td style={{ textAlign: "right", whiteSpace: "nowrap" }}>
+                  {writable && i.status === "calculated" && i.dueOn <= data.today ? (
+                    <button type="button" className="btn btn-g" disabled={validate.isPending} onClick={() => validate.mutate([i.id])}>
+                      Valider
+                    </button>
+                  ) : null}
+                  {writable && i.status === "validated" && i.remaining !== 0 ? (
+                    <button type="button" className="btn btn-g" onClick={() => setSettling([i])}>
+                      Régler
+                    </button>
+                  ) : null}
+                  {writable && (i.status === "calculated" || (i.status === "validated" && i.paid === 0)) ? (
+                    <button type="button" className="btn btn-g" onClick={() => setCancelling(i)}>
+                      Annuler
+                    </button>
+                  ) : null}
+                </td>
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
+    </div>
+  );
+
   return (
     <>
       <PageHeader
-        title={`Paie de ${p.label}`}
+        title={`Paie de ${name}`}
         subtitle={
           <span className="row center" style={{ gap: 8 }}>
-            <Badge tone={PAYROLL[p.status]!.tone}>{PAYROLL[p.status]!.label}</Badge>
-            {p.calculatedAt ? <span>Calculée le {frDateTime(p.calculatedAt)}</span> : null}
-            {p.validatedAt ? <span>· validée le {frDateTime(p.validatedAt)}</span> : null}
+            <span>{EMPLOYMENT[data.instructor.employment]}</span>
+            <Link to={`/intervenants/${id}`}>Fiche intervenant</Link>
+            <Link to={`/paie?onglet=regles&intervenant=${id}`}>Règles de rémunération</Link>
           </span>
         }
         actions={
-          can("payroll:calculate") && !locked ? (
-            <>
-              <button type="button" className="btn" onClick={() => setAdjusting("new")}>
-                + Prime ou retenue
-              </button>
-              <button type="button" className="btn" disabled={calculate.isPending} onClick={() => calculate.mutate()}>
-                {p.status === "draft" ? "Calculer" : "Recalculer"}
-              </button>
-              <button type="button" className="btn btn-p" disabled={p.status !== "calculated"} onClick={() => setConfirmValidate(true)}>
-                Valider la période
-              </button>
-            </>
-          ) : null
+          <>
+            <input
+              className="input"
+              type="month"
+              aria-label="Mois"
+              value={month}
+              onChange={(e) => e.target.value && (setParams({ mois: e.target.value }), setSelected([]))}
+            />
+            {writable ? (
+              <>
+                <button type="button" className="btn btn-p" disabled={calculate.isPending} onClick={() => calculate.mutate()}>
+                  Calculer
+                </button>
+                <button type="button" className="btn" onClick={() => setAdjusting(true)}>
+                  + Prime ou retenue
+                </button>
+              </>
+            ) : null}
+          </>
         }
       />
       <div className="grid4">
-        <Kpi label="Total net" value={<span className="num">{tnd(p.total)}</span>} sub="TND" />
-        <Kpi label="Intervenants" value={p.instructors.length} />
-        <Kpi label="Bulletins payés" value={`${p.instructors.filter((i) => i.payslip?.paidOn).length}/${p.instructors.length}`} />
         <Kpi
-          label="Ajustements"
-          value={<span className="num">{tnd(p.instructors.reduce((s, i) => s + i.adjustments, 0))}</span>}
-          sub="TND (primes moins retenues)"
+          label="Calculé, à valider"
+          value={
+            <span className="num">
+              {tnd(
+                sum(
+                  active.filter((i) => i.status === "calculated"),
+                  (i) => i.amount,
+                ),
+              )}
+            </span>
+          }
+          sub={`TND, ${monthLabel(month)}`}
+        />
+        <Kpi
+          label="Validé"
+          value={
+            <span className="num">
+              {tnd(
+                sum(
+                  active.filter((i) => i.status === "validated"),
+                  (i) => i.amount,
+                ),
+              )}
+            </span>
+          }
+          sub="TND"
+        />
+        <Kpi label="Déjà payé" value={<span className="num">{tnd(sum(active, (i) => i.paid))}</span>} sub="TND" />
+        <Kpi
+          label="Reste à payer"
+          value={
+            <span className="num">
+              {tnd(
+                sum(
+                  data.items.filter((i) => i.status === "validated"),
+                  (i) => i.remaining,
+                ),
+              )}
+            </span>
+          }
+          sub="TND, ce mois et les mois précédents"
+          tone={data.items.some((i) => i.status === "validated" && i.remaining !== 0) ? "amber" : undefined}
         />
       </div>
-      <ErrorBanner error={calculate.error ?? validate.error} />
-      {warnings?.length ? (
+      {data.rules.length === 0 ? (
+        <div className="ban ban-amber">
+          <span>Aucune règle de rémunération en vigueur ce mois-ci : rien ne peut être calculé.</span>
+        </div>
+      ) : (
+        <div className="cap">
+          Règles en vigueur :{" "}
+          {data.rules.map((r) => `${describeBase(r)} (${SCOPE[r.scope].toLowerCase()}, ${PERIODICITY[r.periodicity].toLowerCase()})`).join(" ; ")}
+        </div>
+      )}
+      {warnings.length ? (
         <div className="ban ban-amber" style={{ flexDirection: "column", alignItems: "flex-start" }}>
           <strong>Points à vérifier</strong>
           <ul>
             {warnings.map((w, i) => (
               <li key={i}>
-                {nameOf(w.instructorId)} :{" "}
-                {w.code === "no_rule" ? "aucune règle de rémunération ne s'applique, rien n'est calculé." : "aucune présence validée, le taux est indéfini."}
+                {w.groupName ?? "Forfait mensuel"} :{" "}
+                {w.code === "no_rule"
+                  ? "aucune règle de rémunération ne s'applique, les séances ne sont pas payées."
+                  : "aucune présence validée, le taux est indéfini."}
               </li>
             ))}
           </ul>
         </div>
       ) : null}
-      <Card title="Intervenants">
-        {p.instructors.length === 0 ? (
+      <ErrorBanner error={calculate.error} />
+      <Card
+        title={`Éléments de ${monthLabel(month)}`}
+        actions={
+          <>
+            <label className="row center" style={{ gap: 6 }}>
+              <input type="checkbox" className="chk" checked={showCancelled} onChange={(e) => setShowCancelled(e.target.checked)} /> Historique des annulations
+            </label>
+            {writable ? (
+              <>
+                <button
+                  type="button"
+                  className="btn"
+                  disabled={!toValidate.length || validate.isPending}
+                  onClick={() => validate.mutate(toValidate.map((i) => i.id))}
+                >
+                  Valider la sélection ({toValidate.length})
+                </button>
+                <button type="button" className="btn btn-p" disabled={!toSettle.length} onClick={() => setSettling(toSettle)}>
+                  Régler la sélection ({toSettle.length})
+                </button>
+              </>
+            ) : null}
+          </>
+        }
+      >
+        {current.length === 0 ? (
           <Empty
-            title={p.status === "draft" ? "Période non calculée" : "Aucune ligne de paie"}
-            text="Le calcul porte sur les séances tenues dont la feuille est validée."
+            title="Aucun élément ce mois-ci"
+            text="« Calculer » produit les éléments dus : chaque séance validée pour une règle à la séance, le mois pour une règle mensuelle, la formation à sa fin."
           />
+        ) : (
+          table(current)
+        )}
+      </Card>
+      {earlier.length ? <Card title="Reste à payer des mois précédents">{table(earlier)}</Card> : null}
+      <Card title="Règlements">
+        {data.settlements.length === 0 ? (
+          <Empty title="Aucun règlement" />
         ) : (
           <div className="xs">
             <table className="tbl">
               <thead>
                 <tr>
-                  <th>Intervenant</th>
-                  <th className="num">Calculé</th>
-                  <th className="num">Ajustements</th>
-                  <th className="num">Net (TND)</th>
-                  <th>Bulletin</th>
+                  <th>Numéro</th>
+                  <th>Payé le</th>
+                  <th>Mode</th>
+                  <th className="num">Montant (TND)</th>
+                  <th>Statut</th>
                   <th />
                 </tr>
               </thead>
               <tbody>
-                {p.instructors.map((i) => (
-                  <Fragment key={i.id}>
-                    <tr className="clickable" onClick={() => setOpen(open === i.id ? null : i.id)} aria-expanded={open === i.id}>
-                      <td>
-                        {open === i.id ? "▾" : "▸"} {i.lastName} {i.firstName}
-                        <div className="cap">{EMPLOYMENT[i.employment]}</div>
-                      </td>
-                      <td className="num">{tnd(i.calculated)}</td>
-                      <td className="num">{tnd(i.adjustments)}</td>
-                      <td className="num">
-                        <strong>{tnd(i.net)}</strong>
-                      </td>
-                      <td>
-                        {i.payslip ? (
-                          i.payslip.paidOn ? (
-                            <Badge tone="green">Payé le {frDate(i.payslip.paidOn)}</Badge>
-                          ) : (
-                            <Badge tone="teal">Émis</Badge>
-                          )
-                        ) : (
-                          <Badge tone="neutral">Non émis</Badge>
-                        )}
-                      </td>
-                      <td style={{ textAlign: "right", whiteSpace: "nowrap" }} onClick={(e) => e.stopPropagation()}>
-                        {i.payslip ? (
-                          <a className="btn btn-g" href={api.fileUrl(`/payroll/periods/${id}/payslips/${i.id}/pdf`)} target="_blank" rel="noreferrer">
-                            Bulletin PDF
-                          </a>
-                        ) : null}
-                        {i.payslip && !i.payslip.paidOn && can("payroll:calculate") ? (
-                          <button type="button" className="btn btn-g" onClick={() => setPaying(i)}>
-                            Payer
-                          </button>
-                        ) : null}
-                      </td>
-                    </tr>
-                    {open === i.id ? (
-                      <tr>
-                        <td colSpan={6} style={{ background: "var(--soft)" }}>
-                          <table className="tbl">
-                            <tbody>
-                              {i.lines.map((l) => (
-                                <tr key={l.id}>
-                                  <td>{l.groupId ? <Link to={`/groupes/${l.groupId}`}>{l.groupName}</Link> : "Forfait mensuel"}</td>
-                                  <td>
-                                    {describeBase(l.rule)}
-                                    <div className="cap">
-                                      {describePresence(l.rule)} · {l.details.sessions} séance(s) · présence {percent(l.details.rateBasisPoints)}
-                                      {l.details.error ? ` · ${l.details.error}` : ""}
-                                    </div>
-                                  </td>
-                                  <td className="num">base {tnd(l.base)}</td>
-                                  <td className="num">× {percent(Math.round((l.rateNumerator * 10_000) / l.rateDenominator))}</td>
-                                  <td className="num">{tnd(l.amount)}</td>
-                                </tr>
-                              ))}
-                              {i.adjustmentLines.map((a) => (
-                                <tr key={a.id}>
-                                  <td>{a.kind === "bonus" ? "Prime" : "Retenue"}</td>
-                                  <td colSpan={3}>{a.reason}</td>
-                                  <td className="num">{a.kind === "bonus" ? tnd(a.amount) : `-${tnd(a.amount)}`}</td>
-                                </tr>
-                              ))}
-                            </tbody>
-                          </table>
-                          {can("payroll:calculate") && !locked ? (
-                            <button type="button" className="btn btn-g" onClick={() => setAdjusting(i)}>
-                              + Prime ou retenue pour {i.firstName}
-                            </button>
-                          ) : null}
-                        </td>
-                      </tr>
-                    ) : null}
-                  </Fragment>
+                {data.settlements.map((st) => (
+                  <tr key={st.id} className={st.status === "cancelled" ? "dim" : ""}>
+                    <td>{st.number}</td>
+                    <td>{frDate(st.paidOn)}</td>
+                    <td>
+                      {METHOD[st.method]}
+                      {st.reference ? <div className="cap">{st.reference}</div> : null}
+                    </td>
+                    <td className="num">{tnd(st.amount)}</td>
+                    <td>
+                      {st.status === "valid" ? <Badge tone="green">Valide</Badge> : <Badge tone="gray">Annulé</Badge>}
+                      {st.cancelReason ? <div className="cap">{st.cancelReason}</div> : null}
+                    </td>
+                    <td style={{ textAlign: "right", whiteSpace: "nowrap" }}>
+                      <a className="btn btn-g" href={api.fileUrl(`/payroll/settlements/${st.id}/pdf`)} target="_blank" rel="noreferrer">
+                        Justificatif PDF
+                      </a>
+                      {writable && st.status === "valid" ? (
+                        <button type="button" className="btn btn-g" onClick={() => setCancellingSettlement(st)}>
+                          Annuler
+                        </button>
+                      ) : null}
+                    </td>
+                  </tr>
                 ))}
               </tbody>
             </table>
           </div>
         )}
       </Card>
-      {adjusting ? <AdjustmentModal periodId={id} instructor={adjusting === "new" ? null : adjusting} onClose={() => setAdjusting(null)} /> : null}
-      {paying ? <PayModal periodId={id} instructor={paying} onClose={() => setPaying(null)} /> : null}
-      {confirmValidate ? (
-        <Modal
-          title="Valider la période"
-          onClose={() => setConfirmValidate(false)}
-          footer={
-            <>
-              <span />
-              <div className="row" style={{ gap: 8 }}>
-                <button type="button" className="btn" onClick={() => setConfirmValidate(false)}>
-                  Retour
-                </button>
-                <button type="button" className="btn btn-p" disabled={validate.isPending} onClick={() => validate.mutate()}>
-                  Valider et émettre les bulletins
-                </button>
-              </div>
-            </>
-          }
-        >
-          <p>
-            Total net : <strong>{tnd(p.total)} TND</strong> pour {p.instructors.length} intervenant(s).
-          </p>
-          <p className="cap">Une fois validée, la période ne peut plus être recalculée ni ajustée. Chaque ligne garde la copie de la règle appliquée.</p>
-          <ErrorBanner error={validate.error} />
-        </Modal>
+      {settling ? <SettleModal instructorId={id} items={settling} onClose={() => (setSettling(null), setSelected([]))} /> : null}
+      {adjusting ? <AdjustmentModal instructorId={id} month={month} onClose={() => setAdjusting(false)} /> : null}
+      {detail ? <ItemDetailModal itemId={detail} onClose={() => setDetail(null)} /> : null}
+      {cancelling ? (
+        <ReasonDialog
+          title="Annuler l'élément"
+          danger
+          explanation={`${cancelling.label} : ${tnd(cancelling.amount)} TND. Ses séances redeviennent à calculer ; l'historique est conservé.`}
+          confirmLabel="Annuler l'élément"
+          onClose={() => setCancelling(null)}
+          onConfirm={async (reason) => {
+            await api.post(`/payroll/items/${cancelling.id}/cancel`, { reason });
+            await client.invalidateQueries();
+            toast("Élément annulé.");
+          }}
+        />
+      ) : null}
+      {cancellingSettlement ? (
+        <ReasonDialog
+          title="Annuler le règlement"
+          danger
+          explanation={`Règlement ${cancellingSettlement.number} de ${tnd(cancellingSettlement.amount)} TND : les éléments qu'il réglait redeviennent dus. Le justificatif reste archivé.`}
+          confirmLabel="Annuler le règlement"
+          onClose={() => setCancellingSettlement(null)}
+          onConfirm={async (reason) => {
+            await api.post(`/payroll/settlements/${cancellingSettlement.id}/cancel`, { reason });
+            await client.invalidateQueries();
+            toast("Règlement annulé.");
+          }}
+        />
       ) : null}
     </>
   );

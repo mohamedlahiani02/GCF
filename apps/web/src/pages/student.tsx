@@ -104,8 +104,8 @@ function TransferModal({ enrolment, onClose }: { enrolment: EnrolmentRow; onClos
       }
     >
       <div className="cap">
-        Groupe actuel : <strong>{enrolment.groupName}</strong> depuis le {frDate(enrolment.effectiveDate)}. Le changement reste dans la même{" "}
-        {enrolment.kind === "study" ? "étude" : "formation"}.
+        Groupe actuel : <strong>{enrolment.groupName}</strong> depuis le {frDate(enrolment.effectiveDate)}. Le changement reste dans{" "}
+        {enrolment.kind === "study" ? "le même cours particulier" : "la même formation"}.
       </div>
       <ErrorBanner error={current.error ?? candidates.error} />
       <Field label="Nouveau groupe *">
@@ -449,7 +449,7 @@ export function StudentPage() {
   });
   const enrolments = useQuery({ queryKey: ["enrolments", { studentId: id }], queryFn: () => api.get<EnrolmentRow[]>("/enrolments", { studentId: id }) });
   const name = student.data ? `${student.data.firstName} ${student.data.lastName}` : "Fiche élève";
-  usePage(["Élèves", name]);
+  usePage(["Référentiels", "Élèves", name]);
 
   const decideDiscount = useMutation({
     mutationFn: (input: { id: string; approve: boolean; reason?: string }) =>

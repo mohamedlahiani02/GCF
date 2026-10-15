@@ -1,5 +1,5 @@
 import { useMutation, useQuery } from "@tanstack/react-query";
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router";
 import { api } from "../api/client";
 import type { GroupDetail, GroupRow, StudentRow, Study, TrainingDetail } from "../api/types";
@@ -8,6 +8,7 @@ import { usePage, useCollect } from "../components/shell";
 import { useToast } from "../components/toasts";
 import { Badge, Card, Empty, ErrorBanner, Field, Loading, PageHeader, Segmented } from "../components/ui";
 import { frDate, tnd, todayIso, tryParseTnd, weekdayLabel } from "../lib/format";
+import { FORMULA, FORMULA_HELP, formulaText, type FormulaKind } from "../lib/formulas";
 import { PAYMENT_MODE } from "../lib/labels";
 import { StudentFormModal } from "./students";
 
@@ -16,7 +17,7 @@ interface TrainingRow {
   title: string;
   category: string | null;
   price: number;
-  paymentModes: "full" | "installments" | "both";
+  formulaKinds: FormulaKind[];
   status: string;
   openSessions: number;
 }
@@ -109,7 +110,7 @@ function OfferStep({ onPick }: { onPick: (o: Offer) => void }) {
         value={kind}
         onChange={setKind}
         options={[
-          { value: "study", label: "Étude privée" },
+          { value: "study", label: "Cours particulier" },
           { value: "training", label: "Formation" },
         ]}
       />
@@ -118,7 +119,7 @@ function OfferStep({ onPick }: { onPick: (o: Offer) => void }) {
         <table className="tbl">
           <thead>
             <tr>
-              <th>{kind === "study" ? "Étude" : "Formation"}</th>
+              <th>{kind === "study" ? "Cours particulier" : "Formation"}</th>
               <th>Facturation</th>
               <th className="num">Prix (TND)</th>
               <th>{kind === "study" ? "Groupes" : "Sessions ouvertes"}</th>
@@ -144,7 +145,7 @@ function OfferStep({ onPick }: { onPick: (o: Offer) => void }) {
                         {t.title}
                         {t.category ? <div className="cap">{t.category}</div> : null}
                       </td>
-                      <td>{t.paymentModes === "both" ? "Intégral ou tranches" : t.paymentModes === "full" ? "Intégral" : "Tranches"}</td>
+                      <td>{t.formulaKinds.length ? t.formulaKinds.map((k) => FORMULA[k]).join(", ") : "Aucune formule"}</td>
                       <td className="num">{tnd(t.price)}</td>
                       <td>{t.openSessions}</td>
                     </tr>
@@ -257,12 +258,28 @@ export function EnrolmentWizardPage() {
     }
   }, [presetStudent.data, student]);
 
+  const presetGroupId = params.get("groupe");
+  const presetGroup = useQuery({
+    queryKey: ["enrolment-preset-group", presetGroupId],
+    queryFn: async (): Promise<{ group: GroupDetail; offer: Offer } | null> => {
+      const g = await api.get<GroupDetail>(`/groups/${presetGroupId}`);
+      if (g.kind === "study") {
+        const study = (await api.get<Study[]>("/catalogue/studies")).find((s) => s.id === g.studyId);
+        return study ? { group: g, offer: { kind: "study", study } } : null;
+      }
+      const row = (await api.get<TrainingRow[]>("/catalogue/trainings")).find((t) => t.id === g.trainingId);
+      return row ? { group: g, offer: { kind: "training", training: row } } : null;
+    },
+    enabled: !!presetGroupId,
+  });
+
   const training = useQuery({
     queryKey: ["training", offer?.kind === "training" ? offer.training.id : null],
     queryFn: () => api.get<TrainingDetail>(`/catalogue/trainings/${(offer as { training: TrainingRow }).training.id}`),
     enabled: offer?.kind === "training",
   });
   const plans = (training.data?.plans ?? []).filter((p) => p.status === "active");
+  const selectedPlan = plans.find((p) => p.id === planId);
 
   const discountValue = (() => {
     if (!withDiscount) return null;
@@ -278,8 +295,7 @@ export function EnrolmentWizardPage() {
           studentId: student.id,
           groupId: group.id,
           effectiveDate,
-          paymentMode,
-          ...(paymentMode === "installments" && planId ? { planId } : {}),
+          ...(group.kind === "training" ? (planId ? { planId } : {}) : { paymentMode }),
           ...(firstDueDate && (paymentMode === "monthly" || paymentMode === "full") ? { firstDueDate } : {}),
           ...(withDiscount && discountValue && discountReason.trim()
             ? { discount: { kind: discountKind, value: discountValue, reason: discountReason.trim() } }
@@ -289,7 +305,7 @@ export function EnrolmentWizardPage() {
   const preview = useQuery({
     queryKey: ["enrolment-preview", body],
     queryFn: () => api.post<PreviewResult>("/enrolments/preview", body),
-    enabled: !!body && step >= 3 && (paymentMode !== "installments" || !!planId),
+    enabled: !!body && step >= 3 && (group?.kind !== "training" || !!planId),
   });
   const create = useMutation({
     mutationFn: () => api.post<{ id: string }>("/enrolments", body),
@@ -302,24 +318,37 @@ export function EnrolmentWizardPage() {
     },
   });
 
-  const pickGroup = (g: GroupDetail) => {
+  const pickGroup = useCallback((g: GroupDetail) => {
     setGroup(g);
+    setPlanId("");
     if (g.kind === "study") setPaymentMode(g.billingMode ?? "monthly");
-    else {
-      const modes = offer?.kind === "training" ? offer.training.paymentModes : "both";
-      setPaymentMode(modes === "installments" ? "installments" : "full");
-    }
-    if (g.startDate > effectiveDate) setEffectiveDate(g.startDate);
+    setEffectiveDate((d) => (g.startDate > d ? g.startDate : d));
     setStep(3);
-  };
+  }, []);
 
-  const modeOptions: { value: PaymentMode; label: string; disabled?: boolean }[] =
-    group?.kind === "study"
-      ? [{ value: group.billingMode ?? "monthly", label: PAYMENT_MODE[group.billingMode ?? "monthly"] ?? "" }]
-      : [
-          { value: "full", label: "Paiement intégral", disabled: offer?.kind === "training" && offer.training.paymentModes === "installments" },
-          { value: "installments", label: "Par tranches", disabled: offer?.kind === "training" && offer.training.paymentModes === "full" },
-        ];
+  useEffect(() => {
+    if (student && presetGroup.data && !offer) {
+      setOffer(presetGroup.data.offer);
+      pickGroup(presetGroup.data.group);
+    }
+  }, [student, presetGroup.data, offer, pickGroup]);
+
+  // A training is enrolled under one of its formulas; the default formula is preselected.
+  useEffect(() => {
+    if (group?.kind !== "training" || planId || plans.length === 0) return;
+    const chosen = plans.find((p) => p.isDefault) ?? plans[0]!;
+    setPlanId(chosen.id);
+    setPaymentMode(chosen.kind);
+  }, [group, planId, plans]);
+
+  const choosePlan = (id: string) => {
+    const plan = plans.find((p) => p.id === id);
+    setPlanId(id);
+    if (plan) {
+      setPaymentMode(plan.kind);
+      if (plan.kind === "per_session") setWithDiscount(false);
+    }
+  };
 
   return (
     <>
@@ -359,30 +388,44 @@ export function EnrolmentWizardPage() {
                     onChange={(e) => setEffectiveDate(e.target.value)}
                   />
                 </Field>
-                <div>
-                  <div className="lab" style={{ marginBottom: 6 }}>
-                    Mode de paiement
-                  </div>
-                  <Segmented label="Mode de paiement" value={paymentMode} onChange={setPaymentMode} options={modeOptions} />
-                  {paymentMode === "per_session" ? (
-                    <div className="cap" style={{ marginTop: 6 }}>
-                      Chaque séance validée sur la feuille de présence crée une échéance au tarif du groupe.
+                {group.kind === "study" ? (
+                  <div>
+                    <div className="lab" style={{ marginBottom: 6 }}>
+                      Mode de paiement
                     </div>
-                  ) : null}
-                </div>
-                {paymentMode === "installments" ? (
-                  <Field label="Plan de tranches *">
-                    <select className="input" value={planId} onChange={(e) => setPlanId(e.target.value)}>
-                      <option value="">Choisir un plan</option>
-                      {plans.map((p) => (
-                        <option key={p.id} value={p.id}>
-                          {p.name}
-                          {p.isDefault ? " (par défaut)" : ""} · {p.amounts.map((a) => tnd(a)).join(" + ")} TND
-                        </option>
-                      ))}
-                    </select>
-                  </Field>
-                ) : null}
+                    <Badge tone="blue">{PAYMENT_MODE[paymentMode]}</Badge>
+                    {paymentMode === "per_session" ? (
+                      <div className="cap" style={{ marginTop: 6 }}>
+                        Chaque séance validée sur la feuille de présence crée une échéance au tarif du groupe.
+                      </div>
+                    ) : null}
+                  </div>
+                ) : training.isPending ? (
+                  <Loading />
+                ) : plans.length === 0 ? (
+                  <div className="ban ban-amber">
+                    <span>
+                      Cette formation n'a aucune formule active. Ajoutez-en une depuis la{" "}
+                      <Link to={`/formations/${training.data?.id ?? ""}`}>fiche de la formation</Link>.
+                    </span>
+                  </div>
+                ) : (
+                  <fieldset className="stack" style={{ border: 0, padding: 0, margin: 0, gap: 8 }}>
+                    <legend className="lab" style={{ marginBottom: 6 }}>
+                      Formule *
+                    </legend>
+                    {plans.map((p) => (
+                      <label key={p.id} className="row" style={{ gap: 8, alignItems: "flex-start" }}>
+                        <input type="radio" name="formula" checked={planId === p.id} onChange={() => choosePlan(p.id)} />
+                        <span>
+                          <strong>{p.name}</strong> <Badge tone="gray">{FORMULA[p.kind]}</Badge> {p.isDefault ? <Badge tone="blue">Par défaut</Badge> : null}
+                          <div className="cap">{formulaText(p, training.data?.price ?? group.effective.price)}</div>
+                        </span>
+                      </label>
+                    ))}
+                    {planId ? <div className="cap">{FORMULA_HELP[paymentMode]}</div> : null}
+                  </fieldset>
+                )}
                 {paymentMode === "monthly" || paymentMode === "full" ? (
                   <Field label="Première échéance" hint="Par défaut, la date d'effet.">
                     <input className="input" type="date" value={firstDueDate} onChange={(e) => setFirstDueDate(e.target.value)} />
@@ -500,7 +543,7 @@ export function EnrolmentWizardPage() {
                 <button
                   type="button"
                   className="btn btn-p"
-                  disabled={!preview.data || (paymentMode === "installments" && !planId) || (withDiscount && (!discountValue || !discountReason.trim()))}
+                  disabled={!preview.data || (group?.kind === "training" && !planId) || (withDiscount && (!discountValue || !discountReason.trim()))}
                   onClick={() => setStep(4)}
                 >
                   Voir le récapitulatif
@@ -533,7 +576,11 @@ export function EnrolmentWizardPage() {
                     {group.instructorLastName}
                   </div>
                   <div className="cap">
-                    Tarif : {tnd(group.effective.price)} TND{group.kind === "study" ? (group.billingMode === "monthly" ? " par mois" : " par séance") : ""}
+                    {group.kind === "study"
+                      ? `Tarif : ${tnd(group.effective.price)} TND ${group.billingMode === "monthly" ? "par mois" : "par séance"}`
+                      : selectedPlan
+                        ? `Formule : ${selectedPlan.name}, ${formulaText(selectedPlan, group.effective.price)}`
+                        : `Prix de la formation : ${tnd(group.effective.price)} TND`}
                   </div>
                 </>
               ) : (

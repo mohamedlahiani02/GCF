@@ -6,7 +6,7 @@ import { useSession } from "../auth/session";
 import { usePage } from "../components/shell";
 import { Badge, Card, Empty, ErrorBanner, Kpi, Loading, PageHeader, Segmented } from "../components/ui";
 import { frDate, frTime, monthLabel, percent, tnd } from "../lib/format";
-import { PAYROLL, SHEET } from "../lib/labels";
+import { SHEET } from "../lib/labels";
 
 type Granularity = "day" | "week" | "month";
 interface Dashboard {
@@ -18,7 +18,7 @@ interface Dashboard {
     unpaidTotal: number;
     unpaidPayers: number;
     postponedInstallments: number;
-    upcomingPayroll: { periodId: string; month: string; status: string; total: number } | null;
+    payroll: { toValidate: number; toPay: number };
     series: { bucket: string; total: number }[];
   };
   operational?: {
@@ -179,13 +179,10 @@ export function DashboardPage() {
               tone={f.unpaidTotal > 0 ? "red" : undefined}
             />
             <Kpi
-              label="Paie à venir"
-              value={<span className="num">{f.upcomingPayroll ? tnd(f.upcomingPayroll.total) : "-"}</span>}
-              sub={
-                f.upcomingPayroll
-                  ? `TND, ${monthLabel(f.upcomingPayroll.month)} (${PAYROLL[f.upcomingPayroll.status]?.label.toLowerCase()})`
-                  : "Aucune période calculée"
-              }
+              label="Paie des intervenants à régler"
+              value={<span className="num">{tnd(f.payroll.toPay)}</span>}
+              sub={`TND validés ; ${tnd(f.payroll.toValidate)} TND calculés à valider`}
+              tone={f.payroll.toPay > 0 ? "amber" : undefined}
             />
           </>
         ) : null}

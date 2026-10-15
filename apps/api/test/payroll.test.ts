@@ -388,5 +388,7 @@ describe("corrections and history", () => {
     await h.call("POST", `/api/sessions/${first}/validate`, secretariat);
     const res = await h.call("POST", "/api/payroll/calculate", accountant, { instructorId: other, month: "2026-08" });
     expect(res.body.warnings).toEqual([expect.objectContaining({ instructorId: other, code: "no_rule" })]);
+    const summary = await h.call("GET", "/api/payroll/summary?month=2026-08", accountant);
+    expect(summary.body.instructors.find((i: { id: string }) => i.id === other)).toMatchObject({ groupsWithoutRule: 1, sessionsToCalculate: 0 });
   });
 });

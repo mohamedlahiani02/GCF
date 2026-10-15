@@ -258,25 +258,23 @@ export const payrollRoutes: FastifyPluginAsync = async (app) => {
         .where((eb) => eb.or([eb.and([eb("period_end", ">=", start), eb("period_end", "<=", end)]), eb("status", "=", "validated")]))
         .execute(),
     );
-    const { timezone } = await centreClock(db, centreId);
-    const localDate = sql<string>`(class_sessions.starts_at at time zone ${timezone})::date`;
-    const uncovered = await db
-      .selectFrom("class_sessions")
-      .leftJoin("pay_item_sessions", (join) =>
-        join
-          .onRef("pay_item_sessions.session_id", "=", "class_sessions.id")
-          .onRef("pay_item_sessions.instructor_id", "=", "class_sessions.instructor_id")
-          .on("pay_item_sessions.active", "=", true),
-      )
-      .select(["class_sessions.instructor_id as instructorId", sql<number>`count(*)::integer`.as("n")])
-      .where("class_sessions.centre_id", "=", centreId)
-      .where("class_sessions.status", "=", "held")
-      .where("class_sessions.sheet_status", "=", "validated")
-      .where(localDate, ">=", start)
-      .where(localDate, "<=", end)
-      .where("pay_item_sessions.item_id", "is", null)
-      .groupBy("class_sessions.instructor_id")
-      .execute();
+    // Sessions a calculation of this month would pay and that no item covers yet. A training fee is only counted in
+    // the month its group ends, so its sessions do not show as waiting before then.
+    const { candidates, warnings } = await computeCandidates(db, centreId, { from: start, to: end, excludeValidated: true });
+    const candidateSessions = new Map(candidates.flatMap((c) => c.sessionIds.map((sessionId) => [sessionId, c.instructorId] as const)));
+    const covered = candidateSessions.size
+      ? await db
+          .selectFrom("pay_item_sessions")
+          .select(["session_id as sessionId", "instructor_id as instructorId"])
+          .where("active", "=", true)
+          .where("session_id", "in", [...candidateSessions.keys()])
+          .execute()
+      : [];
+    const coveredKeys = new Set(covered.map((c) => `${c.sessionId}|${c.instructorId}`));
+    const uncovered = new Map<string, number>();
+    for (const [sessionId, instructorId] of candidateSessions) {
+      if (!coveredKeys.has(`${sessionId}|${instructorId}`)) uncovered.set(instructorId, (uncovered.get(instructorId) ?? 0) + 1);
+    }
     const rows = instructors
       .map((i) => {
         const own = items.filter((it) => it.instructorId === i.id);
@@ -296,10 +294,11 @@ export const payrollRoutes: FastifyPluginAsync = async (app) => {
           remaining: sum(inMonth, (it) => it.remaining),
           outstanding: sum(own, (it) => it.remaining),
           toValidate: inMonth.filter((it) => it.status === "calculated").length,
-          sessionsToCalculate: Number(uncovered.find((u) => u.instructorId === i.id)?.n ?? 0),
+          sessionsToCalculate: uncovered.get(i.id) ?? 0,
+          groupsWithoutRule: warnings.filter((w) => w.instructorId === i.id && w.code === "no_rule").length,
         };
       })
-      .filter((r) => r.status === "active" || r.calculated || r.validated || r.outstanding || r.sessionsToCalculate);
+      .filter((r) => r.status === "active" || r.calculated || r.validated || r.outstanding || r.sessionsToCalculate || r.groupsWithoutRule);
     const total = (key: "calculated" | "validated" | "paid" | "remaining" | "outstanding") => rows.reduce((s, r) => s + r[key], 0);
     return {
       month,

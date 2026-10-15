@@ -131,3 +131,19 @@ describe("screens support", () => {
     expect(res.body).toMatchObject({ renter: { name: "Société Medis" }, totals: { due: 0, credit: 0 }, installments: [], payments: [] });
   });
 });
+
+describe("group management", () => {
+  it("lists groups with their offer, the next session and the oldest sheet still to fill", async () => {
+    const past = await h.call("POST", `/api/groups/${ids.group}/sessions`, secretariat, { date: "2026-09-08", startTime: "17:00", endTime: "18:00" });
+    const future = await h.call("POST", `/api/groups/${ids.group}/sessions`, secretariat, { date: "2099-01-05", startTime: "17:00", endTime: "18:00" });
+    const list = await h.call("GET", "/api/groups", secretariat);
+    const group = list.body.find((g: { id: string }) => g.id === ids.group);
+    expect(group).toMatchObject({ studyName: "Anglais", enrolledCount: 1, nextSessionId: future.body.id, slots: [] });
+    // A started session whose sheet is not validated is offered for attendance during 30 days.
+    const recent = Date.now() - Date.parse("2026-09-08T16:00:00Z") <= 30 * 86_400_000;
+    expect(group.attendanceSessionId).toBe(recent ? past.body.id : null);
+    const sessions = await h.call("GET", `/api/groups/${ids.group}/sessions?from=2026-09-01&to=2026-09-30`, secretariat);
+    expect(sessions.body.map((s: { id: string }) => s.id)).toEqual([past.body.id]);
+    expect(sessions.body[0]).toMatchObject({ status: "scheduled", sheetStatus: "none", instructorName: "Sana Ben Salah" });
+  });
+});
