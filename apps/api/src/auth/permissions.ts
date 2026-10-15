@@ -11,13 +11,30 @@ export const PERMISSIONS = [
   "audit:read",
   "students:read",
   "students:write",
+  "catalogue:read",
+  "catalogue:write",
+  "groups:write",
+  "instructors:read",
+  "instructors:write",
+  "rooms:write",
+  "enrolments:write",
+  "discounts:approve",
 ] as const;
 export type Permission = (typeof PERMISSIONS)[number];
 
 const ROLE_PERMISSIONS: Record<Role, ReadonlySet<Permission>> = {
   admin: new Set(PERMISSIONS),
-  secretariat: new Set<Permission>(["centre:read", "students:read", "students:write"]),
-  accountant: new Set<Permission>(["centre:read", "audit:read", "students:read"]),
+  secretariat: new Set<Permission>([
+    "centre:read",
+    "students:read",
+    "students:write",
+    "catalogue:read",
+    "groups:write",
+    "instructors:read",
+    "rooms:write",
+    "enrolments:write",
+  ]),
+  accountant: new Set<Permission>(["centre:read", "audit:read", "students:read", "catalogue:read", "instructors:read"]),
 };
 
 export function can(role: Role, permission: Permission): boolean {

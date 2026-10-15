@@ -11,7 +11,11 @@ import type { Database } from "./db/types.js";
 import { forbidden, HttpError, unauthenticated } from "./errors.js";
 import { auditRoutes } from "./routes/audit.js";
 import { authRoutes } from "./routes/auth.js";
+import { catalogueRoutes } from "./routes/catalogue.js";
 import { centreRoutes } from "./routes/centre.js";
+import { enrolmentRoutes } from "./routes/enrolments.js";
+import { groupRoutes } from "./routes/groups.js";
+import { instructorRoutes } from "./routes/instructors.js";
 import { studentRoutes } from "./routes/students.js";
 import { userRoutes } from "./routes/users.js";
 
@@ -114,5 +118,9 @@ export async function buildApp(options: AppOptions): Promise<FastifyInstance> {
   await app.register(userRoutes, { prefix: "/api/users" });
   await app.register(studentRoutes, { prefix: "/api/students" });
   await app.register(auditRoutes, { prefix: "/api/audit-log" });
+  await app.register(catalogueRoutes, { prefix: "/api/catalogue" });
+  await app.register(instructorRoutes, { prefix: "/api/instructors" });
+  await app.register(groupRoutes, { prefix: "/api/groups" });
+  await app.register(enrolmentRoutes, { prefix: "/api/enrolments" });
   return app;
 }

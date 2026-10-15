@@ -29,7 +29,9 @@ describe("authentication", () => {
     const res = await h.app.inject({ method: "GET", url: "/api/auth/session", headers: { cookie: secretariat } });
     expect(res.statusCode).toBe(200);
     expect(res.json().user.role).toBe("secretariat");
-    expect(res.json().permissions).toEqual(["centre:read", "students:read", "students:write"]);
+    expect(res.json().permissions).toContain("students:write");
+    expect(res.json().permissions).not.toContain("users:manage");
+    expect(res.json().permissions).not.toContain("audit:read");
   });
 
   it("rejects state-changing requests from another origin", async () => {

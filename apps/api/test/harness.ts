@@ -18,6 +18,7 @@ export interface Harness {
   centreId: string;
   createUser(role: Role, email: string): Promise<string>;
   login(email: string, password?: string): Promise<string>;
+  call(method: "GET" | "POST" | "PATCH" | "PUT", url: string, cookie: string, payload?: unknown): Promise<{ status: number; body: any }>;
   close(): Promise<void>;
 }
 
@@ -62,6 +63,15 @@ export async function createHarness(): Promise<Harness> {
       const cookie = response.cookies.find((c) => c.name === "gcf_session");
       if (!cookie) throw new Error("no session cookie");
       return `gcf_session=${cookie.value}`;
+    },
+    async call(method, url, cookie, payload) {
+      const response = await app.inject({
+        method,
+        url,
+        headers: method === "GET" ? { cookie } : { cookie, origin: ORIGIN },
+        ...(payload === undefined ? {} : { payload: payload as Record<string, unknown> }),
+      });
+      return { status: response.statusCode, body: response.body ? response.json() : undefined };
     },
     async close() {
       await app.close();
