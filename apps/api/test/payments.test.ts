@@ -68,8 +68,10 @@ beforeAll(async () => {
       durationHours: 30,
       price: 100_000,
       capacity: 10,
-      paymentModes: "full",
     })
+  ).body.id;
+  ids.fullPlan = (
+    await h.call("POST", `/api/catalogue/trainings/${training}/plans`, admin, { name: "Paiement intégral", isDefault: true, kind: "full" })
   ).body.id;
   const session = (await h.call("POST", `/api/catalogue/trainings/${training}/sessions`, admin, { name: "S1", startDate: "2026-10-01", endDate: "2026-12-15" }))
     .body.id;
@@ -144,7 +146,7 @@ describe("collecting a payment", () => {
       studentId: ids.amira,
       groupId: ids.gT,
       effectiveDate: "2026-10-01",
-      paymentMode: "full",
+      planId: ids.fullPlan,
     });
     expect(res.status).toBe(201);
     expect((await account(ids.amira)).totals).toEqual({ due: 60_000, credit: 0, pendingDiscounts: 0 });

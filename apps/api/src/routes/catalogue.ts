@@ -1,6 +1,6 @@
 import { planAmounts, ScheduleError, type PlanItemInput } from "@gcf/shared";
 import type { FastifyPluginAsync } from "fastify";
-import type { Transaction } from "kysely";
+import { sql, type Transaction } from "kysely";
 import { z } from "zod";
 import { writeAudit } from "../audit.js";
 import type { Database } from "../db/types.js";
@@ -30,7 +30,6 @@ const trainingFields = {
   durationHours: z.number().int().min(1).max(10_000),
   price: millimes,
   capacity: z.number().int().min(1).max(1000),
-  paymentModes: z.enum(["full", "installments", "both"]),
 };
 const trainingCreate = z.object(trainingFields).strict();
 const trainingUpdate = z.object(trainingFields).partial().strict();
@@ -54,7 +53,38 @@ const planItem = z
     }
     if (item.dueKind === "fixed" && !item.dueDate) ctx.addIssue({ code: "custom", message: "a fixed due date needs dueDate" });
   });
-const planBody = z.object({ name: requiredText(100), isDefault: z.boolean(), items: z.array(planItem).min(1).max(36) }).strict();
+/**
+ * A training formula: paid in full (optionally at its own price), in instalments (items summing to the price),
+ * monthly or per session (a tariff, and for sessions whether an absence is billed).
+ */
+const planBody = z
+  .object({
+    name: requiredText(100),
+    isDefault: z.boolean(),
+    kind: z.enum(["full", "installments", "monthly", "per_session"]).default("installments"),
+    amount: millimes.nullable().optional(),
+    absenceBilled: z.boolean().nullable().optional(),
+    items: z.array(planItem).max(36).default([]),
+  })
+  .strict()
+  .superRefine((p, ctx) => {
+    const issue = (message: string) => ctx.addIssue({ code: "custom", message });
+    if (p.kind === "installments" && p.items.length === 0) issue("an instalment formula needs at least one instalment");
+    if (p.kind !== "installments" && p.items.length > 0) issue("only an instalment formula has instalments");
+    if ((p.kind === "monthly" || p.kind === "per_session") && (p.amount === undefined || p.amount === null))
+      issue("a monthly or per-session formula needs its tariff");
+    if (p.kind === "installments" && p.amount !== undefined && p.amount !== null) issue("an instalment formula takes the training price");
+    if ((p.kind === "per_session") !== (p.absenceBilled !== undefined && p.absenceBilled !== null))
+      issue("say whether an absence is billed, for a per-session formula only");
+  });
+type PlanBody = z.infer<typeof planBody>;
+const planColumns = (p: PlanBody) => ({
+  name: p.name,
+  is_default: p.isDefault,
+  kind: p.kind,
+  amount: p.kind === "installments" ? null : (p.amount ?? null),
+  absence_billed: p.kind === "per_session" ? (p.absenceBilled ?? null) : null,
+});
 const planPreviewBody = z.object({ items: z.array(planItem).min(1).max(36) }).strict();
 
 const sessionFields = { name: requiredText(100), startDate: isoDate, endDate: isoDate };
@@ -318,17 +348,7 @@ export const catalogueRoutes: FastifyPluginAsync = async (app) => {
 
   /* Trainings, payment plans and sessions */
 
-  const trainingColumns = [
-    "id",
-    "title",
-    "category",
-    "description",
-    "duration_hours as durationHours",
-    "price",
-    "capacity",
-    "payment_modes as paymentModes",
-    "status",
-  ] as const;
+  const trainingColumns = ["id", "title", "category", "description", "duration_hours as durationHours", "price", "capacity", "status"] as const;
 
   app.get("/trainings", { preHandler: read }, async (request) => {
     const rows = await db
@@ -341,15 +361,22 @@ export const catalogueRoutes: FastifyPluginAsync = async (app) => {
         "trainings.duration_hours as durationHours",
         "trainings.price",
         "trainings.capacity",
-        "trainings.payment_modes as paymentModes",
         "trainings.status",
       ])
-      .select((eb) => eb.fn.count<number>("training_sessions.id").as("openSessions"))
+      .select((eb) => [
+        eb.fn.count<number>("training_sessions.id").distinct().as("openSessions"),
+        eb
+          .selectFrom("payment_plans")
+          .select(sql<string[]>`coalesce(array_agg(distinct payment_plans.kind), '{}')`.as("kinds"))
+          .whereRef("payment_plans.training_id", "=", "trainings.id")
+          .where("payment_plans.status", "=", "active")
+          .as("formulaKinds"),
+      ])
       .where("trainings.centre_id", "=", request.user!.centreId)
       .groupBy("trainings.id")
       .orderBy("trainings.title")
       .execute();
-    return rows.map((r) => ({ ...r, openSessions: Number(r.openSessions) }));
+    return rows.map((r) => ({ ...r, openSessions: Number(r.openSessions), formulaKinds: r.formulaKinds ?? [] }));
   });
 
   app.get("/trainings/:id", { preHandler: read }, async (request) => {
@@ -363,7 +390,7 @@ export const catalogueRoutes: FastifyPluginAsync = async (app) => {
     if (!training) throw notFound("training");
     const plans = await db
       .selectFrom("payment_plans")
-      .select(["id", "name", "is_default as isDefault", "status"])
+      .select(["id", "name", "is_default as isDefault", "kind", "amount", "absence_billed as absenceBilled", "status"])
       .where("training_id", "=", id)
       .orderBy("name")
       .execute();
@@ -399,7 +426,8 @@ export const catalogueRoutes: FastifyPluginAsync = async (app) => {
       ...training,
       plans: plans.map((p) => {
         const planItems = items.filter((i) => i.planId === p.id).map(({ planId: _planId, ...rest }) => rest);
-        return { ...p, items: planItems, amounts: planAmounts(training.price, planItems) };
+        const amounts = p.kind === "installments" ? planAmounts(training.price, planItems) : p.kind === "full" ? [p.amount ?? training.price] : [];
+        return { ...p, items: planItems, amounts };
       }),
       sessions,
     };
@@ -419,7 +447,6 @@ export const catalogueRoutes: FastifyPluginAsync = async (app) => {
           duration_hours: body.durationHours,
           price: body.price,
           capacity: body.capacity,
-          payment_modes: body.paymentModes,
         })
         .returning(trainingColumns)
         .executeTakeFirstOrThrow();
@@ -471,7 +498,6 @@ export const catalogueRoutes: FastifyPluginAsync = async (app) => {
           ...(body.durationHours === undefined ? {} : { duration_hours: body.durationHours }),
           ...(body.price === undefined ? {} : { price: body.price }),
           ...(body.capacity === undefined ? {} : { capacity: body.capacity }),
-          ...(body.paymentModes === undefined ? {} : { payment_modes: body.paymentModes }),
           updated_at: new Date(),
         })
         .where("id", "=", id)
@@ -491,12 +517,7 @@ export const catalogueRoutes: FastifyPluginAsync = async (app) => {
   });
 
   const loadTraining = async (id: string, centreId: string) => {
-    const training = await db
-      .selectFrom("trainings")
-      .select(["id", "price", "payment_modes"])
-      .where("id", "=", id)
-      .where("centre_id", "=", centreId)
-      .executeTakeFirst();
+    const training = await db.selectFrom("trainings").select(["id", "price"]).where("id", "=", id).where("centre_id", "=", centreId).executeTakeFirst();
     if (!training) throw notFound("training");
     return training;
   };
@@ -519,20 +540,19 @@ export const catalogueRoutes: FastifyPluginAsync = async (app) => {
     const actor = request.user!;
     const { id } = idParam.parse(request.params);
     const training = await loadTraining(id, actor.centreId);
-    if (training.payment_modes === "full") throw unprocessable("installments_not_allowed", "this training is paid in full only");
     const body = planBody.parse(request.body);
     const items = toPlanInput(body.items);
-    checkPlanTotal(training.price, items);
+    if (body.kind === "installments") checkPlanTotal(training.price, items);
     const plan = await db.transaction().execute(async (trx) => {
       if (body.isDefault) {
         await trx.updateTable("payment_plans").set({ is_default: false }).where("training_id", "=", id).where("is_default", "=", true).execute();
       }
       const created = await trx
         .insertInto("payment_plans")
-        .values({ centre_id: actor.centreId, training_id: id, name: body.name, is_default: body.isDefault })
-        .returning(["id", "name", "is_default as isDefault", "status"])
+        .values({ centre_id: actor.centreId, training_id: id, ...planColumns(body) })
+        .returning(["id", "name", "is_default as isDefault", "kind", "amount", "absence_billed as absenceBilled", "status"])
         .executeTakeFirstOrThrow();
-      await savePlanItems(trx, created.id, items);
+      if (items.length) await savePlanItems(trx, created.id, items);
       await writeAudit(trx, {
         centreId: actor.centreId,
         userId: actor.userId,
@@ -565,22 +585,31 @@ export const catalogueRoutes: FastifyPluginAsync = async (app) => {
         .forUpdate()
         .executeTakeFirst();
       if (!plan) throw notFound("payment plan");
-      checkPlanTotal(plan.price, items);
+      if (body.kind === "installments") checkPlanTotal(plan.price, items);
       if (body.isDefault) {
         await trx.updateTable("payment_plans").set({ is_default: false }).where("training_id", "=", plan.trainingId).where("id", "!=", id).execute();
       }
-      await trx.updateTable("payment_plans").set({ name: body.name, is_default: body.isDefault }).where("id", "=", id).execute();
+      await trx.updateTable("payment_plans").set(planColumns(body)).where("id", "=", id).execute();
       await trx.deleteFrom("payment_plan_items").where("plan_id", "=", id).execute();
-      await savePlanItems(trx, id, items);
+      if (items.length) await savePlanItems(trx, id, items);
       await writeAudit(trx, {
         centreId: actor.centreId,
         userId: actor.userId,
         action: "payment_plan.updated",
         objectType: "payment_plan",
         objectId: id,
-        after: { name: body.name, isDefault: body.isDefault, items },
+        after: { ...planColumns(body), items },
       });
-      return { id, name: body.name, isDefault: body.isDefault, status: "active" };
+      const saved = planColumns(body);
+      return {
+        id,
+        name: saved.name,
+        isDefault: saved.is_default,
+        kind: saved.kind,
+        amount: saved.amount,
+        absenceBilled: saved.absence_billed,
+        status: "active",
+      };
     });
   });
 

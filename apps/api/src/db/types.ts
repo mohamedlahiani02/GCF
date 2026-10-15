@@ -161,7 +161,6 @@ export interface TrainingsTable {
   duration_hours: number;
   price: number;
   capacity: number;
-  payment_modes: "full" | "installments" | "both";
   status: Status;
   created_at: Timestamp;
   updated_at: Timestamp;
@@ -173,9 +172,14 @@ export interface PaymentPlansTable {
   training_id: string;
   name: string;
   is_default: Generated<boolean>;
+  kind: Generated<PlanKind>;
+  amount: number | null;
+  absence_billed: boolean | null;
   status: Status;
   created_at: Timestamp;
 }
+
+export type PlanKind = "full" | "installments" | "monthly" | "per_session";
 
 export interface PaymentPlanItemsTable {
   id: Generated<string>;
@@ -243,6 +247,8 @@ export interface EnrolmentsTable {
   status: Generated<EnrolmentStatus>;
   payment_mode: PaymentMode;
   plan_id: string | null;
+  session_price: number | null;
+  session_absence_billed: boolean | null;
   transferred_from_id: string | null;
   ended_reason: string | null;
   created_by: string | null;
@@ -449,6 +455,7 @@ export interface PayRulesTable {
   min_rate_basis_points: number | null;
   floor_amount: number | null;
   prorata_above: boolean | null;
+  periodicity: PayPeriodicity;
   valid_from: DateColumn;
   valid_to: NullableDate;
   status: Status;
@@ -456,54 +463,73 @@ export interface PayRulesTable {
   created_at: Timestamp;
 }
 
-export interface PayPeriodsTable {
+export type PayPeriodicity = "session" | "month" | "training";
+
+export interface PayItemsTable {
   id: Generated<string>;
   centre_id: string;
-  month: DateColumn;
-  status: Generated<"draft" | "calculated" | "validated" | "paid">;
-  calculated_at: NullableTimestamp;
-  validated_at: NullableTimestamp;
-  validated_by: string | null;
-  created_at: Timestamp;
-}
-
-export interface PayLinesTable {
-  id: Generated<string>;
-  period_id: string;
   instructor_id: string;
-  group_id: string | null;
-  rule_id: string;
+  kind: "rule" | "bonus" | "deduction";
+  rule_id: string | null;
   rule_snapshot: Json;
-  base: number;
-  rate_numerator: number;
-  rate_denominator: number;
+  group_id: string | null;
+  period_key: string;
+  period_start: DateColumn;
+  period_end: DateColumn;
+  due_on: DateColumn;
+  label: string;
+  base: Generated<number>;
+  rate_numerator: Generated<number>;
+  rate_denominator: Generated<number>;
   amount: number;
   details: Json;
+  status: Generated<"calculated" | "validated" | "cancelled">;
+  reason: string | null;
+  calculated_at: Timestamp;
+  calculated_by: string | null;
+  validated_at: NullableTimestamp;
+  validated_by: string | null;
+  cancelled_at: NullableTimestamp;
+  cancelled_by: string | null;
+  cancel_reason: string | null;
 }
 
-export interface PayAdjustmentsTable {
-  id: Generated<string>;
-  period_id: string;
+export interface PayItemSessionsTable {
+  item_id: string;
+  session_id: string;
   instructor_id: string;
-  kind: "bonus" | "deduction";
+  active: Generated<boolean>;
+}
+
+export interface PaySettlementCountersTable {
+  centre_id: string;
+  year: number;
+  last_number: number;
+}
+
+export interface PaySettlementsTable {
+  id: Generated<string>;
+  centre_id: string;
+  instructor_id: string;
+  number: string;
+  paid_on: DateColumn;
+  method: "cash" | "transfer" | "cheque";
+  reference: string | null;
   amount: number;
-  reason: string;
-  created_by: string | null;
-  created_at: Timestamp;
-}
-
-export interface PayslipsTable {
-  id: Generated<string>;
-  period_id: string;
-  instructor_id: string;
-  total: number;
   pdf: Buffer;
   sha256: string;
-  issued_at: Timestamp;
-  paid_on: NullableDate;
-  payment_method: "cash" | "transfer" | "cheque" | null;
-  payment_reference: string | null;
-  paid_by: string | null;
+  status: Generated<"valid" | "cancelled">;
+  created_by: string | null;
+  created_at: Timestamp;
+  cancelled_at: NullableTimestamp;
+  cancelled_by: string | null;
+  cancel_reason: string | null;
+}
+
+export interface PaySettlementLinesTable {
+  settlement_id: string;
+  item_id: string;
+  amount: number;
 }
 
 export type RentalUnit = "hour" | "half_day" | "day" | "month" | "year";
@@ -595,10 +621,11 @@ export interface Database {
   mail_dispatches: MailDispatchesTable;
   postponements: PostponementsTable;
   pay_rules: PayRulesTable;
-  pay_periods: PayPeriodsTable;
-  pay_lines: PayLinesTable;
-  pay_adjustments: PayAdjustmentsTable;
-  payslips: PayslipsTable;
+  pay_items: PayItemsTable;
+  pay_item_sessions: PayItemSessionsTable;
+  pay_settlement_counters: PaySettlementCountersTable;
+  pay_settlements: PaySettlementsTable;
+  pay_settlement_lines: PaySettlementLinesTable;
   room_rates: RoomRatesTable;
   renters: RentersTable;
   rentals: RentalsTable;

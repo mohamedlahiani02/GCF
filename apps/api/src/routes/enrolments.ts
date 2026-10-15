@@ -2,7 +2,7 @@ import type { FastifyPluginAsync } from "fastify";
 import { z } from "zod";
 import { writeAudit } from "../audit.js";
 import { can } from "../auth/permissions.js";
-import { buildSchedule, discountAmount, loadGroupBilling, type ScheduleLine } from "../domain/enrolmentSchedule.js";
+import { buildSchedule, discountAmount, loadGroupBilling, resolveTerms, type EnrolmentTerms, type ScheduleLine } from "../domain/enrolmentSchedule.js";
 import { dropEnrolment, transferEnrolment } from "../domain/enrolmentChanges.js";
 import { recordFinancialEvents } from "../domain/financialEvents.js";
 import { lockStudent, settleStudent } from "../domain/ledger.js";
@@ -19,7 +19,7 @@ const enrolmentBody = z
     studentId: uuid,
     groupId: uuid,
     effectiveDate: isoDate,
-    paymentMode: z.enum(["full", "installments", "monthly", "per_session"]),
+    paymentMode: z.enum(["full", "installments", "monthly", "per_session"]).optional(),
     planId: uuid.optional(),
     firstDueDate: isoDate.optional(),
     discount: discount.optional(),
@@ -32,6 +32,7 @@ const decisionBody = z.object({ approve: z.boolean(), reason: reason.optional() 
 const listQuery = z.object({ studentId: uuid.optional(), groupId: uuid.optional() });
 
 interface Preview {
+  terms: EnrolmentTerms;
   lines: ScheduleLine[];
   discount: { amount: number; reason: string } | null;
   total: number;
@@ -45,16 +46,17 @@ export const enrolmentRoutes: FastifyPluginAsync = async (app) => {
     const group = await loadGroupBilling(db, body.groupId, centreId);
     if (group.status !== "active") throw unprocessable("group_archived", "the group is archived");
     if (body.effectiveDate > group.endDate) throw unprocessable("after_group_end", "the enrolment starts after the end of the group");
+    const { terms } = await resolveTerms(db, group, body, centreId);
     const lines = await buildSchedule(db, group, body, centreId);
     const charges = lines.reduce((s, l) => s + l.amount, 0);
     const discountValue = body.discount ? { amount: discountAmount(lines, body.discount), reason: body.discount.reason } : null;
-    return { group, lines, discount: discountValue, total: charges - (discountValue?.amount ?? 0) };
+    return { group, terms, lines, discount: discountValue, total: charges - (discountValue?.amount ?? 0) };
   };
 
   app.post("/preview", { preHandler: write }, async (request) => {
     const body = enrolmentBody.parse(request.body);
-    const { lines, discount: d, total } = await preview(body, request.user!.centreId);
-    return { lines, discount: d, total };
+    const { terms, lines, discount: d, total } = await preview(body, request.user!.centreId);
+    return { paymentMode: terms.paymentMode, sessionPrice: terms.sessionPrice, lines, discount: d, total };
   });
 
   app.post("/", { preHandler: write }, async (request, reply) => {
@@ -68,7 +70,7 @@ export const enrolmentRoutes: FastifyPluginAsync = async (app) => {
       .executeTakeFirst();
     if (!student) throw notFound("student");
     if (student.status !== "active") throw unprocessable("student_archived", "the student is archived");
-    const { group, lines, discount: d } = await preview(body, actor.centreId);
+    const { group, terms, lines, discount: d } = await preview(body, actor.centreId);
     const canApprove = can(actor.role, "discounts:approve");
 
     const enrolment = await db.transaction().execute(async (trx) => {
@@ -90,8 +92,10 @@ export const enrolmentRoutes: FastifyPluginAsync = async (app) => {
           student_id: body.studentId,
           group_id: body.groupId,
           effective_date: body.effectiveDate,
-          payment_mode: body.paymentMode,
-          plan_id: body.paymentMode === "installments" ? (body.planId ?? null) : null,
+          payment_mode: terms.paymentMode,
+          plan_id: terms.planId,
+          session_price: terms.sessionPrice,
+          session_absence_billed: terms.sessionAbsenceBilled,
           created_by: actor.userId,
         })
         .returning(["id", "effective_date as effectiveDate", "payment_mode as paymentMode", "status"])

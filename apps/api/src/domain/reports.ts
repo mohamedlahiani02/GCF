@@ -171,27 +171,55 @@ async function collections(db: Db, centreId: string, range: ReportRange): Promis
 }
 
 async function payroll(db: Db, centreId: string, range: ReportRange): Promise<ReportTable> {
+  const settled = db
+    .selectFrom("pay_settlement_lines")
+    .innerJoin("pay_settlements", "pay_settlements.id", "pay_settlement_lines.settlement_id")
+    .select(["pay_settlement_lines.item_id", sql<number>`sum(pay_settlement_lines.amount)::bigint`.as("paid")])
+    .where("pay_settlements.status", "=", "valid")
+    .groupBy("pay_settlement_lines.item_id")
+    .as("s");
   const rows = await db
-    .selectFrom("payslips")
-    .innerJoin("pay_periods", "pay_periods.id", "payslips.period_id")
-    .innerJoin("instructors", "instructors.id", "payslips.instructor_id")
-    .select(["instructors.last_name as lastName", "instructors.first_name as firstName", "pay_periods.month", "payslips.total", "payslips.paid_on as paidOn"])
-    .where("pay_periods.centre_id", "=", centreId)
-    .where("pay_periods.month", ">=", `${range.from.slice(0, 7)}-01`)
-    .where("pay_periods.month", "<=", range.to)
+    .selectFrom("pay_items")
+    .innerJoin("instructors", "instructors.id", "pay_items.instructor_id")
+    .leftJoin(settled, "s.item_id", "pay_items.id")
+    .select([
+      "instructors.last_name as lastName",
+      "instructors.first_name as firstName",
+      "pay_items.label",
+      "pay_items.period_end as periodEnd",
+      "pay_items.status",
+      "pay_items.amount",
+      sql<number>`coalesce(s.paid, 0)`.as("paid"),
+    ])
+    .where("pay_items.centre_id", "=", centreId)
+    .where("pay_items.status", "<>", "cancelled")
+    .where("pay_items.period_end", ">=", range.from)
+    .where("pay_items.period_end", "<=", range.to)
     .orderBy("instructors.last_name")
-    .orderBy("pay_periods.month")
+    .orderBy("pay_items.period_end")
     .execute();
+  const STATUS = { calculated: "Calculé", validated: "Validé", cancelled: "Annulé" } as const;
   return {
     title: REPORTS.payroll.title,
-    subtitle: `${subtitle(range)}. Périodes validées.`,
+    subtitle: `${subtitle(range)}. Éléments de rémunération dont la période se termine sur l'intervalle, hors éléments annulés.`,
     columns: [
       { key: "instructor", label: "Intervenant", kind: "text" },
-      { key: "month", label: "Période", kind: "text" },
-      { key: "total", label: "Net (TND)", kind: "money" },
-      { key: "paidOn", label: "Payé le", kind: "date" },
+      { key: "label", label: "Élément", kind: "text" },
+      { key: "periodEnd", label: "Fin de période", kind: "date" },
+      { key: "status", label: "Statut", kind: "text" },
+      { key: "amount", label: "Montant (TND)", kind: "money" },
+      { key: "paid", label: "Payé (TND)", kind: "money" },
+      { key: "remaining", label: "Reste à payer (TND)", kind: "money" },
     ],
-    rows: rows.map((r) => ({ instructor: `${r.lastName} ${r.firstName}`, month: r.month.slice(0, 7), total: r.total, paidOn: r.paidOn })),
+    rows: rows.map((r) => ({
+      instructor: `${r.lastName} ${r.firstName}`,
+      label: r.label,
+      periodEnd: r.periodEnd,
+      status: STATUS[r.status],
+      amount: r.amount,
+      paid: Number(r.paid),
+      remaining: r.status === "validated" ? r.amount - Number(r.paid) : 0,
+    })),
   };
 }
 

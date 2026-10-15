@@ -175,7 +175,6 @@ describe("trainings and payment plans", () => {
       durationHours: 40,
       price: 450_000,
       capacity: 12,
-      paymentModes: "both",
     });
     expect(training.status).toBe(201);
     ids.training = training.body.id;
@@ -280,7 +279,6 @@ describe("integrity", () => {
       durationHours: 60,
       price: 600_000,
       capacity: 12,
-      paymentModes: "installments",
     });
     const items = [
       { label: "Inscription", valueKind: "amount", value: 200_000, dueKind: "relative", dueOffsetDays: 0 },
