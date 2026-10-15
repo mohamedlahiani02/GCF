@@ -421,6 +421,82 @@ export interface PostponementsTable {
   decision_reason: string | null;
 }
 
+export type PayBaseKind = "pct_collections" | "pct_session_tariff" | "fixed_per_session" | "monthly_flat" | "hourly" | "training_flat";
+export type PresenceKind = "ignore" | "prorata" | "session_due" | "threshold";
+
+export interface PayRulesTable {
+  id: Generated<string>;
+  centre_id: string;
+  instructor_id: string;
+  scope: "instructor" | "study" | "training" | "group";
+  study_id: string | null;
+  training_id: string | null;
+  group_id: string | null;
+  base_kind: PayBaseKind;
+  basis_points: number | null;
+  amount: number | null;
+  collection_basis: "collected" | "invoiced" | null;
+  presence_kind: PresenceKind;
+  min_rate_basis_points: number | null;
+  floor_amount: number | null;
+  prorata_above: boolean | null;
+  valid_from: DateColumn;
+  valid_to: NullableDate;
+  status: Status;
+  created_by: string | null;
+  created_at: Timestamp;
+}
+
+export interface PayPeriodsTable {
+  id: Generated<string>;
+  centre_id: string;
+  month: DateColumn;
+  status: Generated<"draft" | "calculated" | "validated" | "paid">;
+  calculated_at: NullableTimestamp;
+  validated_at: NullableTimestamp;
+  validated_by: string | null;
+  created_at: Timestamp;
+}
+
+export interface PayLinesTable {
+  id: Generated<string>;
+  period_id: string;
+  instructor_id: string;
+  group_id: string | null;
+  rule_id: string;
+  rule_snapshot: Json;
+  base: number;
+  rate_numerator: number;
+  rate_denominator: number;
+  amount: number;
+  details: Json;
+}
+
+export interface PayAdjustmentsTable {
+  id: Generated<string>;
+  period_id: string;
+  instructor_id: string;
+  kind: "bonus" | "deduction";
+  amount: number;
+  reason: string;
+  created_by: string | null;
+  created_at: Timestamp;
+}
+
+export interface PayslipsTable {
+  id: Generated<string>;
+  period_id: string;
+  instructor_id: string;
+  total: number;
+  pdf: Buffer;
+  sha256: string;
+  issued_at: Timestamp;
+  paid_on: NullableDate;
+  payment_method: "cash" | "transfer" | "cheque" | null;
+  payment_reference: string | null;
+  paid_by: string | null;
+}
+
 export interface Database {
   centres: CentresTable;
   users: UsersTable;
@@ -453,6 +529,11 @@ export interface Database {
   receipt_prints: ReceiptPrintsTable;
   mail_dispatches: MailDispatchesTable;
   postponements: PostponementsTable;
+  pay_rules: PayRulesTable;
+  pay_periods: PayPeriodsTable;
+  pay_lines: PayLinesTable;
+  pay_adjustments: PayAdjustmentsTable;
+  payslips: PayslipsTable;
 }
 
 export type Student = Selectable<StudentsTable>;
