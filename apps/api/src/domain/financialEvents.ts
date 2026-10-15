@@ -8,6 +8,7 @@ import type { Database } from "../db/types.js";
  */
 export type FinancialEventType =
   | "installment_issued"
+  | "rental_booked"
   | "installment_cancelled"
   | "discount_granted"
   | "payment_received"
@@ -30,6 +31,8 @@ export interface FinancialEvent {
   instructorId?: string | null;
   roomId?: string | null;
   installmentId?: string | null;
+  rentalId?: string | null;
+  renterId?: string | null;
   payload?: Record<string, unknown>;
 }
 
@@ -51,6 +54,8 @@ export async function recordFinancialEvents(db: Kysely<Database> | Transaction<D
         instructor_id: e.instructorId ?? null,
         room_id: e.roomId ?? null,
         installment_id: e.installmentId ?? null,
+        rental_id: e.rentalId ?? null,
+        renter_id: e.renterId ?? null,
         payload: e.payload ? JSON.stringify(e.payload) : null,
       })),
     )

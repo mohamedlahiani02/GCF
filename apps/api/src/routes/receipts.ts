@@ -22,7 +22,8 @@ export const receiptRoutes: FastifyPluginAsync = async (app) => {
     const rows = await db
       .selectFrom("receipts")
       .innerJoin("payments", "payments.id", "receipts.payment_id")
-      .innerJoin("students", "students.id", "payments.student_id")
+      .leftJoin("students", "students.id", "payments.student_id")
+      .leftJoin("renters", "renters.id", "payments.renter_id")
       .select((eb) => [
         "receipts.id",
         "receipts.number",
@@ -30,6 +31,7 @@ export const receiptRoutes: FastifyPluginAsync = async (app) => {
         "receipts.issued_at as issuedAt",
         "students.first_name as firstName",
         "students.last_name as lastName",
+        "renters.name as renterName",
         "payments.amount",
         "payments.status as paymentStatus",
         eb
@@ -98,15 +100,28 @@ export const receiptRoutes: FastifyPluginAsync = async (app) => {
     const receipt = await db
       .selectFrom("receipts")
       .innerJoin("payments", "payments.id", "receipts.payment_id")
-      .innerJoin("students", "students.id", "payments.student_id")
+      .leftJoin("students", "students.id", "payments.student_id")
+      .leftJoin("renters", "renters.id", "payments.renter_id")
       .innerJoin("centres", "centres.id", "receipts.centre_id")
-      .select(["receipts.id", "receipts.number", "receipts.pdf", "students.id as studentId", "students.receipt_email as receiptEmail", "students.email", "students.guardian_email as guardianEmail", "students.is_minor as isMinor", "centres.name as centreName"])
+      .select([
+        "receipts.id",
+        "receipts.number",
+        "receipts.pdf",
+        "payments.student_id as studentId",
+        "payments.renter_id as renterId",
+        "students.receipt_email as receiptEmail",
+        "students.email",
+        "students.guardian_email as guardianEmail",
+        "students.is_minor as isMinor",
+        "renters.email as renterEmail",
+        "centres.name as centreName",
+      ])
       .where("receipts.id", "=", id)
       .where("receipts.centre_id", "=", actor.centreId)
       .executeTakeFirst();
     if (!receipt) throw notFound("receipt");
-    const to = body.to ?? receipt.receiptEmail ?? (receipt.isMinor ? receipt.guardianEmail : receipt.email) ?? receipt.email;
-    if (!to) throw new HttpError(422, "no_recipient", "the student has no e-mail address for receipts");
+    const to = body.to ?? (receipt.renterId ? receipt.renterEmail : (receipt.receiptEmail ?? (receipt.isMinor ? receipt.guardianEmail : receipt.email) ?? receipt.email));
+    if (!to) throw new HttpError(422, "no_recipient", "no e-mail address is known for this payer");
     let status: "sent" | "failed" = "sent";
     let error: string | null = null;
     try {
@@ -121,7 +136,7 @@ export const receiptRoutes: FastifyPluginAsync = async (app) => {
       error = sendError instanceof Error ? sendError.message.slice(0, 500) : "unknown error";
       request.log.warn({ err: sendError, receipt: receipt.number }, "receipt e-mail failed");
     }
-    await db.insertInto("mail_dispatches").values({ centre_id: actor.centreId, kind: "receipt", receipt_id: id, student_id: receipt.studentId, recipient: to, status, error, sent_by: actor.userId }).execute();
+    await db.insertInto("mail_dispatches").values({ centre_id: actor.centreId, kind: "receipt", receipt_id: id, student_id: receipt.studentId, renter_id: receipt.renterId, recipient: to, status, error, sent_by: actor.userId }).execute();
     await writeAudit(db, { centreId: actor.centreId, userId: actor.userId, action: `receipt.mail_${status}`, objectType: "receipt", objectId: id, after: { to } });
     return { id, recipient: to, status, error };
   });

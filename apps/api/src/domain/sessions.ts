@@ -28,26 +28,7 @@ export async function findSessionConflicts(trx: Transaction<Database>, w: Sessio
   const range = sql<string>`tstzrange(${w.startsAt}, ${w.endsAt})`;
   const conflicts: SessionConflict[] = [];
 
-  if (w.roomId) {
-    const rooms = await trx
-      .selectFrom("room_bookings")
-      .leftJoin("class_sessions", "class_sessions.id", "room_bookings.session_id")
-      .leftJoin("groups", "groups.id", "class_sessions.group_id")
-      .select([
-        "room_bookings.session_id as sessionId",
-        sql<Date>`lower(room_bookings.period)`.as("startsAt"),
-        sql<Date>`upper(room_bookings.period)`.as("endsAt"),
-        "groups.name as groupName",
-      ])
-      .where("room_bookings.room_id", "=", w.roomId)
-      .where("room_bookings.active", "=", true)
-      .where(sql<boolean>`room_bookings.period && ${range}`)
-      .where((eb) => eb.or([eb("room_bookings.session_id", "is", null), eb("room_bookings.session_id", "!=", exclude)]))
-      .execute();
-    for (const r of rooms) {
-      conflicts.push({ type: "room", startsAt: r.startsAt, endsAt: r.endsAt, sessionId: r.sessionId, description: r.groupName ? `room used by ${r.groupName}` : "room already booked" });
-    }
-  }
+  if (w.roomId) conflicts.push(...(await findRoomConflicts(trx, w.roomId, w.startsAt, w.endsAt, { excludeSessionId: exclude })));
 
   const people = await trx
     .selectFrom("class_sessions")
@@ -66,6 +47,45 @@ export async function findSessionConflicts(trx: Transaction<Database>, w: Sessio
   return conflicts;
 }
 
+/** Room bookings (sessions and rentals) overlapping an interval. */
+export async function findRoomConflicts(
+  trx: Transaction<Database>,
+  roomId: string,
+  startsAt: Date,
+  endsAt: Date,
+  exclude: { excludeSessionId?: string; excludeRentalId?: string } = {},
+): Promise<SessionConflict[]> {
+  const range = sql<string>`tstzrange(${startsAt}, ${endsAt})`;
+  const rows = await trx
+    .selectFrom("room_bookings")
+    .leftJoin("class_sessions", "class_sessions.id", "room_bookings.session_id")
+    .leftJoin("groups", "groups.id", "class_sessions.group_id")
+    .leftJoin("rental_slots", "rental_slots.id", "room_bookings.rental_slot_id")
+    .leftJoin("rentals", "rentals.id", "rental_slots.rental_id")
+    .leftJoin("renters", "renters.id", "rentals.renter_id")
+    .select([
+      "room_bookings.session_id as sessionId",
+      "rentals.id as rentalId",
+      sql<Date>`lower(room_bookings.period)`.as("startsAt"),
+      sql<Date>`upper(room_bookings.period)`.as("endsAt"),
+      "groups.name as groupName",
+      "renters.name as renterName",
+    ])
+    .where("room_bookings.room_id", "=", roomId)
+    .where("room_bookings.active", "=", true)
+    .where(sql<boolean>`room_bookings.period && ${range}`)
+    .execute();
+  return rows
+    .filter((r) => !(exclude.excludeSessionId && r.sessionId === exclude.excludeSessionId) && !(exclude.excludeRentalId && r.rentalId === exclude.excludeRentalId))
+    .map((r) => ({
+      type: "room" as const,
+      startsAt: r.startsAt,
+      endsAt: r.endsAt,
+      sessionId: r.sessionId,
+      description: r.groupName ? `room used by ${r.groupName}` : r.renterName ? `room rented to ${r.renterName}` : "room already booked",
+    }));
+}
+
 export const sessionConflictError = (conflicts: SessionConflict[]) =>
   new HttpError(409, "schedule_conflict", "the session conflicts with the planning", { conflicts });
 
@@ -74,14 +94,14 @@ async function centreTimezone(trx: Transaction<Database>, centreId: string): Pro
   return centre.timezone;
 }
 
-interface Candidate {
+export interface Candidate {
   date: string;
   startTime: string;
   endTime: string;
   roomId: string | null;
 }
 
-async function toInstants(trx: Transaction<Database>, tz: string, candidates: Candidate[]): Promise<{ startsAt: Date; endsAt: Date }[]> {
+export async function toInstants(trx: Transaction<Database>, tz: string, candidates: Candidate[]): Promise<{ startsAt: Date; endsAt: Date }[]> {
   if (candidates.length === 0) return [];
   const result = await sql<{ starts_at: Date; ends_at: Date; ord: number }>`
     select (x.d + x.s) at time zone ${tz} as starts_at, (x.d + x.e) at time zone ${tz} as ends_at, x.ord

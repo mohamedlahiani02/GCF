@@ -249,7 +249,8 @@ export interface EnrolmentsTable {
 export interface InstallmentsTable {
   id: Generated<string>;
   centre_id: string;
-  enrolment_id: string;
+  enrolment_id: string | null;
+  rental_id: ColumnType<string | null, string | null | undefined, string | null>;
   label: string;
   kind: "charge" | "discount";
   amount: number;
@@ -293,6 +294,7 @@ export interface RoomBookingsTable {
   room_id: string;
   period: string;
   session_id: string | null;
+  rental_slot_id: ColumnType<string | null, string | null | undefined, string | null>;
   active: Generated<boolean>;
 }
 
@@ -325,6 +327,8 @@ export interface FinancialEventsTable {
   instructor_id: string | null;
   room_id: string | null;
   installment_id: string | null;
+  rental_id: ColumnType<string | null, string | null | undefined, string | null>;
+  renter_id: ColumnType<string | null, string | null | undefined, string | null>;
   payload: Json;
 }
 
@@ -336,6 +340,7 @@ export interface PaymentsTable {
   centre_id: string;
   kind: Generated<"payment" | "refund">;
   student_id: string | null;
+  renter_id: ColumnType<string | null, string | null | undefined, string | null>;
   received_at: Timestamp;
   amount: number;
   method: PaymentMethod;
@@ -399,6 +404,7 @@ export interface MailDispatchesTable {
   kind: "receipt" | "reminder";
   receipt_id: string | null;
   student_id: string | null;
+  renter_id: ColumnType<string | null, string | null | undefined, string | null>;
   recipient: string;
   status: "sent" | "failed";
   error: string | null;
@@ -497,6 +503,49 @@ export interface PayslipsTable {
   paid_by: string | null;
 }
 
+export type RentalUnit = "hour" | "half_day" | "day" | "month" | "year";
+
+export interface RoomRatesTable {
+  room_id: string;
+  unit: RentalUnit;
+  amount: number;
+}
+
+export interface RentersTable {
+  id: Generated<string>;
+  centre_id: string;
+  name: string;
+  company: string | null;
+  phone: string | null;
+  email: string | null;
+  created_at: Timestamp;
+}
+
+export interface RentalsTable {
+  id: Generated<string>;
+  centre_id: string;
+  renter_id: string;
+  room_id: string;
+  unit: RentalUnit;
+  quantity: number;
+  unit_price: number;
+  total: number;
+  payment_mode: "full" | "deposit_balance" | "recurring";
+  status: Generated<"active" | "cancelled">;
+  cancelled_at: NullableTimestamp;
+  cancel_reason: string | null;
+  notes: string | null;
+  created_by: string | null;
+  created_at: Timestamp;
+}
+
+export interface RentalSlotsTable {
+  id: Generated<string>;
+  rental_id: string;
+  starts_at: ColumnType<Date, Date | string, Date | string>;
+  ends_at: ColumnType<Date, Date | string, Date | string>;
+}
+
 export interface Database {
   centres: CentresTable;
   users: UsersTable;
@@ -534,6 +583,10 @@ export interface Database {
   pay_lines: PayLinesTable;
   pay_adjustments: PayAdjustmentsTable;
   payslips: PayslipsTable;
+  room_rates: RoomRatesTable;
+  renters: RentersTable;
+  rentals: RentalsTable;
+  rental_slots: RentalSlotsTable;
 }
 
 export type Student = Selectable<StudentsTable>;

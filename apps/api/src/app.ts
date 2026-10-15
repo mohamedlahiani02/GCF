@@ -21,6 +21,7 @@ import { instructorRoutes } from "./routes/instructors.js";
 import { paymentRoutes } from "./routes/payments.js";
 import { payrollRoutes } from "./routes/payroll.js";
 import { receiptRoutes } from "./routes/receipts.js";
+import { rentalRoutes } from "./routes/rentals.js";
 import { sessionRoutes } from "./routes/sessions.js";
 import { studentRoutes } from "./routes/students.js";
 import { userRoutes } from "./routes/users.js";
@@ -137,5 +138,6 @@ export async function buildApp(options: AppOptions): Promise<FastifyInstance> {
   await app.register(receiptRoutes, { prefix: "/api/receipts" });
   await app.register(accountRoutes, { prefix: "/api" });
   await app.register(payrollRoutes, { prefix: "/api/payroll" });
+  await app.register(rentalRoutes, { prefix: "/api" });
   return app;
 }
