@@ -6,6 +6,7 @@ import type { Config } from "../src/config.js";
 import { createDb } from "../src/db/client.js";
 import { migrateToLatest } from "../src/db/migrate.js";
 import type { Database, Role } from "../src/db/types.js";
+import type { Mailer, OutgoingMail } from "../src/mail.js";
 
 export const ORIGIN = "https://gestion.test";
 export const PASSWORD = "correct-horse-battery";
@@ -18,10 +19,24 @@ export interface Harness {
   centreId: string;
   createUser(role: Role, email: string): Promise<string>;
   login(email: string, password?: string): Promise<string>;
+  call(method: "GET" | "POST" | "PATCH" | "PUT", url: string, cookie: string, payload?: unknown): Promise<{ status: number; body: any }>;
   close(): Promise<void>;
 }
 
-export async function createHarness(): Promise<Harness> {
+/** Records outgoing mail instead of talking to an SMTP server. */
+export class RecordingMailer implements Mailer {
+  readonly sent: OutgoingMail[] = [];
+  failNext = false;
+  async send(mail: OutgoingMail): Promise<void> {
+    if (this.failNext) {
+      this.failNext = false;
+      throw new Error("SMTP connection refused");
+    }
+    this.sent.push(mail);
+  }
+}
+
+export async function createHarness(options: { mailer?: Mailer } = {}): Promise<Harness> {
   if (!testDatabaseUrl) throw new Error("TEST_DATABASE_URL must point to a disposable PostgreSQL database");
   const db = createDb(testDatabaseUrl);
   await sql`drop schema if exists public cascade`.execute(db);
@@ -40,8 +55,9 @@ export async function createHarness(): Promise<Harness> {
     sessionAbsoluteHours: 8,
     loginMaxFailures: 5,
     loginLockMinutes: 15,
+    smtp: null,
   };
-  const app = await buildApp({ config, db, rateLimit: false });
+  const app = await buildApp({ config, db, rateLimit: false, mailer: options.mailer ?? null });
   const hash = await hashPassword(PASSWORD);
 
   return {
@@ -62,6 +78,15 @@ export async function createHarness(): Promise<Harness> {
       const cookie = response.cookies.find((c) => c.name === "gcf_session");
       if (!cookie) throw new Error("no session cookie");
       return `gcf_session=${cookie.value}`;
+    },
+    async call(method, url, cookie, payload) {
+      const response = await app.inject({
+        method,
+        url,
+        headers: method === "GET" ? { cookie } : { cookie, origin: ORIGIN },
+        ...(payload === undefined ? {} : { payload: payload as Record<string, unknown> }),
+      });
+      return { status: response.statusCode, body: response.body ? response.json() : undefined };
     },
     async close() {
       await app.close();

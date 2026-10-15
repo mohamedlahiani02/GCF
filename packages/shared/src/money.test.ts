@@ -21,7 +21,7 @@ describe("money", () => {
     expect(formatTnd(163_200, "en")).toBe("163.200");
     expect(formatTnd(1_250_500, "en")).toBe("1,250.500");
     expect(formatTnd(-1, "en")).toBe("-0.001");
-    expect(formatTnd(1_250_500, "fr")).toBe("1 250,500");
+    expect(formatTnd(1_250_500, "fr")).toBe("1\u202f250,500");
   });
 
   it("rounds half away from zero exactly once", () => {

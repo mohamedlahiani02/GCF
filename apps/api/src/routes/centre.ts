@@ -12,7 +12,6 @@ const centreUpdate = z
     taxId: nullableText,
     locale: z.enum(["fr", "ar"]),
     timezone: z.string().refine((tz) => Intl.supportedValuesOf("timeZone").includes(tz), "unknown time zone"),
-    majorityAge: z.number().int().min(1).max(30),
   })
   .partial()
   .strict();
@@ -35,7 +34,6 @@ export const centreRoutes: FastifyPluginAsync = async (app) => {
     currencyDecimals: c.currency_decimals,
     locale: c.locale,
     timezone: c.timezone,
-    majorityAge: c.majority_age,
   });
 
   app.get("/", { preHandler: app.requirePermission("centre:read") }, async (request) => {
@@ -56,7 +54,6 @@ export const centreRoutes: FastifyPluginAsync = async (app) => {
           ...(body.taxId === undefined ? {} : { tax_id: body.taxId }),
           ...(body.locale === undefined ? {} : { locale: body.locale }),
           ...(body.timezone === undefined ? {} : { timezone: body.timezone }),
-          ...(body.majorityAge === undefined ? {} : { majority_age: body.majorityAge }),
           updated_at: new Date(),
         })
         .where("id", "=", user.centreId)

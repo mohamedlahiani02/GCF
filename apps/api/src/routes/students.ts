@@ -1,4 +1,4 @@
-import { isIsoDate, isMinor, todayIn } from "@gcf/shared";
+import { isIsoDate } from "@gcf/shared";
 import type { FastifyPluginAsync, FastifyRequest } from "fastify";
 import { sql } from "kysely";
 import { z } from "zod";
@@ -21,6 +21,7 @@ const studentFields = {
   phone: optionalText(40),
   email: optionalEmail,
   receiptEmail: optionalEmail,
+  isMinor: z.boolean().optional(),
   guardianName: optionalText(200),
   guardianPhone: optionalText(40),
   guardianEmail: optionalEmail,
@@ -32,6 +33,7 @@ const archiveBody = z.object({ reason: z.string().trim().min(1).max(500) }).stri
 const idParam = z.object({ id: z.string().uuid() });
 const listQuery = z.object({
   q: z.string().trim().max(100).optional(),
+  minor: z.enum(["true", "false"]).optional(),
   status: z.enum(["active", "archived", "all"]).default("active"),
   page: z.coerce.number().int().min(1).default(1),
   pageSize: z.coerce.number().int().min(1).max(100).default(25),
@@ -42,6 +44,7 @@ const present = (s: Student) => ({
   firstName: s.first_name,
   lastName: s.last_name,
   birthDate: s.birth_date,
+  isMinor: s.is_minor,
   phone: s.phone,
   email: s.email,
   receiptEmail: s.receipt_email,
@@ -56,9 +59,9 @@ const present = (s: Student) => ({
 
 type StudentView = ReturnType<typeof present>;
 
-/** A minor must have a guardian with at least one way to reach them (specification 5.3). */
-function assertGuardianWhenMinor(student: Pick<StudentView, "birthDate" | "guardianName" | "guardianPhone" | "guardianEmail">, today: string, majorityAge: number) {
-  if (!student.birthDate || !isMinor(student.birthDate, today, majorityAge)) return;
+/** A student flagged as minor must have a guardian with at least one way to reach them (specification 5.3). */
+function assertGuardianWhenMinor(student: Pick<StudentView, "isMinor" | "guardianName" | "guardianPhone" | "guardianEmail">) {
+  if (!student.isMinor) return;
   if (!student.guardianName || (!student.guardianPhone && !student.guardianEmail)) {
     throw unprocessable("guardian_required", "a minor student needs a guardian name and a guardian phone or e-mail");
   }
@@ -71,15 +74,11 @@ function escapeLike(value: string): string {
 export const studentRoutes: FastifyPluginAsync = async (app) => {
   const { db } = app;
 
-  const centreRules = async (centreId: string) => {
-    const centre = await db.selectFrom("centres").select(["timezone", "majority_age"]).where("id", "=", centreId).executeTakeFirstOrThrow();
-    return { today: todayIn(centre.timezone), majorityAge: centre.majority_age };
-  };
-
   app.get("/", { preHandler: app.requirePermission("students:read") }, async (request) => {
     const query = listQuery.parse(request.query);
     let base = db.selectFrom("students").where("centre_id", "=", request.user!.centreId);
     if (query.status !== "all") base = base.where("status", "=", query.status);
+    if (query.minor !== undefined) base = base.where("is_minor", "=", query.minor === "true");
     if (query.q) {
       const pattern = `%${escapeLike(query.q.toLowerCase())}%`;
       base = base.where((eb) =>
@@ -113,17 +112,12 @@ export const studentRoutes: FastifyPluginAsync = async (app) => {
   app.post("/", { preHandler: app.requirePermission("students:write") }, async (request, reply) => {
     const actor = request.user!;
     const body = createBody.parse(request.body);
-    const rules = await centreRules(actor.centreId);
-    assertGuardianWhenMinor(
-      {
-        birthDate: body.birthDate ?? null,
-        guardianName: body.guardianName ?? null,
-        guardianPhone: body.guardianPhone ?? null,
-        guardianEmail: body.guardianEmail ?? null,
-      },
-      rules.today,
-      rules.majorityAge,
-    );
+    assertGuardianWhenMinor({
+      isMinor: body.isMinor ?? false,
+      guardianName: body.guardianName ?? null,
+      guardianPhone: body.guardianPhone ?? null,
+      guardianEmail: body.guardianEmail ?? null,
+    });
     const created = await db.transaction().execute(async (trx) => {
       const row = await trx
         .insertInto("students")
@@ -132,6 +126,7 @@ export const studentRoutes: FastifyPluginAsync = async (app) => {
           first_name: body.firstName,
           last_name: body.lastName,
           birth_date: body.birthDate ?? null,
+          is_minor: body.isMinor ?? false,
           phone: body.phone ?? null,
           email: body.email ?? null,
           receipt_email: body.receiptEmail ?? null,
@@ -160,19 +155,19 @@ export const studentRoutes: FastifyPluginAsync = async (app) => {
     const actor = request.user!;
     const { id } = idParam.parse(request.params);
     const body = updateBody.parse(request.body);
-    const rules = await centreRules(actor.centreId);
     const updated = await db.transaction().execute(async (trx) => {
       const before = await trx.selectFrom("students").selectAll().where("id", "=", id).where("centre_id", "=", actor.centreId).forUpdate().executeTakeFirst();
       if (!before) throw notFound("student");
       const beforeView = present(before);
       const merged = { ...beforeView, ...Object.fromEntries(Object.entries(body).filter(([, v]) => v !== undefined)) } as StudentView;
-      assertGuardianWhenMinor(merged, rules.today, rules.majorityAge);
+      assertGuardianWhenMinor(merged);
       const after = await trx
         .updateTable("students")
         .set({
           first_name: merged.firstName,
           last_name: merged.lastName,
           birth_date: merged.birthDate,
+          is_minor: merged.isMinor,
           phone: merged.phone,
           email: merged.email,
           receipt_email: merged.receiptEmail,

@@ -17,6 +17,13 @@ export type PayBase =
   | { kind: "hourly"; hourlyRate: Millimes; minutesDelivered: number }
   | { kind: "training_flat"; amount: Millimes };
 
+/**
+ * How student attendance affects pay. Cancelled sessions are never counted as held, whatever the effect.
+ * - ignore: attendance plays no role (100 %).
+ * - prorata: pay x attendance rate.
+ * - session_due: every held session is paid, even when no student attended.
+ * - threshold: no pay (or the floor) below the minimum rate; full pay, or prorata if enabled, above it.
+ */
 export type PresenceEffect =
   | { kind: "ignore" }
   | { kind: "prorata" }
