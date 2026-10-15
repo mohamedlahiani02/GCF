@@ -9,7 +9,8 @@
     "migrate": "tsx --env-file=.env src/db/migrate.ts",
     "typecheck": "tsc --noEmit && tsc --noEmit -p test",
     "test": "vitest run",
-    "bootstrap": "tsx --env-file=.env src/cli/bootstrap.ts"
+    "bootstrap": "tsx --env-file=.env src/cli/bootstrap.ts",
+    "seed:demo": "tsx --env-file=.env src/cli/seedDemo.ts"
   },
   "dependencies": {
     "@fastify/cookie": "^11.1.3",

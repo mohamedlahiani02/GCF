@@ -1,6 +1,6 @@
 import { monthlyDueDates, percentOf, planLines, ScheduleError, type PlanItemInput } from "@gcf/shared";
 import type { Kysely, Transaction } from "kysely";
-import type { Database, PaymentMode } from "../db/types.js";
+import type { Database, PaymentMode, PlanKind } from "../db/types.js";
 import { notFound, unprocessable } from "../errors.js";
 
 export interface GroupBilling {
@@ -17,7 +17,6 @@ export interface GroupBilling {
   label: string;
   price: number;
   billingMode: "monthly" | "per_session" | null;
-  trainingPaymentModes: "full" | "installments" | "both" | null;
 }
 
 export async function loadGroupBilling(db: Kysely<Database> | Transaction<Database>, groupId: string, centreId: string): Promise<GroupBilling> {
@@ -43,7 +42,6 @@ export async function loadGroupBilling(db: Kysely<Database> | Transaction<Databa
       "trainings.id as trainingId",
       "trainings.title as trainingTitle",
       "trainings.price as trainingPrice",
-      "trainings.payment_modes as trainingPaymentModes",
     ])
     .where("groups.id", "=", groupId)
     .where("groups.centre_id", "=", centreId)
@@ -64,12 +62,11 @@ export async function loadGroupBilling(db: Kysely<Database> | Transaction<Databa
     label: `${isStudy ? row.studyName : row.trainingTitle} - ${row.name}`,
     price: row.priceOverride ?? (isStudy ? row.studyPrice : row.trainingPrice) ?? 0,
     billingMode: row.billingMode,
-    trainingPaymentModes: row.trainingPaymentModes,
   };
 }
 
 export interface ScheduleRequest {
-  paymentMode: PaymentMode;
+  paymentMode?: PaymentMode | undefined;
   effectiveDate: string;
   planId?: string | undefined;
   firstDueDate?: string | undefined;
@@ -83,55 +80,117 @@ export interface ScheduleLine {
 
 const MONTHS_FR = ["janvier", "février", "mars", "avril", "mai", "juin", "juillet", "août", "septembre", "octobre", "novembre", "décembre"];
 
-/** Checks that the payment mode is allowed for the group and returns the instalments to create. */
+export interface TrainingPlan {
+  id: string;
+  name: string;
+  kind: PlanKind;
+  amount: number | null;
+  absenceBilled: boolean | null;
+}
+
+/** The formula an enrolment in a training is sold under: it must be an active formula of that training. */
+export async function loadTrainingPlan(
+  db: Kysely<Database> | Transaction<Database>,
+  group: GroupBilling,
+  planId: string | undefined,
+  centreId: string,
+): Promise<TrainingPlan> {
+  if (!planId) throw unprocessable("plan_required", "choose a formula for this training");
+  const plan = await db
+    .selectFrom("payment_plans")
+    .select(["id", "name", "kind", "amount", "absence_billed as absenceBilled", "status", "training_id as trainingId"])
+    .where("id", "=", planId)
+    .where("centre_id", "=", centreId)
+    .executeTakeFirst();
+  if (!plan || plan.status !== "active" || plan.trainingId !== group.trainingId) {
+    throw unprocessable("unknown_plan", "the formula does not belong to this training or is archived");
+  }
+  return { id: plan.id, name: plan.name, kind: plan.kind, amount: plan.amount, absenceBilled: plan.absenceBilled };
+}
+
+/** Payment mode, formula and per-session tariff an enrolment is created with. */
+export interface EnrolmentTerms {
+  paymentMode: PaymentMode;
+  planId: string | null;
+  sessionPrice: number | null;
+  sessionAbsenceBilled: boolean | null;
+}
+
+/**
+ * A private lesson is billed the way its offer says (monthly or per session); a training is billed by the formula
+ * chosen at enrolment. A payment mode sent by the client must agree with that.
+ */
+export async function resolveTerms(
+  db: Kysely<Database> | Transaction<Database>,
+  group: GroupBilling,
+  request: { paymentMode?: PaymentMode | undefined; planId?: string | undefined },
+  centreId: string,
+): Promise<{ terms: EnrolmentTerms; plan: TrainingPlan | null }> {
+  if (group.kind === "study") {
+    const mode = group.billingMode ?? "monthly";
+    if (request.paymentMode !== undefined && request.paymentMode !== mode) {
+      throw unprocessable("payment_mode_not_allowed", `this offer is billed ${mode === "monthly" ? "monthly" : "per session"}`);
+    }
+    return { terms: { paymentMode: mode, planId: null, sessionPrice: null, sessionAbsenceBilled: null }, plan: null };
+  }
+  const plan = await loadTrainingPlan(db, group, request.planId, centreId);
+  if (request.paymentMode !== undefined && request.paymentMode !== plan.kind) {
+    throw unprocessable("payment_mode_not_allowed", "the payment mode does not match the chosen formula");
+  }
+  return {
+    terms: {
+      paymentMode: plan.kind,
+      planId: plan.id,
+      sessionPrice: plan.kind === "per_session" ? plan.amount : null,
+      sessionAbsenceBilled: plan.kind === "per_session" ? plan.absenceBilled : null,
+    },
+    plan,
+  };
+}
+
+function monthlyLines(label: string, amount: number, firstDue: string, endDate: string): ScheduleLine[] {
+  return monthlyDueDates(firstDue, endDate).map((dueDate) => ({
+    label: `${label}, ${MONTHS_FR[Number(dueDate.slice(5, 7)) - 1]} ${dueDate.slice(0, 4)}`,
+    amount,
+    dueDate,
+  }));
+}
+
+/** The instalments an enrolment creates up front. Per-session billing creates none: each validated session does. */
 export async function buildSchedule(
   db: Kysely<Database> | Transaction<Database>,
   group: GroupBilling,
   request: ScheduleRequest,
   centreId: string,
 ): Promise<ScheduleLine[]> {
+  const firstDue = request.firstDueDate ?? request.effectiveDate;
   if (group.kind === "study") {
-    if (request.paymentMode !== group.billingMode) {
-      throw unprocessable("payment_mode_not_allowed", `this study is billed ${group.billingMode === "monthly" ? "monthly" : "per session"}`);
+    const { terms } = await resolveTerms(db, group, request, centreId);
+    if (terms.paymentMode === "per_session") return [];
+    return monthlyLines(group.label, group.price, firstDue, group.endDate);
+  }
+  const { plan } = await resolveTerms(db, group, request, centreId);
+  switch (plan!.kind) {
+    case "per_session":
+      return [];
+    case "monthly":
+      return monthlyLines(group.label, plan!.amount!, firstDue, group.endDate);
+    case "full":
+      return [{ label: `${group.label}, paiement intégral`, amount: plan!.amount ?? group.price, dueDate: firstDue }];
+    case "installments": {
+      const items: PlanItemInput[] = await db
+        .selectFrom("payment_plan_items")
+        .select(["label", "value_kind as valueKind", "value", "due_kind as dueKind", "due_offset_days as dueOffsetDays", "due_date as dueDate"])
+        .where("plan_id", "=", plan!.id)
+        .orderBy("position")
+        .execute();
+      try {
+        return planLines(group.price, items, request.effectiveDate).map((l) => ({ ...l, label: `${group.label}, ${l.label}` }));
+      } catch (error) {
+        if (error instanceof ScheduleError) throw unprocessable("plan_total_mismatch", error.message);
+        throw error;
+      }
     }
-    if (request.paymentMode === "per_session") return [];
-    const firstDue = request.firstDueDate ?? request.effectiveDate;
-    const dates = monthlyDueDates(firstDue, group.endDate);
-    return dates.map((dueDate) => ({
-      label: `${group.label}, ${MONTHS_FR[Number(dueDate.slice(5, 7)) - 1]} ${dueDate.slice(0, 4)}`,
-      amount: group.price,
-      dueDate,
-    }));
-  }
-
-  const modes = group.trainingPaymentModes;
-  if (request.paymentMode === "full") {
-    if (modes === "installments") throw unprocessable("payment_mode_not_allowed", "this training is paid in instalments only");
-    return [{ label: `${group.label}, paiement intégral`, amount: group.price, dueDate: request.firstDueDate ?? request.effectiveDate }];
-  }
-  if (request.paymentMode !== "installments") throw unprocessable("payment_mode_not_allowed", "a training is paid in full or in instalments");
-  if (modes === "full") throw unprocessable("payment_mode_not_allowed", "this training is paid in full only");
-  if (!request.planId) throw unprocessable("plan_required", "choose a payment plan");
-  const plan = await db
-    .selectFrom("payment_plans")
-    .select(["id", "status", "training_id"])
-    .where("id", "=", request.planId)
-    .where("centre_id", "=", centreId)
-    .executeTakeFirst();
-  if (!plan || plan.status !== "active" || plan.training_id !== group.trainingId) {
-    throw unprocessable("unknown_plan", "the payment plan does not belong to this training or is archived");
-  }
-  const items: PlanItemInput[] = await db
-    .selectFrom("payment_plan_items")
-    .select(["label", "value_kind as valueKind", "value", "due_kind as dueKind", "due_offset_days as dueOffsetDays", "due_date as dueDate"])
-    .where("plan_id", "=", plan.id)
-    .orderBy("position")
-    .execute();
-  try {
-    return planLines(group.price, items, request.effectiveDate).map((l) => ({ ...l, label: `${group.label}, ${l.label}` }));
-  } catch (error) {
-    if (error instanceof ScheduleError) throw unprocessable("plan_total_mismatch", error.message);
-    throw error;
   }
 }
 

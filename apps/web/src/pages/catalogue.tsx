@@ -8,6 +8,7 @@ import { usePage } from "../components/shell";
 import { useToast } from "../components/toasts";
 import { Badge, Card, Empty, ErrorBanner, Field, Loading, Modal, PageHeader, ReasonDialog, Segmented } from "../components/ui";
 import { frDate, percent, tnd, tryParseTnd } from "../lib/format";
+import { FORMULA, FORMULA_HELP, formulaText, type FormulaKind } from "../lib/formulas";
 
 interface Subject {
   id: string;
@@ -21,12 +22,10 @@ interface TrainingRow {
   durationHours: number;
   price: number;
   capacity: number;
-  paymentModes: "full" | "installments" | "both";
   status: string;
   openSessions: number;
+  formulaKinds: FormulaKind[];
 }
-
-const PAYMENT_MODES: Record<TrainingRow["paymentModes"], string> = { full: "Paiement intégral", installments: "Par tranches", both: "Intégral ou tranches" };
 
 /* Private studies */
 
@@ -110,7 +109,7 @@ function StudyModal({ study, subjects, onClose }: { study: Study | null; subject
     },
     onSuccess: async () => {
       await client.invalidateQueries({ queryKey: ["studies"] });
-      toast(study ? "Étude mise à jour." : "Étude créée.");
+      toast(study ? "Cours particulier mis à jour." : "Cours particulier créé.");
       onClose();
     },
   });
@@ -118,7 +117,7 @@ function StudyModal({ study, subjects, onClose }: { study: Study | null; subject
   return (
     <Modal
       wide
-      title={study ? "Modifier l'étude" : "Nouvelle étude privée"}
+      title={study ? "Modifier le cours particulier" : "Nouveau cours particulier"}
       onClose={onClose}
       footer={
         <>
@@ -201,7 +200,7 @@ function StudyModal({ study, subjects, onClose }: { study: Study | null; subject
 }
 
 export function StudiesPage() {
-  usePage(["Études privées"]);
+  usePage(["Référentiels", "Cours particuliers"]);
   const { can } = useSession();
   const navigate = useNavigate();
   const client = useQueryClient();
@@ -216,11 +215,11 @@ export function StudiesPage() {
   return (
     <>
       <PageHeader
-        title="Études privées"
+        title="Cours particuliers"
         actions={
           can("catalogue:write") ? (
             <button type="button" className="btn btn-p" onClick={() => setEditing("new")}>
-              + Nouvelle étude
+              + Nouveau cours particulier
             </button>
           ) : null
         }
@@ -228,7 +227,7 @@ export function StudiesPage() {
       <Card
         title={
           <label className="row center" style={{ gap: 6 }}>
-            <input type="checkbox" className="chk" checked={showArchived} onChange={(e) => setShowArchived(e.target.checked)} /> Afficher les études archivées
+            <input type="checkbox" className="chk" checked={showArchived} onChange={(e) => setShowArchived(e.target.checked)} /> Afficher les cours archivés
           </label>
         }
       >
@@ -236,13 +235,16 @@ export function StudiesPage() {
         {studies.isPending ? (
           <Loading />
         ) : rows.length === 0 ? (
-          <Empty title="Aucune étude" text="Créez une étude privée (matière, niveau, tarif) puis ses groupes." />
+          <Empty
+            title="Aucun cours particulier"
+            text="Créez un cours particulier (matière, niveau, tarif) puis ses groupes. Un cours peut avoir plusieurs groupes, chacun avec ses élèves et ses séances."
+          />
         ) : (
           <div className="xs">
             <table className="tbl">
               <thead>
                 <tr>
-                  <th>Étude</th>
+                  <th>Cours particulier</th>
                   <th>Matière</th>
                   <th>Facturation</th>
                   <th className="num">Prix (TND)</th>
@@ -266,11 +268,11 @@ export function StudiesPage() {
                     <td>{s.studentCount}</td>
                     <td style={{ textAlign: "right", whiteSpace: "nowrap" }}>
                       {can("groups:write") && s.status === "active" ? (
-                        <button type="button" className="btn btn-g" onClick={() => navigate(`/groupes/nouveau?etude=${s.id}`)}>
+                        <button type="button" className="btn btn-g" onClick={() => navigate(`/groupes/nouveau?cours=${s.id}`)}>
                           + Groupe
                         </button>
                       ) : null}
-                      <Link className="btn btn-g" to={`/groupes?etude=${s.id}`}>
+                      <Link className="btn btn-g" to={`/groupes?cours=${s.id}`}>
                         Groupes
                       </Link>
                       {can("catalogue:write") && s.status === "active" ? (
@@ -300,14 +302,14 @@ export function StudiesPage() {
       ) : null}
       {archiving ? (
         <ReasonDialog
-          title="Archiver l'étude"
-          explanation={`${archiving.name} : l'étude n'accepte plus de nouveaux groupes. Ses groupes doivent être archivés avant.`}
+          title="Archiver le cours particulier"
+          explanation={`${archiving.name} : le cours n'accepte plus de nouveaux groupes. Ses groupes doivent être archivés avant.`}
           confirmLabel="Archiver"
           onClose={() => setArchiving(null)}
           onConfirm={async (reason) => {
             await api.post(`/catalogue/studies/${archiving.id}/archive`, { reason });
             await client.invalidateQueries({ queryKey: ["studies"] });
-            toast("Étude archivée.");
+            toast("Cours particulier archivé.");
           }}
         />
       ) : null}
@@ -324,7 +326,6 @@ interface TrainingForm {
   durationHours: string;
   price: string;
   capacity: string;
-  paymentModes: TrainingRow["paymentModes"];
 }
 
 function TrainingModal({ training, onClose, onSaved }: { training: TrainingDetail | null; onClose: () => void; onSaved: (id: string) => void }) {
@@ -338,9 +339,8 @@ function TrainingModal({ training, onClose, onSaved }: { training: TrainingDetai
           durationHours: String(training.durationHours),
           price: tnd(training.price),
           capacity: String(training.capacity),
-          paymentModes: training.paymentModes,
         }
-      : { title: "", category: "", description: "", durationHours: "", price: "", capacity: "15", paymentModes: "both" },
+      : { title: "", category: "", description: "", durationHours: "", price: "", capacity: "15" },
   );
   const set = <K extends keyof TrainingForm>(k: K, value: TrainingForm[K]) => setV((o) => ({ ...o, [k]: value }));
   const price = tryParseTnd(v.price);
@@ -353,7 +353,6 @@ function TrainingModal({ training, onClose, onSaved }: { training: TrainingDetai
         durationHours: Number(v.durationHours),
         price,
         capacity: Number(v.capacity),
-        paymentModes: v.paymentModes,
       };
       return training ? api.patch<{ id: string }>(`/catalogue/trainings/${training.id}`, body) : api.post<{ id: string }>("/catalogue/trainings", body);
     },
@@ -402,17 +401,6 @@ function TrainingModal({ training, onClose, onSaved }: { training: TrainingDetai
           <input className="input num" type="number" min={1} value={v.capacity} onChange={(e) => set("capacity", e.target.value)} />
         </Field>
       </div>
-      <div>
-        <div className="lab" style={{ marginBottom: 6 }}>
-          Modes de paiement autorisés
-        </div>
-        <Segmented
-          label="Modes de paiement"
-          value={v.paymentModes}
-          onChange={(m) => set("paymentModes", m)}
-          options={(["full", "installments", "both"] as const).map((m) => ({ value: m, label: PAYMENT_MODES[m] }))}
-        />
-      </div>
       <Field label="Description">
         <textarea className="input" value={v.description} onChange={(e) => set("description", e.target.value)} />
       </Field>
@@ -422,7 +410,7 @@ function TrainingModal({ training, onClose, onSaved }: { training: TrainingDetai
 }
 
 export function TrainingsPage() {
-  usePage(["Formations"]);
+  usePage(["Référentiels", "Formations"]);
   const { can } = useSession();
   const navigate = useNavigate();
   const [creating, setCreating] = useState(false);
@@ -453,7 +441,7 @@ export function TrainingsPage() {
                   <th>Formation</th>
                   <th>Durée</th>
                   <th className="num">Prix (TND)</th>
-                  <th>Paiement</th>
+                  <th>Formules</th>
                   <th>Sessions ouvertes</th>
                 </tr>
               </thead>
@@ -468,7 +456,7 @@ export function TrainingsPage() {
                     </td>
                     <td>{t.durationHours} h</td>
                     <td className="num">{tnd(t.price)}</td>
-                    <td>{PAYMENT_MODES[t.paymentModes]}</td>
+                    <td>{t.formulaKinds.length ? t.formulaKinds.map((k) => FORMULA[k]).join(", ") : "Aucune formule"}</td>
                     <td>{t.openSessions}</td>
                   </tr>
                 ))}
@@ -528,6 +516,10 @@ function PlanEditor({ training, plan, onClose }: { training: TrainingDetail; pla
   const client = useQueryClient();
   const [name, setName] = useState(plan?.name ?? "");
   const [isDefault, setIsDefault] = useState(plan?.isDefault ?? training.plans.length === 0);
+  const [kind, setKind] = useState<FormulaKind>(plan?.kind ?? "installments");
+  const [amountText, setAmountText] = useState(plan?.amount === null || plan?.amount === undefined ? "" : tnd(plan.amount));
+  const [absenceBilled, setAbsenceBilled] = useState(plan?.absenceBilled ?? false);
+  const amount = amountText.trim() ? tryParseTnd(amountText) : null;
   const [drafts, setDrafts] = useState<ItemDraft[]>(
     plan
       ? plan.items.map(toDraft)
@@ -549,25 +541,38 @@ function PlanEditor({ training, plan, onClose }: { training: TrainingDetail; pla
       api.post<{ valid: boolean; price: number; amounts?: number[]; total?: number; message?: string }>(`/catalogue/trainings/${training.id}/plans/preview`, {
         items: debounced,
       }),
-    enabled: !!debounced && debounced.length > 0,
+    enabled: kind === "installments" && !!debounced && debounced.length > 0,
   });
   const save = useMutation({
     mutationFn: () => {
-      const body = { name: name.trim(), isDefault, items };
+      const body = {
+        name: name.trim(),
+        isDefault,
+        kind,
+        amount: kind === "installments" ? null : amount,
+        absenceBilled: kind === "per_session" ? absenceBilled : null,
+        items: kind === "installments" ? items : [],
+      };
       return plan ? api.put(`/catalogue/plans/${plan.id}`, body) : api.post(`/catalogue/trainings/${training.id}/plans`, body);
     },
     onSuccess: async () => {
       await client.invalidateQueries({ queryKey: ["training", training.id] });
-      toast(plan ? "Plan mis à jour. Les échéanciers déjà créés ne changent pas." : "Plan créé.");
+      toast(plan ? "Formule mise à jour. Les élèves déjà inscrits gardent leurs conditions." : "Formule créée.");
       onClose();
     },
   });
   const update = (index: number, patch: Partial<ItemDraft>) => setDrafts((list) => list.map((d, i) => (i === index ? { ...d, ...patch } : d)));
-  const valid = !!items && name.trim() && preview.data?.valid;
+  const valid =
+    !!name.trim() &&
+    (kind === "installments"
+      ? !!items && !!preview.data?.valid
+      : kind === "full"
+        ? !amountText.trim() || (amount !== null && amount >= 0)
+        : amount !== null && amount > 0);
   return (
     <Modal
       wide
-      title={plan ? `Modifier le plan « ${plan.name} »` : "Nouveau plan de tranches"}
+      title={plan ? `Modifier la formule « ${plan.name} »` : "Nouvelle formule"}
       onClose={onClose}
       footer={
         <>
@@ -577,139 +582,180 @@ function PlanEditor({ training, plan, onClose }: { training: TrainingDetail; pla
               Annuler
             </button>
             <button type="button" className="btn btn-p" disabled={!valid || save.isPending} onClick={() => save.mutate()}>
-              Enregistrer le plan
+              Enregistrer la formule
             </button>
           </div>
         </>
       }
     >
       <div className="grid2">
-        <Field label="Nom du plan *">
+        <Field label="Nom de la formule *">
           <input className="input" value={name} onChange={(e) => setName(e.target.value)} />
         </Field>
         <label className="row center" style={{ gap: 8, alignSelf: "end" }}>
-          <input type="checkbox" className="chk" checked={isDefault} onChange={(e) => setIsDefault(e.target.checked)} /> Plan proposé par défaut
+          <input type="checkbox" className="chk" checked={isDefault} onChange={(e) => setIsDefault(e.target.checked)} /> Formule proposée par défaut
         </label>
       </div>
-      <div className="card xs">
-        <table className="tbl">
-          <thead>
-            <tr>
-              <th>Tranche</th>
-              <th>Valeur</th>
-              <th>Échéance</th>
-              <th className="num">Montant (TND)</th>
-              <th />
-            </tr>
-          </thead>
-          <tbody>
-            {drafts.map((d, i) => (
-              <tr key={i}>
-                <td>
-                  <input
-                    className="input"
-                    aria-label={`Libellé de la tranche ${i + 1}`}
-                    value={d.label}
-                    onChange={(e) => update(i, { label: e.target.value })}
-                  />
-                </td>
-                <td>
-                  <div className="row" style={{ gap: 6 }}>
-                    <select
-                      className="input"
-                      style={{ width: 70 }}
-                      aria-label="Type de valeur"
-                      value={d.valueKind}
-                      onChange={(e) => update(i, { valueKind: e.target.value as ItemDraft["valueKind"] })}
-                    >
-                      <option value="percent">%</option>
-                      <option value="amount">TND</option>
-                    </select>
+      <div>
+        <div className="lab" style={{ marginBottom: 6 }}>
+          Mode de paiement
+        </div>
+        <Segmented
+          label="Mode de paiement"
+          value={kind}
+          onChange={setKind}
+          options={(Object.keys(FORMULA) as FormulaKind[]).map((k) => ({ value: k, label: FORMULA[k] }))}
+        />
+        <div className="cap" style={{ marginTop: 6 }}>
+          {FORMULA_HELP[kind]}
+        </div>
+      </div>
+      {kind === "monthly" || kind === "per_session" ? (
+        <div className="grid2">
+          <Field
+            label={kind === "monthly" ? "Tarif mensuel (TND) *" : "Tarif par séance (TND) *"}
+            error={amountText && amount === null ? "Montant invalide" : null}
+          >
+            <input className="input num" inputMode="decimal" value={amountText} onChange={(e) => setAmountText(e.target.value)} />
+          </Field>
+          {kind === "per_session" ? (
+            <label className="row center" style={{ gap: 8, alignSelf: "end" }}>
+              <input type="checkbox" className="chk" checked={absenceBilled} onChange={(e) => setAbsenceBilled(e.target.checked)} /> Facturer la séance même en
+              cas d'absence
+            </label>
+          ) : null}
+        </div>
+      ) : null}
+      {kind === "full" ? (
+        <Field
+          label="Prix pour un paiement intégral (TND)"
+          hint={`Vide : prix de la formation, ${tnd(training.price)} TND.`}
+          error={amountText && amount === null ? "Montant invalide" : null}
+        >
+          <input className="input num" inputMode="decimal" value={amountText} onChange={(e) => setAmountText(e.target.value)} />
+        </Field>
+      ) : null}
+      {kind === "installments" ? (
+        <div className="card xs">
+          <table className="tbl">
+            <thead>
+              <tr>
+                <th>Tranche</th>
+                <th>Valeur</th>
+                <th>Échéance</th>
+                <th className="num">Montant (TND)</th>
+                <th />
+              </tr>
+            </thead>
+            <tbody>
+              {drafts.map((d, i) => (
+                <tr key={i}>
+                  <td>
                     <input
-                      className={`input num${draftValue(d) === null ? " err" : ""}`}
-                      style={{ width: 100 }}
-                      aria-label="Valeur"
-                      inputMode="decimal"
-                      value={d.value}
-                      onChange={(e) => update(i, { value: e.target.value })}
-                    />
-                  </div>
-                </td>
-                <td>
-                  <div className="row" style={{ gap: 6 }}>
-                    <select
                       className="input"
-                      style={{ width: 150 }}
-                      aria-label="Type d'échéance"
-                      value={d.dueKind}
-                      onChange={(e) => update(i, { dueKind: e.target.value as ItemDraft["dueKind"] })}
-                    >
-                      <option value="relative">Jours après l'inscription</option>
-                      <option value="fixed">Date fixe</option>
-                    </select>
-                    {d.dueKind === "relative" ? (
-                      <input
-                        className="input num"
-                        style={{ width: 80 }}
-                        type="number"
-                        min={0}
-                        aria-label="Nombre de jours"
-                        value={d.dueOffsetDays}
-                        onChange={(e) => update(i, { dueOffsetDays: e.target.value })}
-                      />
-                    ) : (
-                      <input
+                      aria-label={`Libellé de la tranche ${i + 1}`}
+                      value={d.label}
+                      onChange={(e) => update(i, { label: e.target.value })}
+                    />
+                  </td>
+                  <td>
+                    <div className="row" style={{ gap: 6 }}>
+                      <select
                         className="input"
-                        type="date"
-                        aria-label="Date d'échéance"
-                        value={d.dueDate}
-                        onChange={(e) => update(i, { dueDate: e.target.value })}
+                        style={{ width: 70 }}
+                        aria-label="Type de valeur"
+                        value={d.valueKind}
+                        onChange={(e) => update(i, { valueKind: e.target.value as ItemDraft["valueKind"] })}
+                      >
+                        <option value="percent">%</option>
+                        <option value="amount">TND</option>
+                      </select>
+                      <input
+                        className={`input num${draftValue(d) === null ? " err" : ""}`}
+                        style={{ width: 100 }}
+                        aria-label="Valeur"
+                        inputMode="decimal"
+                        value={d.value}
+                        onChange={(e) => update(i, { value: e.target.value })}
                       />
-                    )}
-                  </div>
-                </td>
-                <td className="num">{preview.data?.valid && preview.data.amounts ? tnd(preview.data.amounts[i]) : ""}</td>
-                <td>
+                    </div>
+                  </td>
+                  <td>
+                    <div className="row" style={{ gap: 6 }}>
+                      <select
+                        className="input"
+                        style={{ width: 150 }}
+                        aria-label="Type d'échéance"
+                        value={d.dueKind}
+                        onChange={(e) => update(i, { dueKind: e.target.value as ItemDraft["dueKind"] })}
+                      >
+                        <option value="relative">Jours après l'inscription</option>
+                        <option value="fixed">Date fixe</option>
+                      </select>
+                      {d.dueKind === "relative" ? (
+                        <input
+                          className="input num"
+                          style={{ width: 80 }}
+                          type="number"
+                          min={0}
+                          aria-label="Nombre de jours"
+                          value={d.dueOffsetDays}
+                          onChange={(e) => update(i, { dueOffsetDays: e.target.value })}
+                        />
+                      ) : (
+                        <input
+                          className="input"
+                          type="date"
+                          aria-label="Date d'échéance"
+                          value={d.dueDate}
+                          onChange={(e) => update(i, { dueDate: e.target.value })}
+                        />
+                      )}
+                    </div>
+                  </td>
+                  <td className="num">{preview.data?.valid && preview.data.amounts ? tnd(preview.data.amounts[i]) : ""}</td>
+                  <td>
+                    <button
+                      type="button"
+                      className="btn btn-g"
+                      aria-label={`Supprimer la tranche ${i + 1}`}
+                      disabled={drafts.length === 1}
+                      onClick={() => setDrafts((list) => list.filter((_, x) => x !== i))}
+                    >
+                      Supprimer
+                    </button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+            <tfoot>
+              <tr>
+                <td colSpan={3}>
                   <button
                     type="button"
                     className="btn btn-g"
-                    aria-label={`Supprimer la tranche ${i + 1}`}
-                    disabled={drafts.length === 1}
-                    onClick={() => setDrafts((list) => list.filter((_, x) => x !== i))}
+                    onClick={() =>
+                      setDrafts((list) => [
+                        ...list,
+                        { label: `Tranche ${list.length + 1}`, valueKind: "percent", value: "", dueKind: "relative", dueOffsetDays: "", dueDate: "" },
+                      ])
+                    }
                   >
-                    Supprimer
+                    + Ajouter une tranche
                   </button>
                 </td>
+                <td className="num">{preview.data?.valid ? tnd(preview.data.total) : ""}</td>
+                <td />
               </tr>
-            ))}
-          </tbody>
-          <tfoot>
-            <tr>
-              <td colSpan={3}>
-                <button
-                  type="button"
-                  className="btn btn-g"
-                  onClick={() =>
-                    setDrafts((list) => [
-                      ...list,
-                      { label: `Tranche ${list.length + 1}`, valueKind: "percent", value: "", dueKind: "relative", dueOffsetDays: "", dueDate: "" },
-                    ])
-                  }
-                >
-                  + Ajouter une tranche
-                </button>
-              </td>
-              <td className="num">{preview.data?.valid ? tnd(preview.data.total) : ""}</td>
-              <td />
-            </tr>
-          </tfoot>
-        </table>
-      </div>
-      {preview.data && !preview.data.valid ? (
+            </tfoot>
+          </table>
+        </div>
+      ) : null}
+      {kind === "installments" && preview.data && !preview.data.valid ? (
         <div className="ban ban-red" role="alert">
           <span>Le total des tranches doit être égal au prix de la formation ({tnd(training.price)} TND).</span>
         </div>
-      ) : preview.data?.valid ? (
+      ) : kind === "installments" && preview.data?.valid ? (
         <div className="ban ban-green">
           <span>Total conforme au prix de la formation.</span>
         </div>
@@ -798,7 +844,7 @@ export function TrainingPage() {
   const [archivingPlan, setArchivingPlan] = useState<TrainingDetail["plans"][number] | null>(null);
   const [session, setSession] = useState<TrainingDetail["sessions"][number] | "new" | null>(null);
   const training = useQuery({ queryKey: ["training", id], queryFn: () => api.get<TrainingDetail>(`/catalogue/trainings/${id}`) });
-  usePage(["Formations", training.data?.title ?? "Formation"]);
+  usePage(["Référentiels", "Formations", training.data?.title ?? "Formation"]);
   if (training.isPending) return <Loading />;
   if (training.error) return <ErrorBanner error={training.error} retry={() => training.refetch()} />;
   const t = training.data;
@@ -807,7 +853,7 @@ export function TrainingPage() {
     <>
       <PageHeader
         title={t.title}
-        subtitle={`${t.category ? `${t.category} · ` : ""}${t.durationHours} h · ${tnd(t.price)} TND · ${PAYMENT_MODES[t.paymentModes]} · ${t.capacity} places`}
+        subtitle={`${t.category ? `${t.category} · ` : ""}${t.durationHours} h · ${tnd(t.price)} TND · ${t.capacity} places`}
         actions={
           can("catalogue:write") ? (
             <button type="button" className="btn" onClick={() => setEditing(true)}>
@@ -823,19 +869,17 @@ export function TrainingPage() {
       ) : null}
       <div className="grid2" style={{ alignItems: "start" }}>
         <Card
-          title="Plans de tranches"
+          title="Formules"
           actions={
-            can("catalogue:write") && t.paymentModes !== "full" ? (
+            can("catalogue:write") ? (
               <button type="button" className="btn" onClick={() => setPlan("new")}>
-                + Nouveau plan
+                + Nouvelle formule
               </button>
             ) : null
           }
         >
-          {t.paymentModes === "full" ? (
-            <div className="card-b cap">Cette formation se paie intégralement : aucun plan de tranches.</div>
-          ) : plans.length === 0 ? (
-            <Empty title="Aucun plan" text="Un plan est nécessaire pour inscrire par tranches." />
+          {plans.length === 0 ? (
+            <Empty title="Aucune formule" text="Une formule est nécessaire pour inscrire un élève à cette formation." />
           ) : (
             <div className="xs">
               <table className="tbl">
@@ -843,15 +887,8 @@ export function TrainingPage() {
                   {plans.map((p) => (
                     <tr key={p.id}>
                       <td>
-                        <strong>{p.name}</strong> {p.isDefault ? <Badge tone="blue">Par défaut</Badge> : null}
-                        <div className="cap">
-                          {p.items
-                            .map(
-                              (item, i) =>
-                                `${item.label} : ${tnd(p.amounts[i])} TND (${item.valueKind === "percent" ? percent(item.value) : "montant"}), ${item.dueKind === "relative" ? `J+${item.dueOffsetDays}` : `le ${frDate(item.dueDate)}`}`,
-                            )
-                            .join(" · ")}
-                        </div>
+                        <strong>{p.name}</strong> <Badge tone="gray">{FORMULA[p.kind]}</Badge> {p.isDefault ? <Badge tone="blue">Par défaut</Badge> : null}
+                        <div className="cap">{formulaText(p, t.price)}</div>
                       </td>
                       <td style={{ textAlign: "right", whiteSpace: "nowrap" }}>
                         {can("catalogue:write") ? (

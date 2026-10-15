@@ -110,31 +110,33 @@ export const dashboardRoutes: FastifyPluginAsync = async (app) => {
           and p.status = 'valid' and coalesce(p.cheque_status, 'cashed') <> 'bounced'
           and date_trunc(${unit}, (p.received_at at time zone ${timezone})::date)::date = b.bucket
         group by b.bucket order by b.bucket`.execute(db);
-      const payroll = await db
-        .selectFrom("pay_periods")
-        .leftJoin("pay_lines", "pay_lines.period_id", "pay_periods.id")
-        .select(["pay_periods.id", "pay_periods.month", "pay_periods.status", sql<number>`coalesce(sum(pay_lines.amount), 0)::bigint`.as("lines")])
-        .where("pay_periods.centre_id", "=", centreId)
-        .where("pay_periods.status", "in", ["calculated", "validated"])
-        .groupBy("pay_periods.id")
-        .orderBy("pay_periods.month", "desc")
-        .executeTakeFirst();
-      let upcomingPayroll: { periodId: string; month: string; status: string; total: number } | null = null;
-      if (payroll) {
-        const adj = await db
-          .selectFrom("pay_adjustments")
-          .select(sql<number>`coalesce(sum(case when kind = 'bonus' then amount else -amount end), 0)::bigint`.as("net"))
-          .where("period_id", "=", payroll.id)
-          .executeTakeFirstOrThrow();
-        upcomingPayroll = { periodId: payroll.id, month: payroll.month, status: payroll.status, total: Number(payroll.lines) + Number(adj.net) };
-      }
+      const payrollRow = await db
+        .selectFrom("pay_items")
+        .leftJoin(
+          db
+            .selectFrom("pay_settlement_lines")
+            .innerJoin("pay_settlements", "pay_settlements.id", "pay_settlement_lines.settlement_id")
+            .select(["pay_settlement_lines.item_id", sql<number>`sum(pay_settlement_lines.amount)::bigint`.as("paid")])
+            .where("pay_settlements.status", "=", "valid")
+            .groupBy("pay_settlement_lines.item_id")
+            .as("s"),
+          "s.item_id",
+          "pay_items.id",
+        )
+        .select([
+          sql<number>`coalesce(sum(pay_items.amount) filter (where pay_items.status = 'calculated'), 0)::bigint`.as("toValidate"),
+          sql<number>`coalesce(sum(pay_items.amount - coalesce(s.paid, 0)) filter (where pay_items.status = 'validated'), 0)::bigint`.as("toPay"),
+        ])
+        .where("pay_items.centre_id", "=", centreId)
+        .executeTakeFirstOrThrow();
+      const payroll = { toValidate: Number(payrollRow.toValidate), toPay: Number(payrollRow.toPay) };
       result.financial = {
         collectionsToday: await sumBetween(today, today),
         collectionsMonth: await sumBetween(monthStart, today),
         unpaidTotal: overdue.reduce((s, o) => s + o.remaining, 0),
         unpaidPayers: new Set(overdue.map((o) => o.payerId)).size,
         postponedInstallments: states.filter((s) => s.postponementCount > 0).length,
-        upcomingPayroll,
+        payroll,
         series: series.rows.map((r) => ({ bucket: r.bucket, total: Number(r.total) })),
       };
     }

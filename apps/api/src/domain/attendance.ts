@@ -226,19 +226,34 @@ export async function saveRecords(trx: Transaction<Database>, session: SessionCo
   }
 }
 
-/** Per-session billing: one charge per billable enrolled student, absence billed or not according to the study. */
+/**
+ * Per-session billing: one charge per billable enrolled student. A private lesson uses its group's tariff and absence
+ * rule; a training enrolment uses the tariff and absence rule copied from its per-session formula.
+ */
 export async function syncSessionCharges(trx: Transaction<Database>, session: SessionContext, userId: string): Promise<void> {
-  if (session.groupKind !== "study" || session.billingMode !== "per_session") return;
-  const price = session.sessionPrice ?? 0;
-  if (price === 0) return;
-  const records = await trx
-    .selectFrom("attendance_records")
-    .innerJoin("enrolments", "enrolments.id", "attendance_records.enrolment_id")
-    .select(["attendance_records.enrolment_id as enrolmentId", "attendance_records.student_id as studentId", "attendance_records.status"])
-    .where("attendance_records.session_id", "=", session.id)
-    .where("attendance_records.is_guest", "=", false)
-    .where("enrolments.payment_mode", "=", "per_session")
-    .execute();
+  const records = (
+    await trx
+      .selectFrom("attendance_records")
+      .innerJoin("enrolments", "enrolments.id", "attendance_records.enrolment_id")
+      .select([
+        "attendance_records.enrolment_id as enrolmentId",
+        "attendance_records.student_id as studentId",
+        "attendance_records.status",
+        "enrolments.session_price as sessionPrice",
+        "enrolments.session_absence_billed as absenceBilled",
+      ])
+      .where("attendance_records.session_id", "=", session.id)
+      .where("attendance_records.is_guest", "=", false)
+      .where("enrolments.payment_mode", "=", "per_session")
+      .execute()
+  )
+    .map((r) => ({
+      ...r,
+      price: r.sessionPrice ?? (session.groupKind === "study" ? (session.sessionPrice ?? 0) : 0),
+      absenceBilled: r.absenceBilled ?? (session.groupKind === "study" ? session.absenceBilled === true : false),
+    }))
+    .filter((r) => r.price > 0);
+  if (records.length === 0) return;
   const existing = await trx
     .selectFrom("installments")
     .select(["id", "enrolment_id"])
@@ -248,7 +263,7 @@ export async function syncSessionCharges(trx: Transaction<Database>, session: Se
   const touched = new Set<string>();
   const charged = new Map(existing.map((e) => [e.enrolment_id, e.id]));
   for (const r of records) {
-    const billable = r.status === "present" || r.status === "present_other_group" || session.absenceBilled === true;
+    const billable = r.status === "present" || r.status === "present_other_group" || r.absenceBilled;
     const chargeId = charged.get(r.enrolmentId);
     if (billable !== !!chargeId) {
       await lockStudent(trx, r.studentId, session.centreId);
@@ -262,7 +277,7 @@ export async function syncSessionCharges(trx: Transaction<Database>, session: Se
           enrolment_id: r.enrolmentId,
           label: `${session.groupName}, séance du ${session.localDate.split("-").reverse().join("/")}`,
           kind: "charge",
-          amount: price,
+          amount: r.price,
           due_date: session.localDate,
           original_due_date: session.localDate,
           discount_status: null,
@@ -275,13 +290,14 @@ export async function syncSessionCharges(trx: Transaction<Database>, session: Se
         {
           centreId: session.centreId,
           type: "installment_issued",
-          amount: price,
+          amount: r.price,
           userId,
           installmentId: charge.id,
           studentId: r.studentId,
           enrolmentId: r.enrolmentId,
           groupId: session.groupId,
           studyId: session.studyId,
+          trainingId: session.trainingId,
           instructorId: session.instructorId,
         },
       ]);
@@ -291,13 +307,14 @@ export async function syncSessionCharges(trx: Transaction<Database>, session: Se
         {
           centreId: session.centreId,
           type: "installment_cancelled",
-          amount: -price,
+          amount: -r.price,
           userId,
           installmentId: chargeId,
           studentId: r.studentId,
           enrolmentId: r.enrolmentId,
           groupId: session.groupId,
           studyId: session.studyId,
+          trainingId: session.trainingId,
           instructorId: session.instructorId,
         },
       ]);

@@ -1,6 +1,6 @@
 # GCF : gestion de centre de formation
 
-Back-office interne d'un centre de formation et d'études privées : élèves, groupes, présences, encaissements et reçus,
+Back-office interne d'un centre de formation et de cours particuliers : élèves, groupes, présences, encaissements et reçus,
 paie des intervenants, location de salles, planning, caisse et rapports. Usage réservé au personnel du centre
 (Admin, Secrétariat, Comptable), sans compte élève, intervenant ou loueur en Phase 1.
 
@@ -50,6 +50,11 @@ pnpm --filter @gcf/api dev                  # API sur le port 3000
 pnpm --filter @gcf/web dev                  # interface sur http://localhost:5173 (proxy /api vers l'API)
 ```
 
+Pour une démonstration, `pnpm --filter @gcf/api seed:demo -- --email admin@centre.tn` remplit un centre vide (sans
+élève) : salles, intervenants, cours particuliers, formations avec plusieurs formules, groupes et séances, inscriptions,
+présences, encaissements, règles de rémunération et éléments de paie à chaque étape. Les données passent par l'API,
+avec ses contrôles et son journal d'audit ; les dates partent du premier jour du mois précédent.
+
 Le mot de passe de l'administrateur est saisi dans le terminal, jamais en argument. En développement avec Vite,
 `WEB_ORIGIN` vaut `http://localhost:5173` et `COOKIE_SECURE=false`.
 
@@ -81,10 +86,10 @@ pnpm typecheck                                # API, tests, règles partagées e
 | Lot     | Contenu                                                                                                                | État                                                                               |
 | ------- | ---------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------- |
 | 1       | Socle : centre, utilisateurs et rôles, sessions, journal d'audit, élèves                                               | Livré                                                                              |
-| 2       | Études, formations, groupes, plans de tranches, inscriptions, échéanciers, changements de groupe, abandons             | Livré                                                                              |
+| 2       | Cours particuliers, formations et leurs formules, groupes, inscriptions, échéanciers, changements de groupe, abandons  | Livré                                                                              |
 | 3       | Séances et présences : feuille d'appel, rattrapages, verrouillage, correction motivée, PDF A4                          | Livré                                                                              |
 | 4       | Encaissements, imputation, avances, chèques, remboursements, reçus PDF numérotés, reports, relances, journal financier | Livré                                                                              |
-| 5       | Règles de rémunération, calcul mensuel, primes et retenues, validation, bulletins PDF, paiement                        | Livré                                                                              |
+| 5       | Règles de rémunération, éléments de paie par intervenant et par règle, validation, règlements partiels, justificatifs  | Livré                                                                              |
 | 6       | Salles et tarifs, loueurs, locations, contrats PDF, planning unifié et détection de conflits                           | Livré                                                                              |
 | 7       | Caisse et clôture journalière, rapports exportables, tableau de bord par rôle                                          | Livré                                                                              |
 | 8       | Interface web d'après les maquettes                                                                                    | Livré                                                                              |

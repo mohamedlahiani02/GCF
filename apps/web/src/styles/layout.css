@@ -325,3 +325,18 @@ button.blk {
   flex: 1 1 auto;
   min-width: 0;
 }
+
+/* Entries folded under "Référentiels". */
+.nav-children {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding-inline-start: 14px;
+  margin-inline-start: 12px;
+  border-inline-start: 1px solid var(--line);
+}
+.side.collapsed .nav-children {
+  padding-inline-start: 0;
+  margin-inline-start: 0;
+  border: 0;
+}

@@ -78,7 +78,10 @@ export async function transferEnrolment(trx: Transaction<Database>, actor: Actor
   if (input.effectiveDate > to.endDate) throw unprocessable("after_group_end", "the new group ends before the effective date");
   const sameOffer = from.kind === to.kind && (from.kind === "study" ? from.studyId === to.studyId : from.trainingId === to.trainingId);
   if (!sameOffer) throw unprocessable("different_offer", "a change of group stays within the same study or training; otherwise drop and enrol again");
-  if (input.mode === "reprice" && old.payment_mode !== "monthly") throw unprocessable("reprice_not_applicable", "re-pricing applies to monthly billing only");
+  // A training's monthly price comes from its formula, which a change of group keeps: only private lessons reprice.
+  if (input.mode === "reprice" && (old.payment_mode !== "monthly" || to.kind !== "study")) {
+    throw unprocessable("reprice_not_applicable", "re-pricing applies to monthly private lessons only");
+  }
 
   await trx.selectFrom("groups").select("id").where("id", "=", to.groupId).forUpdate().executeTakeFirstOrThrow();
   const enrolled = await trx
@@ -111,6 +114,8 @@ export async function transferEnrolment(trx: Transaction<Database>, actor: Actor
       effective_date: input.effectiveDate,
       payment_mode: old.payment_mode,
       plan_id: old.plan_id,
+      session_price: old.session_price,
+      session_absence_billed: old.session_absence_billed,
       transferred_from_id: old.id,
       created_by: actor.userId,
     })

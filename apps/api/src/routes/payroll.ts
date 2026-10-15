@@ -1,15 +1,23 @@
-import { createHash } from "node:crypto";
-import { formatTnd } from "@gcf/shared";
 import type { FastifyPluginAsync } from "fastify";
-import { sql, type Transaction } from "kysely";
+import { sql } from "kysely";
 import { z } from "zod";
 import { writeAudit } from "../audit.js";
-import type { Database } from "../db/types.js";
-import { recordFinancialEvents } from "../domain/financialEvents.js";
-import { computeMonth } from "../domain/payrollCalc.js";
-import { renderPayslip } from "../domain/payslipPdf.js";
-import { conflict, notFound, unprocessable } from "../errors.js";
+import type { PayBaseKind, PayPeriodicity } from "../db/types.js";
+import { centreClock } from "../domain/ledger.js";
+import { addAdjustment, calculateItems, cancelItem, cancelSettlement, settledAmounts, settleItems, validateItems } from "../domain/payItems.js";
+import { computeCandidates, monthBounds } from "../domain/payrollCalc.js";
+import { notFound, unprocessable } from "../errors.js";
 import { basisPoints, idParam, isoDate, millimes, reason, uuid, yearMonth } from "../validation.js";
+
+/** The rhythm each base can be paid at; the first one is the default. */
+const PERIODICITIES: Record<PayBaseKind, PayPeriodicity[]> = {
+  fixed_per_session: ["session", "month"],
+  pct_session_tariff: ["session", "month"],
+  hourly: ["month", "session"],
+  pct_collections: ["month"],
+  monthly_flat: ["month"],
+  training_flat: ["training"],
+};
 
 const ruleBody = z
   .object({
@@ -24,6 +32,7 @@ const ruleBody = z
     minRateBasisPoints: basisPoints.optional(),
     floorAmount: millimes.optional(),
     prorataAbove: z.boolean().optional(),
+    periodicity: z.enum(["session", "month", "training"]).optional(),
     validFrom: isoDate,
     validTo: isoDate.optional(),
   })
@@ -39,33 +48,36 @@ const ruleBody = z
       issue("a threshold needs minRateBasisPoints and prorataAbove");
     if (r.presenceKind !== "threshold" && r.floorAmount !== undefined) issue("a floor only applies to a threshold");
     if (r.validTo && r.validTo < r.validFrom) issue("validTo cannot be before validFrom");
+    if (r.periodicity !== undefined && !PERIODICITIES[r.baseKind].includes(r.periodicity)) issue("this periodicity does not fit the base of the rule");
   });
-const periodBody = z.object({ month: yearMonth }).strict();
-const adjustmentBody = z.object({ instructorId: uuid, kind: z.enum(["bonus", "deduction"]), amount: millimes.min(1), reason }).strict();
-const payBody = z.object({ paidOn: isoDate, method: z.enum(["cash", "transfer", "cheque"]), reference: z.string().trim().max(100).optional() }).strict();
-const payslipParams = z.object({ id: uuid, instructorId: uuid });
 const rulesQuery = z.object({ instructorId: uuid.optional() });
-
-const MONTHS_FR = ["janvier", "février", "mars", "avril", "mai", "juin", "juillet", "août", "septembre", "octobre", "novembre", "décembre"];
-const periodLabel = (month: string) => `${MONTHS_FR[Number(month.slice(5, 7)) - 1]} ${month.slice(0, 4)}`;
-const EMPLOYMENT_FR = { salaried: "salarié", freelance: "freelance", contractor: "vacataire" } as const;
-const BASE_FR = {
-  pct_collections: "% des encaissements",
-  pct_session_tariff: "% du tarif de séance",
-  fixed_per_session: "montant fixe par séance",
-  monthly_flat: "forfait mensuel",
-  hourly: "taux horaire",
-  training_flat: "forfait de formation",
-} as const;
-const PRESENCE_FR = { ignore: "présence ignorée", prorata: "au prorata de la présence", session_due: "séance due", threshold: "seuil minimum" } as const;
-const NARROW_NBSP = String.fromCharCode(0x202f);
-const tnd = (amount: number) => formatTnd(amount, "fr").split(NARROW_NBSP).join(" ");
-
-async function loadPeriod(trx: Transaction<Database>, id: string, centreId: string) {
-  const period = await trx.selectFrom("pay_periods").selectAll().where("id", "=", id).where("centre_id", "=", centreId).forUpdate().executeTakeFirst();
-  if (!period) throw notFound("pay period");
-  return period;
-}
+const monthQuery = z.object({ month: yearMonth });
+const calculateBody = z.object({ instructorId: uuid, month: yearMonth }).strict();
+const itemIdsBody = z.object({ itemIds: z.array(uuid).min(1).max(500) }).strict();
+const cancelBody = z.object({ reason }).strict();
+const adjustmentBody = z.object({ instructorId: uuid, month: yearMonth, kind: z.enum(["bonus", "deduction"]), amount: millimes.min(1), reason }).strict();
+const settlementBody = z
+  .object({
+    instructorId: uuid,
+    paidOn: isoDate,
+    method: z.enum(["cash", "transfer", "cheque"]),
+    reference: z.string().trim().max(100).optional(),
+    lines: z
+      .array(
+        z
+          .object({
+            itemId: uuid,
+            amount: z
+              .number()
+              .int()
+              .refine((n) => Number.isSafeInteger(n) && n !== 0, "a non-zero amount in millimes"),
+          })
+          .strict(),
+      )
+      .min(1)
+      .max(200),
+  })
+  .strict();
 
 export const payrollRoutes: FastifyPluginAsync = async (app) => {
   const { db } = app;
@@ -121,6 +133,7 @@ export const payrollRoutes: FastifyPluginAsync = async (app) => {
           min_rate_basis_points: body.minRateBasisPoints ?? null,
           floor_amount: body.floorAmount ?? null,
           prorata_above: body.prorataAbove ?? null,
+          periodicity: body.periodicity ?? PERIODICITIES[body.baseKind][0]!,
           valid_from: body.validFrom,
           valid_to: body.validTo ?? null,
           created_by: actor.userId,
@@ -159,360 +172,313 @@ export const payrollRoutes: FastifyPluginAsync = async (app) => {
   });
 
   /** What the group's instructor would earn this month so far, from the rule that applies and validated sessions. */
+  /** What the rules would pay for a group in a month, without storing anything (group screen). */
   app.get("/estimate", { preHandler: read }, async (request) => {
     const centreId = request.user!.centreId;
     const q = z.object({ groupId: uuid, month: yearMonth }).parse(request.query);
     const group = await db.selectFrom("groups").select("id").where("id", "=", q.groupId).where("centre_id", "=", centreId).executeTakeFirst();
     if (!group) throw notFound("group");
-    const { lines, warnings } = await computeMonth(db, centreId, `${q.month}-01`);
+    const { start, end } = monthBounds(q.month);
+    const { candidates, warnings } = await computeCandidates(db, centreId, { from: start, to: end, groupId: q.groupId, excludeValidated: false });
     return {
-      lines: lines
-        .filter((l) => l.groupId === q.groupId)
-        .map((l) => ({ instructorId: l.instructorId, rule: l.rule, base: l.base, rate: l.rate, amount: l.amount, details: l.details })),
-      warnings: warnings.filter((w) => w.groupId === q.groupId),
+      lines: candidates.map((c) => ({
+        instructorId: c.instructorId,
+        label: c.label,
+        periodicity: c.rule.periodicity,
+        rule: c.rule,
+        base: c.base,
+        rate: c.rate,
+        amount: c.amount,
+        dueOn: c.dueOn,
+        details: c.details,
+      })),
+      warnings,
     };
   });
 
-  /* Periods */
+  const itemColumns = [
+    "pay_items.id",
+    "pay_items.instructor_id as instructorId",
+    "pay_items.kind",
+    "pay_items.rule_id as ruleId",
+    "pay_items.rule_snapshot as rule",
+    "pay_items.group_id as groupId",
+    "groups.name as groupName",
+    "pay_items.period_key as periodKey",
+    "pay_items.period_start as periodStart",
+    "pay_items.period_end as periodEnd",
+    "pay_items.due_on as dueOn",
+    "pay_items.label",
+    "pay_items.base",
+    "pay_items.rate_numerator as rateNumerator",
+    "pay_items.rate_denominator as rateDenominator",
+    "pay_items.amount",
+    "pay_items.details",
+    "pay_items.status",
+    "pay_items.reason",
+    "pay_items.calculated_at as calculatedAt",
+    "pay_items.validated_at as validatedAt",
+    "pay_items.cancelled_at as cancelledAt",
+    "pay_items.cancel_reason as cancelReason",
+  ] as const;
 
-  app.get("/periods", { preHandler: read }, async (request) => {
-    const rows = await db
-      .selectFrom("pay_periods")
-      .leftJoin("pay_lines", "pay_lines.period_id", "pay_periods.id")
-      .select(["pay_periods.id", "pay_periods.month", "pay_periods.status"])
-      .select((eb) => [
-        eb.fn.count<number>("pay_lines.instructor_id").distinct().as("instructors"),
-        sql<number>`coalesce(sum(pay_lines.amount), 0)::bigint`.as("linesTotal"),
-      ])
-      .where("pay_periods.centre_id", "=", request.user!.centreId)
-      .groupBy("pay_periods.id")
-      .orderBy("pay_periods.month", "desc")
-      .execute();
-    const adjustments = await db
-      .selectFrom("pay_adjustments")
-      .innerJoin("pay_periods", "pay_periods.id", "pay_adjustments.period_id")
-      .select(["pay_adjustments.period_id as periodId", sql<number>`sum(case when kind = 'bonus' then amount else -amount end)::bigint`.as("net")])
-      .where("pay_periods.centre_id", "=", request.user!.centreId)
-      .groupBy("pay_adjustments.period_id")
-      .execute();
-    const net = new Map(adjustments.map((a) => [a.periodId, Number(a.net)]));
-    return rows.map((r) => ({
-      id: r.id,
-      month: r.month,
-      label: periodLabel(r.month),
-      status: r.status,
-      instructors: Number(r.instructors),
-      total: Number(r.linesTotal) + (net.get(r.id) ?? 0),
-    }));
-  });
-
-  app.post("/periods", { preHandler: calculate }, async (request, reply) => {
-    const actor = request.user!;
-    const { month } = periodBody.parse(request.body);
-    const period = await db.transaction().execute(async (trx) => {
-      const created = await trx
-        .insertInto("pay_periods")
-        .values({ centre_id: actor.centreId, month: `${month}-01` })
-        .returning(["id", "month", "status"])
-        .executeTakeFirstOrThrow();
-      await writeAudit(trx, {
-        centreId: actor.centreId,
-        userId: actor.userId,
-        action: "pay_period.created",
-        objectType: "pay_period",
-        objectId: created.id,
-        after: { month },
-      });
-      return created;
+  /** Adds what each item has been paid and what is left. */
+  const withSettlement = async <T extends { id: string; amount: number; status: string }>(items: T[]) => {
+    const settled = await settledAmounts(
+      db as never,
+      items.map((i) => i.id),
+    );
+    return items.map((i) => {
+      const paid = settled.get(i.id) ?? 0;
+      return { ...i, paid, remaining: i.status === "validated" ? i.amount - paid : 0 };
     });
-    return reply.status(201).send({ ...period, label: periodLabel(period.month) });
-  });
-
-  const periodDetail = async (id: string, centreId: string) => {
-    const period = await db.selectFrom("pay_periods").selectAll().where("id", "=", id).where("centre_id", "=", centreId).executeTakeFirst();
-    if (!period) throw notFound("pay period");
-    const lines = await db
-      .selectFrom("pay_lines")
-      .leftJoin("groups", "groups.id", "pay_lines.group_id")
-      .select([
-        "pay_lines.id",
-        "pay_lines.instructor_id as instructorId",
-        "pay_lines.group_id as groupId",
-        "groups.name as groupName",
-        "pay_lines.rule_snapshot as rule",
-        "pay_lines.base",
-        "pay_lines.rate_numerator as rateNumerator",
-        "pay_lines.rate_denominator as rateDenominator",
-        "pay_lines.amount",
-        "pay_lines.details",
-      ])
-      .where("period_id", "=", id)
-      .execute();
-    const adjustments = await db
-      .selectFrom("pay_adjustments")
-      .select(["id", "instructor_id as instructorId", "kind", "amount", "reason", "created_at as createdAt"])
-      .where("period_id", "=", id)
-      .orderBy("created_at")
-      .execute();
-    const payslips = await db
-      .selectFrom("payslips")
-      .select([
-        "instructor_id as instructorId",
-        "total",
-        "issued_at as issuedAt",
-        "paid_on as paidOn",
-        "payment_method as paymentMethod",
-        "payment_reference as paymentReference",
-      ])
-      .where("period_id", "=", id)
-      .execute();
-    const instructorIds = [...new Set([...lines.map((l) => l.instructorId), ...adjustments.map((a) => a.instructorId)])];
-    const instructors = instructorIds.length
-      ? await db
-          .selectFrom("instructors")
-          .select(["id", "first_name as firstName", "last_name as lastName", "employment"])
-          .where("id", "in", instructorIds)
-          .execute()
-      : [];
-    const summary = instructors
-      .map((i) => {
-        const own = lines.filter((l) => l.instructorId === i.id);
-        const adj = adjustments.filter((a) => a.instructorId === i.id);
-        const calculated = own.reduce((s, l) => s + l.amount, 0);
-        const adjustmentsNet = adj.reduce((s, a) => s + (a.kind === "bonus" ? a.amount : -a.amount), 0);
-        const slip = payslips.find((p) => p.instructorId === i.id) ?? null;
-        return { ...i, calculated, adjustments: adjustmentsNet, net: calculated + adjustmentsNet, lines: own, adjustmentLines: adj, payslip: slip };
-      })
-      .sort((a, b) => a.lastName.localeCompare(b.lastName, "fr"));
-    return {
-      id: period.id,
-      month: period.month,
-      label: periodLabel(period.month),
-      status: period.status,
-      calculatedAt: period.calculated_at,
-      validatedAt: period.validated_at,
-      instructors: summary,
-      total: summary.reduce((s, i) => s + i.net, 0),
-    };
   };
 
-  app.get("/periods/:id", { preHandler: read }, async (request) => {
+  /**
+   * Monthly overview: per instructor, what the month's items amount to at each stage, plus everything validated
+   * and still unpaid whatever its month. It is a follow-up view only: nothing is validated for the month as a whole.
+   */
+  app.get("/summary", { preHandler: read }, async (request) => {
+    const centreId = request.user!.centreId;
+    const { month } = monthQuery.parse(request.query);
+    const { start, end } = monthBounds(month);
+    const instructors = await db
+      .selectFrom("instructors")
+      .select(["id", "first_name as firstName", "last_name as lastName", "employment", "status"])
+      .where("centre_id", "=", centreId)
+      .orderBy("last_name")
+      .orderBy("first_name")
+      .execute();
+    const items = await withSettlement(
+      await db
+        .selectFrom("pay_items")
+        .select(["id", "instructor_id as instructorId", "amount", "status", "period_end as periodEnd"])
+        .where("centre_id", "=", centreId)
+        .where("status", "<>", "cancelled")
+        .where((eb) => eb.or([eb.and([eb("period_end", ">=", start), eb("period_end", "<=", end)]), eb("status", "=", "validated")]))
+        .execute(),
+    );
+    // Sessions a calculation of this month would pay and that no item covers yet. A training fee is only counted in
+    // the month its group ends, so its sessions do not show as waiting before then.
+    const { candidates, warnings } = await computeCandidates(db, centreId, { from: start, to: end, excludeValidated: true });
+    const candidateSessions = new Map(candidates.flatMap((c) => c.sessionIds.map((sessionId) => [sessionId, c.instructorId] as const)));
+    const covered = candidateSessions.size
+      ? await db
+          .selectFrom("pay_item_sessions")
+          .select(["session_id as sessionId", "instructor_id as instructorId"])
+          .where("active", "=", true)
+          .where("session_id", "in", [...candidateSessions.keys()])
+          .execute()
+      : [];
+    const coveredKeys = new Set(covered.map((c) => `${c.sessionId}|${c.instructorId}`));
+    const uncovered = new Map<string, number>();
+    for (const [sessionId, instructorId] of candidateSessions) {
+      if (!coveredKeys.has(`${sessionId}|${instructorId}`)) uncovered.set(instructorId, (uncovered.get(instructorId) ?? 0) + 1);
+    }
+    const rows = instructors
+      .map((i) => {
+        const own = items.filter((it) => it.instructorId === i.id);
+        const inMonth = own.filter((it) => it.periodEnd >= start && it.periodEnd <= end);
+        const sum = (list: typeof own, pick: (it: (typeof own)[number]) => number) => list.reduce((s, it) => s + pick(it), 0);
+        return {
+          ...i,
+          calculated: sum(
+            inMonth.filter((it) => it.status === "calculated"),
+            (it) => it.amount,
+          ),
+          validated: sum(
+            inMonth.filter((it) => it.status === "validated"),
+            (it) => it.amount,
+          ),
+          paid: sum(inMonth, (it) => it.paid),
+          remaining: sum(inMonth, (it) => it.remaining),
+          outstanding: sum(own, (it) => it.remaining),
+          toValidate: inMonth.filter((it) => it.status === "calculated").length,
+          sessionsToCalculate: uncovered.get(i.id) ?? 0,
+          groupsWithoutRule: warnings.filter((w) => w.instructorId === i.id && w.code === "no_rule").length,
+        };
+      })
+      .filter((r) => r.status === "active" || r.calculated || r.validated || r.outstanding || r.sessionsToCalculate || r.groupsWithoutRule);
+    const total = (key: "calculated" | "validated" | "paid" | "remaining" | "outstanding") => rows.reduce((s, r) => s + r[key], 0);
+    return {
+      month,
+      instructors: rows,
+      totals: {
+        calculated: total("calculated"),
+        validated: total("validated"),
+        paid: total("paid"),
+        remaining: total("remaining"),
+        outstanding: total("outstanding"),
+      },
+    };
+  });
+
+  /** One instructor's pay for a month: items by status, items of earlier months still unpaid, settlements, rules. */
+  app.get("/instructors/:id", { preHandler: read }, async (request) => {
+    const centreId = request.user!.centreId;
     const { id } = idParam.parse(request.params);
-    return periodDetail(id, request.user!.centreId);
-  });
-
-  /** (Re)computes the lines from validated sessions. Adjustments are kept. */
-  app.post("/periods/:id/calculate", { preHandler: calculate }, async (request) => {
-    const actor = request.user!;
-    const { id } = idParam.parse(request.params);
-    const warnings = await db.transaction().execute(async (trx) => {
-      const period = await loadPeriod(trx, id, actor.centreId);
-      if (period.status === "validated" || period.status === "paid") throw conflict("period_locked", "a validated period cannot be recalculated");
-      const { lines, warnings: found } = await computeMonth(trx, actor.centreId, period.month);
-      await trx.deleteFrom("pay_lines").where("period_id", "=", id).execute();
-      if (lines.length) {
-        await trx
-          .insertInto("pay_lines")
-          .values(
-            lines.map((l) => ({
-              period_id: id,
-              instructor_id: l.instructorId,
-              group_id: l.groupId,
-              rule_id: l.rule.id,
-              rule_snapshot: JSON.stringify(l.rule),
-              base: l.base,
-              rate_numerator: l.rate.numerator,
-              rate_denominator: l.rate.denominator,
-              amount: l.amount,
-              details: JSON.stringify(l.details),
-            })),
-          )
-          .execute();
-      }
-      await trx.updateTable("pay_periods").set({ status: "calculated", calculated_at: new Date() }).where("id", "=", id).execute();
-      await writeAudit(trx, {
-        centreId: actor.centreId,
-        userId: actor.userId,
-        action: "pay_period.calculated",
-        objectType: "pay_period",
-        objectId: id,
-        after: { lines: lines.length, total: lines.reduce((s, l) => s + l.amount, 0), warnings: found.length },
-      });
-      return found;
-    });
-    return { ...(await periodDetail(id, actor.centreId)), warnings };
-  });
-
-  app.post("/periods/:id/adjustments", { preHandler: calculate }, async (request, reply) => {
-    const actor = request.user!;
-    const { id } = idParam.parse(request.params);
-    const body = adjustmentBody.parse(request.body);
-    await db.transaction().execute(async (trx) => {
-      const period = await loadPeriod(trx, id, actor.centreId);
-      if (period.status === "validated" || period.status === "paid") throw conflict("period_locked", "a validated period cannot change");
-      const instructor = await trx
-        .selectFrom("instructors")
-        .select("id")
-        .where("id", "=", body.instructorId)
-        .where("centre_id", "=", actor.centreId)
-        .executeTakeFirst();
-      if (!instructor) throw notFound("instructor");
-      const created = await trx
-        .insertInto("pay_adjustments")
-        .values({ period_id: id, instructor_id: body.instructorId, kind: body.kind, amount: body.amount, reason: body.reason, created_by: actor.userId })
-        .returning("id")
-        .executeTakeFirstOrThrow();
-      await writeAudit(trx, {
-        centreId: actor.centreId,
-        userId: actor.userId,
-        action: `pay_adjustment.${body.kind}`,
-        objectType: "pay_period",
-        objectId: id,
-        after: { ...body, id: created.id },
-        reason: body.reason,
-      });
-    });
-    return reply.status(201).send(await periodDetail(id, actor.centreId));
-  });
-
-  /** Freezes the period: pay lines keep their copied rule, payslips are issued and the journal is written. */
-  app.post("/periods/:id/validate", { preHandler: calculate }, async (request) => {
-    const actor = request.user!;
-    const { id } = idParam.parse(request.params);
-    await db.transaction().execute(async (trx) => {
-      const period = await loadPeriod(trx, id, actor.centreId);
-      if (period.status !== "calculated") throw conflict("not_calculated", "calculate the period before validating it");
-      const detail = await periodDetail(id, actor.centreId);
-      const centre = await trx.selectFrom("centres").select(["name", "address", "timezone"]).where("id", "=", actor.centreId).executeTakeFirstOrThrow();
-      const issued = await sql<{ at: string }>`select to_char(now() at time zone ${centre.timezone}, 'DD/MM/YYYY') as at`.execute(trx);
-      const groupAxes = await trx
-        .selectFrom("groups")
-        .leftJoin("training_sessions", "training_sessions.id", "groups.training_session_id")
-        .select(["groups.id", "groups.study_id as studyId", "training_sessions.training_id as trainingId"])
-        .execute();
-      const axesOf = new Map(groupAxes.map((g) => [g.id, g]));
-      for (const instructor of detail.instructors) {
-        const pdf = await renderPayslip({
-          centreName: centre.name,
-          centreAddress: centre.address,
-          instructorName: `${instructor.firstName} ${instructor.lastName}`,
-          employment: EMPLOYMENT_FR[instructor.employment],
-          periodLabel: detail.label,
-          lines: instructor.lines.map((l) => {
-            const rule = l.rule as { base_kind: keyof typeof BASE_FR; presence_kind: keyof typeof PRESENCE_FR };
-            const details = l.details as { sessions: number; minutes: number; collected: number; rateBasisPoints: number | null };
-            const rate = details.rateBasisPoints === null ? "taux non calculé" : `présence ${(details.rateBasisPoints / 100).toFixed(2).replace(".", ",")} %`;
-            return {
-              label: l.groupName ?? "Forfait mensuel",
-              detail: `${BASE_FR[rule.base_kind]}, ${PRESENCE_FR[rule.presence_kind]} ; ${details.sessions} séance(s), base ${tnd(l.base)} TND, ${rate}`,
-              amount: l.amount,
-            };
-          }),
-          adjustments: instructor.adjustmentLines.map((a) => ({
-            label: `${a.kind === "bonus" ? "Prime" : "Retenue"} : ${a.reason}`,
-            amount: a.kind === "bonus" ? a.amount : -a.amount,
-          })),
-          total: instructor.net,
-          issuedAt: issued.rows[0]!.at,
-        });
-        await trx
-          .insertInto("payslips")
-          .values({ period_id: id, instructor_id: instructor.id, total: instructor.net, pdf, sha256: createHash("sha256").update(pdf).digest("hex") })
-          .execute();
-        await recordFinancialEvents(trx, [
-          ...instructor.lines.map((l) => ({
-            centreId: actor.centreId,
-            type: "payroll_validated" as const,
-            amount: l.amount,
-            userId: actor.userId,
-            instructorId: instructor.id,
-            groupId: l.groupId,
-            studyId: l.groupId ? (axesOf.get(l.groupId)?.studyId ?? null) : null,
-            trainingId: l.groupId ? (axesOf.get(l.groupId)?.trainingId ?? null) : null,
-            payload: { periodId: id, lineId: l.id },
-          })),
-          ...instructor.adjustmentLines.map((a) => ({
-            centreId: actor.centreId,
-            type: "payroll_validated" as const,
-            amount: a.kind === "bonus" ? a.amount : -a.amount,
-            userId: actor.userId,
-            instructorId: instructor.id,
-            payload: { periodId: id, adjustmentId: a.id, reason: a.reason },
-          })),
-        ]);
-      }
-      await trx.updateTable("pay_periods").set({ status: "validated", validated_at: new Date(), validated_by: actor.userId }).where("id", "=", id).execute();
-      await writeAudit(trx, {
-        centreId: actor.centreId,
-        userId: actor.userId,
-        action: "pay_period.validated",
-        objectType: "pay_period",
-        objectId: id,
-        after: { total: detail.total },
-      });
-    });
-    return periodDetail(id, actor.centreId);
-  });
-
-  app.post("/periods/:id/payslips/:instructorId/pay", { preHandler: calculate }, async (request) => {
-    const actor = request.user!;
-    const { id, instructorId } = payslipParams.parse(request.params);
-    const body = payBody.parse(request.body);
-    await db.transaction().execute(async (trx) => {
-      const period = await loadPeriod(trx, id, actor.centreId);
-      if (period.status !== "validated") throw conflict("not_validated", "only a validated period can be paid");
-      const slip = await trx
-        .selectFrom("payslips")
-        .select(["id", "total", "paid_on"])
-        .where("period_id", "=", id)
-        .where("instructor_id", "=", instructorId)
-        .forUpdate()
-        .executeTakeFirst();
-      if (!slip) throw notFound("payslip");
-      if (slip.paid_on) throw conflict("already_paid", "this payslip is already paid");
-      await trx
-        .updateTable("payslips")
-        .set({ paid_on: body.paidOn, payment_method: body.method, payment_reference: body.reference ?? null, paid_by: actor.userId })
-        .where("id", "=", slip.id)
-        .execute();
-      await recordFinancialEvents(trx, [
-        {
-          centreId: actor.centreId,
-          type: "payroll_paid",
-          amount: slip.total,
-          userId: actor.userId,
-          instructorId,
-          payload: { periodId: id, method: body.method, paidOn: body.paidOn },
-        },
-      ]);
-      const unpaid = await trx.selectFrom("payslips").select("id").where("period_id", "=", id).where("paid_on", "is", null).executeTakeFirst();
-      if (!unpaid) await trx.updateTable("pay_periods").set({ status: "paid" }).where("id", "=", id).execute();
-      await writeAudit(trx, {
-        centreId: actor.centreId,
-        userId: actor.userId,
-        action: "payslip.paid",
-        objectType: "pay_period",
-        objectId: id,
-        after: { instructorId, ...body },
-      });
-    });
-    return periodDetail(id, actor.centreId);
-  });
-
-  app.get("/periods/:id/payslips/:instructorId/pdf", { preHandler: read }, async (request, reply) => {
-    const { id, instructorId } = payslipParams.parse(request.params);
-    const slip = await db
-      .selectFrom("payslips")
-      .innerJoin("pay_periods", "pay_periods.id", "payslips.period_id")
-      .select(["payslips.pdf", "pay_periods.month"])
-      .where("payslips.period_id", "=", id)
-      .where("payslips.instructor_id", "=", instructorId)
-      .where("pay_periods.centre_id", "=", request.user!.centreId)
+    const { month } = monthQuery.parse(request.query);
+    const { start, end } = monthBounds(month);
+    const instructor = await db
+      .selectFrom("instructors")
+      .select(["id", "first_name as firstName", "last_name as lastName", "employment", "status"])
+      .where("id", "=", id)
+      .where("centre_id", "=", centreId)
       .executeTakeFirst();
-    if (!slip) throw notFound("payslip");
-    return reply
-      .header("content-type", "application/pdf")
-      .header("content-disposition", `inline; filename="paie-${slip.month.slice(0, 7)}.pdf"`)
-      .send(slip.pdf);
+    if (!instructor) throw notFound("instructor");
+    const items = await withSettlement(
+      await db
+        .selectFrom("pay_items")
+        .leftJoin("groups", "groups.id", "pay_items.group_id")
+        .select(itemColumns)
+        .where("pay_items.centre_id", "=", centreId)
+        .where("pay_items.instructor_id", "=", id)
+        .where((eb) =>
+          eb.or([
+            eb.and([eb("pay_items.period_end", ">=", start), eb("pay_items.period_end", "<=", end)]),
+            eb.and([eb("pay_items.status", "=", "validated"), eb("pay_items.period_end", "<", start)]),
+          ]),
+        )
+        .orderBy("pay_items.period_end")
+        .orderBy("pay_items.label")
+        .execute(),
+    );
+    const sessionCounts = items.length
+      ? await db
+          .selectFrom("pay_item_sessions")
+          .select(["item_id as itemId", sql<number>`count(*)::integer`.as("n")])
+          .where(
+            "item_id",
+            "in",
+            items.map((i) => i.id),
+          )
+          .groupBy("item_id")
+          .execute()
+      : [];
+    const settlements = await db
+      .selectFrom("pay_settlements")
+      .select(["id", "number", "paid_on as paidOn", "method", "reference", "amount", "status", "cancel_reason as cancelReason", "created_at as createdAt"])
+      .where("centre_id", "=", centreId)
+      .where("instructor_id", "=", id)
+      .orderBy("paid_on", "desc")
+      .orderBy("created_at", "desc")
+      .limit(100)
+      .execute();
+    const rules = await db
+      .selectFrom("pay_rules")
+      .selectAll()
+      .where("centre_id", "=", centreId)
+      .where("instructor_id", "=", id)
+      .where("status", "=", "active")
+      .where("valid_from", "<=", end)
+      .where((eb) => eb.or([eb("valid_to", "is", null), eb("valid_to", ">=", start)]))
+      .execute();
+    const { today } = await centreClock(db, centreId);
+    return {
+      instructor,
+      month,
+      today,
+      items: items.map((i) => ({ ...i, sessions: Number(sessionCounts.find((c) => c.itemId === i.id)?.n ?? 0), earlierMonth: i.periodEnd < start })),
+      settlements,
+      rules,
+    };
+  });
+
+  /** Sessions of an item and its history (calculation, validation, settlements, correction). */
+  app.get("/items/:id", { preHandler: read }, async (request) => {
+    const centreId = request.user!.centreId;
+    const { id } = idParam.parse(request.params);
+    const item = await db
+      .selectFrom("pay_items")
+      .leftJoin("groups", "groups.id", "pay_items.group_id")
+      .select(itemColumns)
+      .where("pay_items.id", "=", id)
+      .where("pay_items.centre_id", "=", centreId)
+      .executeTakeFirst();
+    if (!item) throw notFound("pay item");
+    const { timezone } = await centreClock(db, centreId);
+    const sessions = await db
+      .selectFrom("pay_item_sessions")
+      .innerJoin("class_sessions", "class_sessions.id", "pay_item_sessions.session_id")
+      .innerJoin("groups", "groups.id", "class_sessions.group_id")
+      .select([
+        "class_sessions.id",
+        "groups.name as groupName",
+        "class_sessions.starts_at as startsAt",
+        "class_sessions.ends_at as endsAt",
+        sql<string>`to_char(class_sessions.starts_at at time zone ${timezone}, 'YYYY-MM-DD')`.as("localDate"),
+        "pay_item_sessions.active",
+      ])
+      .where("pay_item_sessions.item_id", "=", id)
+      .orderBy("class_sessions.starts_at")
+      .execute();
+    const settlements = await db
+      .selectFrom("pay_settlement_lines")
+      .innerJoin("pay_settlements", "pay_settlements.id", "pay_settlement_lines.settlement_id")
+      .select(["pay_settlements.id", "pay_settlements.number", "pay_settlements.paid_on as paidOn", "pay_settlements.status", "pay_settlement_lines.amount"])
+      .where("pay_settlement_lines.item_id", "=", id)
+      .orderBy("pay_settlements.paid_on")
+      .execute();
+    const [withPaid] = await withSettlement([item]);
+    return { ...withPaid, sessions, settlements };
+  });
+
+  /** "Calculer": an instructor's items for a month (sessions held, the month itself, groups ending in it). */
+  app.post("/calculate", { preHandler: calculate }, async (request) => {
+    const actor = request.user!;
+    const body = calculateBody.parse(request.body);
+    const { start, end } = monthBounds(body.month);
+    return db.transaction().execute((trx) => calculateItems(trx, actor, body.instructorId, { from: start, to: end }));
+  });
+
+  /** "Valider": selected items, each from its due date; other items and instructors are not affected. */
+  app.post("/items/validate", { preHandler: calculate }, async (request) => {
+    const actor = request.user!;
+    const { itemIds } = itemIdsBody.parse(request.body);
+    const validated = await db.transaction().execute((trx) => validateItems(trx, actor, itemIds));
+    return { validated };
+  });
+
+  app.post("/items/:id/cancel", { preHandler: calculate }, async (request) => {
+    const actor = request.user!;
+    const { id } = idParam.parse(request.params);
+    const body = cancelBody.parse(request.body);
+    await db.transaction().execute((trx) => cancelItem(trx, actor, id, body.reason));
+    return { id, status: "cancelled" };
+  });
+
+  app.post("/adjustments", { preHandler: calculate }, async (request, reply) => {
+    const actor = request.user!;
+    const body = adjustmentBody.parse(request.body);
+    const id = await db.transaction().execute((trx) => addAdjustment(trx, actor, body));
+    return reply.status(201).send({ id });
+  });
+
+  /** "Régler": one payment covering one or more validated items, in full or in part. */
+  app.post("/settlements", { preHandler: calculate }, async (request, reply) => {
+    const actor = request.user!;
+    const body = settlementBody.parse(request.body);
+    const result = await db.transaction().execute((trx) => settleItems(trx, actor, body));
+    return reply.status(201).send(result);
+  });
+
+  app.post("/settlements/:id/cancel", { preHandler: calculate }, async (request) => {
+    const actor = request.user!;
+    const { id } = idParam.parse(request.params);
+    const body = cancelBody.parse(request.body);
+    await db.transaction().execute((trx) => cancelSettlement(trx, actor, id, body.reason));
+    return { id, status: "cancelled" };
+  });
+
+  app.get("/settlements/:id/pdf", { preHandler: read }, async (request, reply) => {
+    const { id } = idParam.parse(request.params);
+    const settlement = await db
+      .selectFrom("pay_settlements")
+      .select(["pdf", "number"])
+      .where("id", "=", id)
+      .where("centre_id", "=", request.user!.centreId)
+      .executeTakeFirst();
+    if (!settlement) throw notFound("settlement");
+    return reply.header("content-type", "application/pdf").header("content-disposition", `inline; filename="${settlement.number}.pdf"`).send(settlement.pdf);
   });
 };

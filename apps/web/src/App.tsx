@@ -10,7 +10,7 @@ import { GroupCreatePage, GroupPage, GroupsPage } from "./pages/groups";
 import { InstructorPage, InstructorsPage } from "./pages/instructors";
 import { LoginPage } from "./pages/login";
 import { PaymentsPage } from "./pages/payments";
-import { PayPeriodPage, PayrollPage } from "./pages/payroll";
+import { InstructorPayPage, PayrollPage } from "./pages/payroll";
 import { PlanningPage } from "./pages/planning";
 import { ReceiptPage, ReceiptsPage } from "./pages/receipts";
 import { ReportsPage } from "./pages/reports";
@@ -44,7 +44,7 @@ export const router = createBrowserRouter([
       { path: "/inscriptions/nouvelle", element: guard("enrolments:write", <EnrolmentWizardPage />) },
       { path: "/intervenants", element: guard("instructors:read", <InstructorsPage />) },
       { path: "/intervenants/:id", element: guard("instructors:read", <InstructorPage />) },
-      { path: "/etudes", element: guard("catalogue:read", <StudiesPage />) },
+      { path: "/cours-particuliers", element: guard("catalogue:read", <StudiesPage />) },
       { path: "/formations", element: guard("catalogue:read", <TrainingsPage />) },
       { path: "/formations/:id", element: guard("catalogue:read", <TrainingPage />) },
       { path: "/groupes", element: guard("catalogue:read", <GroupsPage />) },
@@ -56,7 +56,7 @@ export const router = createBrowserRouter([
       { path: "/recus", element: guard("payments:read", <ReceiptsPage />) },
       { path: "/recus/:id", element: guard("payments:read", <ReceiptPage />) },
       { path: "/paie", element: guard("payroll:read", <PayrollPage />) },
-      { path: "/paie/:id", element: guard("payroll:read", <PayPeriodPage />) },
+      { path: "/paie/intervenants/:id", element: guard("payroll:read", <InstructorPayPage />) },
       { path: "/salles", element: guard("catalogue:read", <RoomsPage />) },
       { path: "/locations/nouvelle", element: guard("rooms:write", <RentalWizardPage />) },
       { path: "/locations/:id", element: guard("catalogue:read", <RentalPage />) },

@@ -296,6 +296,11 @@ export function AttendanceSheetPage() {
             Feuille validée et verrouillée.
             {can("attendance:correct") ? " Une correction reste possible avec un motif." : " Seul l'administrateur peut la corriger."}
           </span>
+          {can("payroll:read") ? (
+            <Link className="btn" to={`/paie/intervenants/${s.session.instructorId}?mois=${s.session.localDate.slice(0, 7)}`}>
+              Rémunération de l'intervenant
+            </Link>
+          ) : null}
         </div>
       ) : editable ? (
         <div className="ban ban-blue">

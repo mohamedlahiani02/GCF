@@ -27,13 +27,6 @@ export const SHEET: Record<string, { label: string; tone: Tone }> = {
   validated: { label: "Validée", tone: "green" },
 };
 
-export const PAYROLL: Record<string, { label: string; tone: Tone }> = {
-  draft: { label: "Brouillon", tone: "gray" },
-  calculated: { label: "Calculée", tone: "blue" },
-  validated: { label: "Validée", tone: "teal" },
-  paid: { label: "Payée", tone: "green" },
-};
-
 export const METHOD: Record<string, string> = { cash: "Espèces", transfer: "Virement", cheque: "Chèque", card: "Carte" };
 export const CHEQUE: Record<string, string> = { received: "Reçu", deposited: "Déposé", cashed: "Encaissé", bounced: "Impayé" };
 export const ROLE: Record<string, string> = { admin: "Admin", secretariat: "Secrétariat", accountant: "Comptable" };

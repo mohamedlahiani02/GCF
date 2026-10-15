@@ -15,7 +15,9 @@ export type FinancialEventType =
   | "payment_cancelled"
   | "cheque_bounced"
   | "payroll_validated"
+  | "payroll_cancelled"
   | "payroll_paid"
+  | "payroll_payment_cancelled"
   | "cash_closed";
 
 export interface FinancialEvent {

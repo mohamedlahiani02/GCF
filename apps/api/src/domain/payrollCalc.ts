@@ -1,12 +1,14 @@
 import { addDays, attendanceRate, computePay, mulDivRound, PayrollError, rateToBasisPoints, type AttendanceStatus, type PayRule, type Rate } from "@gcf/shared";
-import { sql, type Kysely, type Transaction } from "kysely";
+import { sql, type Kysely, type Selectable, type Transaction } from "kysely";
 import type { Database, PayRulesTable } from "../db/types.js";
-import type { Selectable } from "kysely";
 
 type Db = Kysely<Database> | Transaction<Database>;
 export type PayRuleRow = Selectable<PayRulesTable>;
 
 const SPECIFICITY: Record<PayRuleRow["scope"], number> = { group: 3, study: 2, training: 2, instructor: 1 };
+const MONTHS_FR = ["janvier", "février", "mars", "avril", "mai", "juin", "juillet", "août", "septembre", "octobre", "novembre", "décembre"];
+const frDate = (iso: string) => iso.split("-").reverse().join("/");
+export const monthLabel = (month: string) => `${MONTHS_FR[Number(month.slice(5, 7)) - 1]} ${month.slice(0, 4)}`;
 
 export function monthBounds(month: string): { start: string; end: string } {
   const start = `${month.slice(0, 7)}-01`;
@@ -15,16 +17,22 @@ export function monthBounds(month: string): { start: string; end: string } {
   return { start, end: addDays(next, -1) };
 }
 
-/** Rule priority: group, then study or training, then the instructor's default; the most recent wins a tie. */
+/**
+ * The rule that pays a session: valid on the session date, most specific first (group, then private lesson or
+ * training, then the instructor's default); the most recent rule wins a tie.
+ */
 export function pickRule(
   rules: PayRuleRow[],
   instructorId: string,
   group: { id: string; studyId: string | null; trainingId: string | null },
+  date: string,
 ): PayRuleRow | undefined {
   return rules
     .filter(
       (r) =>
         r.instructor_id === instructorId &&
+        r.valid_from <= date &&
+        (r.valid_to === null || r.valid_to >= date) &&
         ((r.scope === "group" && r.group_id === group.id) ||
           (r.scope === "study" && r.study_id !== null && r.study_id === group.studyId) ||
           (r.scope === "training" && r.training_id !== null && r.training_id === group.trainingId) ||
@@ -62,19 +70,28 @@ export function toPayRule(rule: PayRuleRow, inputs: { collected: number; session
   return { base, presence };
 }
 
-export interface ComputedLine {
+/** A pay item the rules produce for one instructor, before it is stored. */
+export interface PayCandidate {
   instructorId: string;
-  groupId: string | null;
   rule: PayRuleRow;
+  groupId: string | null;
+  groupName: string | null;
+  periodKey: string;
+  periodStart: string;
+  periodEnd: string;
+  dueOn: string;
+  label: string;
+  sessionIds: string[];
   base: number;
   rate: Rate;
   amount: number;
   details: Record<string, unknown>;
 }
 
-export interface CalculationWarning {
+export interface PayWarning {
   instructorId: string;
   groupId: string | null;
+  groupName: string | null;
   code: "no_rule" | "no_attendance";
   message: string;
 }
@@ -82,66 +99,95 @@ export interface CalculationWarning {
 interface HeldSession {
   id: string;
   groupId: string;
+  groupName: string;
   instructorId: string;
+  localDate: string;
   minutes: number;
   studyId: string | null;
   trainingId: string | null;
+  groupStart: string;
   groupEnd: string;
 }
 
+export interface CandidateScope {
+  /** Items whose period ends in this range are produced. */
+  from: string;
+  to: string;
+  instructorId?: string | undefined;
+  groupId?: string | undefined;
+  /** Sessions already paid by a validated item are left out, so nothing is ever paid twice. */
+  excludeValidated: boolean;
+}
+
 /**
- * Computes the pay lines of a month from validated sessions only (cancelled sessions are never paid).
- * Collections of a group are shared between its instructors in proportion to the sessions each held.
+ * Pay items due in a range, from held sessions with a validated sheet only (a cancelled session is never paid).
+ * Each session is paid by the one rule that applies on its date, at that rule's rhythm: one item per session, per
+ * month, or per training group at its end. Collections of a group are shared between its instructors in proportion
+ * to the sessions each held in the month.
  */
-export async function computeMonth(db: Db, centreId: string, month: string): Promise<{ lines: ComputedLine[]; warnings: CalculationWarning[] }> {
-  const { start, end } = monthBounds(month);
+export async function computeCandidates(db: Db, centreId: string, scope: CandidateScope): Promise<{ candidates: PayCandidate[]; warnings: PayWarning[] }> {
   const centre = await db
     .selectFrom("centres")
     .select(["timezone", "count_justified_as_present", "count_makeup_as_present"])
     .where("id", "=", centreId)
     .executeTakeFirstOrThrow();
   const localDate = sql<string>`(class_sessions.starts_at at time zone ${centre.timezone})::date`;
-  const sessions: HeldSession[] = (
-    await db
+  const heldSessions = (filter: (qb: ReturnType<typeof baseQuery>) => ReturnType<typeof baseQuery>) => filter(baseQuery()).execute();
+  const baseQuery = () =>
+    db
       .selectFrom("class_sessions")
       .innerJoin("groups", "groups.id", "class_sessions.group_id")
       .leftJoin("training_sessions", "training_sessions.id", "groups.training_session_id")
       .select([
         "class_sessions.id",
         "class_sessions.group_id as groupId",
+        "groups.name as groupName",
         "class_sessions.instructor_id as instructorId",
+        sql<string>`to_char(${localDate}, 'YYYY-MM-DD')`.as("localDate"),
         sql<number>`(extract(epoch from class_sessions.ends_at - class_sessions.starts_at) / 60)::integer`.as("minutes"),
         "groups.study_id as studyId",
         "training_sessions.training_id as trainingId",
+        "groups.start_date as groupStart",
         "groups.end_date as groupEnd",
       ])
       .where("class_sessions.centre_id", "=", centreId)
       .where("class_sessions.status", "=", "held")
       .where("class_sessions.sheet_status", "=", "validated")
-      .where(localDate, ">=", start)
-      .where(localDate, "<=", end)
-      .execute()
-  ).map((s) => ({ ...s, minutes: Number(s.minutes) }));
+      .$if(scope.instructorId !== undefined, (qb) => qb.where("class_sessions.instructor_id", "=", scope.instructorId!))
+      .$if(scope.groupId !== undefined, (qb) => qb.where("class_sessions.group_id", "=", scope.groupId!));
+
+  // Sessions in the range, plus every session of the groups ending in the range (a training fee covers the whole group).
+  const inRange = await heldSessions((qb) => qb.where(localDate, ">=", scope.from).where(localDate, "<=", scope.to));
+  const ending = await heldSessions((qb) => qb.where("groups.end_date", ">=", scope.from).where("groups.end_date", "<=", scope.to));
+  const sessionsById = new Map<string, HeldSession>();
+  for (const s of [...inRange, ...ending]) sessionsById.set(s.id, { ...s, minutes: Number(s.minutes) });
+
+  let paidSessions = new Set<string>();
+  if (scope.excludeValidated && sessionsById.size) {
+    const linked = await db
+      .selectFrom("pay_item_sessions")
+      .innerJoin("pay_items", "pay_items.id", "pay_item_sessions.item_id")
+      .select(["pay_item_sessions.session_id as sessionId", "pay_item_sessions.instructor_id as instructorId"])
+      .where("pay_item_sessions.active", "=", true)
+      .where("pay_items.status", "=", "validated")
+      .where("pay_item_sessions.session_id", "in", [...sessionsById.keys()])
+      .execute();
+    paidSessions = new Set(linked.map((l) => `${l.sessionId}|${l.instructorId}`));
+  }
+  const sessions = [...sessionsById.values()].filter((s) => !paidSessions.has(`${s.id}|${s.instructorId}`));
 
   const rules = await db
     .selectFrom("pay_rules")
     .selectAll()
     .where("centre_id", "=", centreId)
     .where("status", "=", "active")
-    .where("valid_from", "<=", end)
-    .where((eb) => eb.or([eb("valid_to", "is", null), eb("valid_to", ">=", start)]))
+    .$if(scope.instructorId !== undefined, (qb) => qb.where("instructor_id", "=", scope.instructorId!))
     .execute();
 
-  const groups = new Map<string, { id: string; studyId: string | null; trainingId: string | null; groupEnd: string }>();
-  for (const s of sessions) groups.set(s.groupId, { id: s.groupId, studyId: s.studyId, trainingId: s.trainingId, groupEnd: s.groupEnd });
-
+  const groupIds = [...new Set(sessions.map((s) => s.groupId))];
   const groupSettings = new Map<string, { countJustifiedAsPresent: boolean; countOtherGroupAsPresent: boolean }>();
-  if (groups.size) {
-    const rows = await db
-      .selectFrom("groups")
-      .select(["id", "count_justified_override", "count_makeup_override"])
-      .where("id", "in", [...groups.keys()])
-      .execute();
+  if (groupIds.length) {
+    const rows = await db.selectFrom("groups").select(["id", "count_justified_override", "count_makeup_override"]).where("id", "in", groupIds).execute();
     for (const r of rows) {
       groupSettings.set(r.id, {
         countJustifiedAsPresent: r.count_justified_override ?? centre.count_justified_as_present,
@@ -149,6 +195,7 @@ export async function computeMonth(db: Db, centreId: string, month: string): Pro
       });
     }
   }
+  const centreSettings = { countJustifiedAsPresent: centre.count_justified_as_present, countOtherGroupAsPresent: centre.count_makeup_as_present };
   const records = sessions.length
     ? await db
         .selectFrom("attendance_records")
@@ -164,13 +211,8 @@ export async function computeMonth(db: Db, centreId: string, month: string): Pro
   const statusesBySession = new Map<string, AttendanceStatus[]>();
   for (const r of records) statusesBySession.set(r.sessionId, [...(statusesBySession.get(r.sessionId) ?? []), r.status]);
 
-  const rateFor = (sessionIds: string[], settings: { countJustifiedAsPresent: boolean; countOtherGroupAsPresent: boolean }) =>
-    attendanceRate(
-      sessionIds.flatMap((id) => statusesBySession.get(id) ?? []),
-      settings,
-    );
-
-  const collectedByGroup = async (groupId: string, basis: "collected" | "invoiced"): Promise<number> => {
+  const collectedInMonth = async (groupId: string, month: string, basis: "collected" | "invoiced"): Promise<number> => {
+    const { start, end } = monthBounds(month);
     if (basis === "collected") {
       const row = await db
         .selectFrom("effective_allocations")
@@ -196,102 +238,163 @@ export async function computeMonth(db: Db, centreId: string, month: string): Pro
       .executeTakeFirstOrThrow();
     return Number(row.total);
   };
-
-  const lines: ComputedLine[] = [];
-  const warnings: CalculationWarning[] = [];
-
-  const build = (
-    instructorId: string,
-    groupId: string | null,
-    rule: PayRuleRow,
-    rate: Rate,
-    inputs: { collected: number; sessions: number; minutes: number },
-    extra: Record<string, unknown>,
-  ) => {
-    try {
-      const result = computePay(toPayRule(rule, inputs), rate);
-      lines.push({
-        instructorId,
-        groupId,
-        rule,
-        base: result.base,
-        rate: result.factor,
-        amount: result.amount,
-        details: { ...inputs, ...extra, rateBasisPoints: rateToBasisPoints(rate) ?? null },
-      });
-    } catch (error) {
-      if (!(error instanceof PayrollError)) throw error;
-      warnings.push({ instructorId, groupId, code: "no_attendance", message: error.message });
-      lines.push({
-        instructorId,
-        groupId,
-        rule,
-        base: 0,
-        rate: { numerator: 0, denominator: 1 },
-        amount: 0,
-        details: { ...inputs, ...extra, error: error.message },
-      });
-    }
+  const heldInMonth = async (groupId: string, month: string): Promise<number> => {
+    const { start, end } = monthBounds(month);
+    const row = await db
+      .selectFrom("class_sessions")
+      .select(sql<number>`count(*)::integer`.as("n"))
+      .where("group_id", "=", groupId)
+      .where("status", "=", "held")
+      .where("sheet_status", "=", "validated")
+      .where(localDate, ">=", start)
+      .where(localDate, "<=", end)
+      .executeTakeFirstOrThrow();
+    return Number(row.n);
   };
 
-  // Monthly flat rules set on the instructor: one line per month, attendance over all their sessions.
-  const instructorFlats = rules.filter((r) => r.scope === "instructor" && r.base_kind === "monthly_flat");
-  const flatInstructors = new Set<string>();
-  for (const rule of instructorFlats.sort((a, b) => b.valid_from.localeCompare(a.valid_from))) {
-    if (flatInstructors.has(rule.instructor_id)) continue;
-    flatInstructors.add(rule.instructor_id);
-    const own = sessions.filter((s) => s.instructorId === rule.instructor_id);
-    const settings = { countJustifiedAsPresent: centre.count_justified_as_present, countOtherGroupAsPresent: centre.count_makeup_as_present };
-    const rate =
-      rule.presence_kind === "ignore" || rule.presence_kind === "session_due"
-        ? { numerator: 1, denominator: 1 }
-        : rateFor(
-            own.map((s) => s.id),
-            settings,
-          );
-    build(
-      rule.instructor_id,
-      null,
-      rule,
-      rate,
-      { collected: 0, sessions: own.length, minutes: own.reduce((t, s) => t + s.minutes, 0) },
-      { scope: "instructor" },
-    );
+  interface Bucket {
+    instructorId: string;
+    rule: PayRuleRow;
+    groupId: string | null;
+    groupName: string | null;
+    periodKey: string;
+    periodStart: string;
+    periodEnd: string;
+    dueOn: string;
+    label: string;
+    month: string | null;
+    sessions: HeldSession[];
   }
+  const buckets = new Map<string, Bucket>();
+  const warnings: PayWarning[] = [];
+  const warned = new Set<string>();
 
-  const pairs = new Map<string, HeldSession[]>();
-  for (const s of sessions) pairs.set(`${s.instructorId}|${s.groupId}`, [...(pairs.get(`${s.instructorId}|${s.groupId}`) ?? []), s]);
-  for (const [key, own] of pairs) {
-    const [instructorId, groupId] = key.split("|") as [string, string];
-    const group = groups.get(groupId)!;
-    const rule = pickRule(rules, instructorId, group);
+  for (const s of sessions) {
+    const rule = pickRule(rules, s.instructorId, { id: s.groupId, studyId: s.studyId, trainingId: s.trainingId }, s.localDate);
     if (!rule) {
-      warnings.push({ instructorId, groupId, code: "no_rule", message: "no pay rule applies to this instructor for this group" });
+      if (!warned.has(`${s.instructorId}|${s.groupId}`)) {
+        warned.add(`${s.instructorId}|${s.groupId}`);
+        warnings.push({
+          instructorId: s.instructorId,
+          groupId: s.groupId,
+          groupName: s.groupName,
+          code: "no_rule",
+          message: "no pay rule applies to this instructor for this group",
+        });
+      }
       continue;
     }
-    if (rule.scope === "instructor" && rule.base_kind === "monthly_flat") continue;
-    if (rule.base_kind === "training_flat" && !(group.groupEnd >= start && group.groupEnd <= end)) continue;
-    const settings = groupSettings.get(groupId)!;
-    const rate = rateFor(
-      own.map((s) => s.id),
+    const month = s.localDate.slice(0, 7);
+    const flatForInstructor = rule.base_kind === "monthly_flat" && rule.scope === "instructor";
+    const shape =
+      rule.periodicity === "session"
+        ? { periodKey: `session:${s.id}`, periodStart: s.localDate, periodEnd: s.localDate, label: `${s.groupName}, séance du ${frDate(s.localDate)}`, month }
+        : rule.periodicity === "training"
+          ? {
+              periodKey: `training:${s.groupId}`,
+              periodStart: s.groupStart,
+              periodEnd: s.groupEnd,
+              label: `${s.groupName}, formation du ${frDate(s.groupStart)} au ${frDate(s.groupEnd)}`,
+              month: null,
+            }
+          : {
+              periodKey: `month:${month}`,
+              periodStart: monthBounds(month).start,
+              periodEnd: monthBounds(month).end,
+              label: `${flatForInstructor ? "Forfait mensuel" : s.groupName}, ${monthLabel(month)}`,
+              month,
+            };
+    const groupId = flatForInstructor ? null : s.groupId;
+    const key = `${s.instructorId}|${rule.id}|${groupId ?? ""}|${shape.periodKey}`;
+    const bucket = buckets.get(key) ?? {
+      instructorId: s.instructorId,
+      rule,
+      groupId,
+      groupName: flatForInstructor ? null : s.groupName,
+      ...shape,
+      dueOn: shape.periodEnd,
+      sessions: [],
+    };
+    bucket.sessions.push(s);
+    buckets.set(key, bucket);
+  }
+
+  // A monthly flat set on the instructor is owed every month it is in force, even without a session.
+  for (const rule of rules.filter((r) => r.scope === "instructor" && r.base_kind === "monthly_flat")) {
+    if (scope.groupId !== undefined) break;
+    for (let month = scope.from.slice(0, 7); month <= scope.to.slice(0, 7); month = addDays(monthBounds(month).end, 1).slice(0, 7)) {
+      const { start, end } = monthBounds(month);
+      if (end < scope.from || end > scope.to) continue;
+      if (rule.valid_from > end || (rule.valid_to !== null && rule.valid_to < start)) continue;
+      const key = `${rule.instructor_id}|${rule.id}||month:${month}`;
+      if (!buckets.has(key)) {
+        buckets.set(key, {
+          instructorId: rule.instructor_id,
+          rule,
+          groupId: null,
+          groupName: null,
+          periodKey: `month:${month}`,
+          periodStart: start,
+          periodEnd: end,
+          dueOn: end,
+          label: `Forfait mensuel, ${monthLabel(month)}`,
+          month,
+          sessions: [],
+        });
+      }
+    }
+  }
+
+  const candidates: PayCandidate[] = [];
+  for (const b of buckets.values()) {
+    if (b.periodEnd < scope.from || b.periodEnd > scope.to) continue;
+    const settings = b.groupId ? (groupSettings.get(b.groupId) ?? centreSettings) : centreSettings;
+    const rate = attendanceRate(
+      b.sessions.flatMap((s) => statusesBySession.get(s.id) ?? []),
       settings,
     );
     let collected = 0;
     let share: { mine: number; total: number } | null = null;
-    if (rule.base_kind === "pct_collections") {
-      const total = sessions.filter((s) => s.groupId === groupId).length;
-      const groupTotal = await collectedByGroup(groupId, rule.collection_basis ?? "collected");
-      collected = mulDivRound(groupTotal, own.length, total);
-      share = { mine: own.length, total };
+    if (b.rule.base_kind === "pct_collections" && b.groupId && b.month) {
+      const total = await heldInMonth(b.groupId, b.month);
+      const groupTotal = await collectedInMonth(b.groupId, b.month, b.rule.collection_basis ?? "collected");
+      collected = total > 0 ? mulDivRound(groupTotal, b.sessions.length, total) : 0;
+      share = { mine: b.sessions.length, total };
     }
-    build(
-      instructorId,
-      groupId,
-      rule,
-      rate,
-      { collected, sessions: own.length, minutes: own.reduce((t, s) => t + s.minutes, 0) },
-      { scope: rule.scope, share },
-    );
+    const inputs = { collected, sessions: b.sessions.length, minutes: b.sessions.reduce((t, s) => t + s.minutes, 0) };
+    const common = {
+      instructorId: b.instructorId,
+      rule: b.rule,
+      groupId: b.groupId,
+      groupName: b.groupName,
+      periodKey: b.periodKey,
+      periodStart: b.periodStart,
+      periodEnd: b.periodEnd,
+      dueOn: b.dueOn,
+      label: b.label,
+      sessionIds: b.sessions.map((s) => s.id),
+    };
+    try {
+      const result = computePay(toPayRule(b.rule, inputs), rate);
+      candidates.push({
+        ...common,
+        base: result.base,
+        rate: result.factor,
+        amount: result.amount,
+        details: { ...inputs, share, rateBasisPoints: rateToBasisPoints(rate) ?? null },
+      });
+    } catch (error) {
+      if (!(error instanceof PayrollError)) throw error;
+      warnings.push({ instructorId: b.instructorId, groupId: b.groupId, groupName: b.groupName, code: "no_attendance", message: error.message });
+      candidates.push({
+        ...common,
+        base: 0,
+        rate: { numerator: 0, denominator: 1 },
+        amount: 0,
+        details: { ...inputs, share, rateBasisPoints: null, error: error.message },
+      });
+    }
   }
-  return { lines, warnings };
+  candidates.sort((a, b) => a.periodEnd.localeCompare(b.periodEnd) || a.label.localeCompare(b.label, "fr"));
+  return { candidates, warnings };
 }
