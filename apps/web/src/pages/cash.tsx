@@ -9,12 +9,60 @@ import { Badge, Card, Empty, ErrorBanner, Field, Kpi, Loading, Modal, PageHeader
 import { addDaysIso, frDate, frDateTime, frTime, todayIso, tnd, tryParseTnd } from "../lib/format";
 import { METHOD } from "../lib/labels";
 
+type Method = "cash" | "cheque" | "card" | "transfer";
+type Activity = "training" | "rental" | "coworking";
+
+const ACTIVITY: Record<Activity, string> = { training: "Formation et cours", rental: "Locations de salles", coworking: "Coworking" };
+const METHODS: Method[] = ["cash", "cheque", "card", "transfer"];
+const sum = (totals: Record<Method, number>) => METHODS.reduce((s, m) => s + totals[m], 0);
+
+/** The day's takings per activity; an activity with no movement and no module stays hidden. */
+function ActivityTakings({ journal }: { journal: Journal }) {
+  const rows = (Object.keys(ACTIVITY) as Activity[]).filter((a) => journal.payments.some((p) => p.activity === a));
+  if (rows.length === 0) return null;
+  return (
+    <Card title="Recette du jour par activité">
+      <div className="xs">
+        <table className="tbl">
+          <thead>
+            <tr>
+              <th>Activité</th>
+              {METHODS.map((m) => (
+                <th key={m} className="num">
+                  {METHOD[m]}
+                </th>
+              ))}
+              <th className="num">Total (TND)</th>
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map((a) => (
+              <tr key={a}>
+                <td>{ACTIVITY[a]}</td>
+                {METHODS.map((m) => (
+                  <td key={m} className="num">
+                    {tnd(journal.byActivity[a][m])}
+                  </td>
+                ))}
+                <td className="num">
+                  <strong>{tnd(sum(journal.byActivity[a]))}</strong>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </Card>
+  );
+}
+
 interface Journal {
   day: string;
   payments: {
     id: string;
     receivedAt: string;
     payerName: string | null;
+    activity: Activity;
     method: string;
     amount: number;
     status: "valid" | "cancelled";
@@ -22,7 +70,8 @@ interface Journal {
     receiptNumber: string | null;
     createdBy: string | null;
   }[];
-  totals: Record<"cash" | "cheque" | "card" | "transfer", number>;
+  totals: Record<Method, number>;
+  byActivity: Record<Activity, Record<Method, number>>;
   expectedCash: number;
   closing: { expectedCash: number; countedCash: number; difference: number; comment: string | null; closedAt: string; closedBy: string | null } | null;
 }
@@ -171,6 +220,7 @@ export function CashPage() {
               </span>
             </div>
           ) : null}
+          <ActivityTakings journal={j} />
           <Card title={`Journal du ${frDate(j.day)}`}>
             {j.payments.length === 0 ? (
               <Empty title="Aucun mouvement ce jour" />
@@ -181,6 +231,7 @@ export function CashPage() {
                     <tr>
                       <th>Heure</th>
                       <th>Payeur</th>
+                      <th>Activité</th>
                       <th>Reçu</th>
                       <th>Mode</th>
                       <th className="num">Montant (TND)</th>
@@ -193,6 +244,7 @@ export function CashPage() {
                       <tr key={p.id} className={p.status === "cancelled" ? "dim" : ""}>
                         <td>{frTime(p.receivedAt)}</td>
                         <td>{p.payerName}</td>
+                        <td>{ACTIVITY[p.activity]}</td>
                         <td>{p.receiptNumber ?? ""}</td>
                         <td>{METHOD[p.method] ?? p.method}</td>
                         <td className="num">{tnd(p.amount)}</td>
