@@ -156,7 +156,12 @@ async function portalLimits(
 /** Checks a booking against every rule and prices it. With `lock` the promotion code row is locked too. */
 async function evaluate(db: Db, centreId: string, actor: BookingActor, input: BookingInput, now: Date, lock: boolean): Promise<Evaluation> {
   if (actor.source === "portal" && actor.memberId !== input.memberId) throw forbidden();
-  const member = await db.selectFrom("members").select(["id", "kind", "status"]).where("id", "=", input.memberId).where("centre_id", "=", centreId).executeTakeFirst();
+  const member = await db
+    .selectFrom("members")
+    .select(["id", "kind", "status"])
+    .where("id", "=", input.memberId)
+    .where("centre_id", "=", centreId)
+    .executeTakeFirst();
   if (!member) throw notFound("member");
   if (member.status !== "active") throw unprocessable("member_inactive", "the client account is not active");
   const resource = await db
@@ -234,8 +239,7 @@ async function evaluate(db: Db, centreId: string, actor: BookingActor, input: Bo
   if (await resourceBusy(db, resource.id, startsAt, blockedUntil, null)) throw slotTaken();
   if (resource.roomId && (await roomBusy(db, resource.roomId, startsAt, blockedUntil, null))) throw roomUnavailable();
 
-  const needsApproval =
-    settings.approval_mode === "all" || (settings.approval_mode === "visitors" && profile === "visitor") || resource.requiresApproval;
+  const needsApproval = settings.approval_mode === "all" || (settings.approval_mode === "visitors" && profile === "visitor") || resource.requiresApproval;
   return {
     memberId: member.id,
     profile,
@@ -440,7 +444,15 @@ async function issueCharge(
 /** The booking charge, created when a booking is confirmed and costs something (rule 10). */
 async function issueBookingCharge(trx: Transaction<Database>, centreId: string, booking: BookingRecord, userId: string | null): Promise<void> {
   if (booking.charge <= 0 || !booking.memberId) return;
-  await issueCharge(trx, centreId, { id: booking.id, memberId: booking.memberId }, `Coworking : ${slotText(booking)}`, booking.charge, booking.localDate, userId);
+  await issueCharge(
+    trx,
+    centreId,
+    { id: booking.id, memberId: booking.memberId },
+    `Coworking : ${slotText(booking)}`,
+    booking.charge,
+    booking.localDate,
+    userId,
+  );
   await settleMember(trx, centreId, booking.memberId, userId);
 }
 
@@ -579,7 +591,9 @@ async function notifyMember(
 ): Promise<void> {
   if (!booking.memberId || !booking.memberEmail) return;
   const link = portalLink(mail.publicOrigin, "/reservations");
-  const text = [`Bonjour ${booking.memberName},`, "", ...lines, "", ...(link ? [`Vos réservations : ${link}`, ""] : []), await centreName(db, centreId)].join("\n");
+  const text = [`Bonjour ${booking.memberName},`, "", ...lines, "", ...(link ? [`Vos réservations : ${link}`, ""] : []), await centreName(db, centreId)].join(
+    "\n",
+  );
   await sendMemberMail(db, mail.mailer, mail.log, { centreId, memberId: booking.memberId, kind: "booking", to: booking.memberEmail, subject, text, sentBy });
 }
 
@@ -624,11 +638,7 @@ export async function approveBooking(
     centreId,
     booking,
     "Réservation confirmée",
-    [
-      "Votre réservation est confirmée :",
-      ...slotLines(booking),
-      booking.charge > 0 ? amountLine("montant", booking.charge) : "- aucun montant à régler",
-    ],
+    ["Votre réservation est confirmée :", ...slotLines(booking), booking.charge > 0 ? amountLine("montant", booking.charge) : "- aucun montant à régler"],
     userId,
   );
   return booking;
@@ -743,7 +753,15 @@ export async function cancelBooking(
     await deactivateRoomBooking(trx, [id]);
     if (fee > 0) {
       const { timezone } = await centreCalendar(trx, centreId);
-      await issueCharge(trx, centreId, { id, memberId: before.memberId! }, `Coworking : frais d'annulation tardive, ${slotText(before)}`, fee, todayIn(timezone, now), userId);
+      await issueCharge(
+        trx,
+        centreId,
+        { id, memberId: before.memberId! },
+        `Coworking : frais d'annulation tardive, ${slotText(before)}`,
+        fee,
+        todayIn(timezone, now),
+        userId,
+      );
       await settleMember(trx, centreId, before.memberId!, userId);
     }
     await writeAudit(trx, {
@@ -841,7 +859,12 @@ export async function checkIn(
     let id: string;
     if ("bookingId" in target) id = target.bookingId;
     else {
-      const found = await trx.selectFrom("cw_bookings").select("id").where("check_in_code", "=", target.code).where("centre_id", "=", centreId).executeTakeFirst();
+      const found = await trx
+        .selectFrom("cw_bookings")
+        .select("id")
+        .where("check_in_code", "=", target.code)
+        .where("centre_id", "=", centreId)
+        .executeTakeFirst();
       if (!found) throw notFound("booking");
       id = found.id;
     }
@@ -989,4 +1012,3 @@ export async function removeBlock(db: Kysely<Database>, centreId: string, userId
     });
   });
 }
-

@@ -23,7 +23,15 @@ export interface SpaceCard {
 }
 
 export interface PricingData {
-  plans: { id: string; name: string; description: string | null; price: number; period: CwPeriod; billing: "upfront" | "monthly"; includesDomiciliation: boolean }[];
+  plans: {
+    id: string;
+    name: string;
+    description: string | null;
+    price: number;
+    period: CwPeriod;
+    billing: "upfront" | "monthly";
+    includesDomiciliation: boolean;
+  }[];
   packs: { id: string; name: string; typeName: string; quotaKind: Exclude<CwQuotaKind, "unlimited">; quota: number; validityDays: number; price: number }[];
   formats: { id: string; typeName: string; label: string; nature: CwFormatNature; visitor: number; member: number }[];
 }
@@ -136,7 +144,9 @@ async function loadPricing(db: Kysely<Database>, centreId: string, typeId: strin
     plansQuery = plansQuery.where((eb) =>
       eb.or([
         eb("assigned_type_id", "=", typeId),
-        eb.exists(eb.selectFrom("cw_plan_entitlements").select("plan_id").whereRef("cw_plan_entitlements.plan_id", "=", "cw_plans.id").where("type_id", "=", typeId)),
+        eb.exists(
+          eb.selectFrom("cw_plan_entitlements").select("plan_id").whereRef("cw_plan_entitlements.plan_id", "=", "cw_plans.id").where("type_id", "=", typeId),
+        ),
       ]),
     );
   }
@@ -179,12 +189,7 @@ async function loadPricing(db: Kysely<Database>, centreId: string, typeId: strin
           .where("profile", "=", "visitor")
           .as("visitor"),
       (eb) =>
-        eb
-          .selectFrom("cw_prices")
-          .select("amount")
-          .whereRef("cw_prices.format_id", "=", "cw_booking_formats.id")
-          .where("profile", "=", "member")
-          .as("member"),
+        eb.selectFrom("cw_prices").select("amount").whereRef("cw_prices.format_id", "=", "cw_booking_formats.id").where("profile", "=", "member").as("member"),
     ])
     .where("cw_booking_formats.centre_id", "=", centreId)
     .where("cw_booking_formats.status", "=", "active")
@@ -203,7 +208,15 @@ async function loadPricing(db: Kysely<Database>, centreId: string, typeId: strin
       billing: p.billing,
       includesDomiciliation: p.includes_domiciliation,
     })),
-    packs: packs.map((p) => ({ id: p.id, name: p.name, typeName: p.typeName, quotaKind: p.quota_kind, quota: p.quota, validityDays: p.validity_days, price: p.price })),
+    packs: packs.map((p) => ({
+      id: p.id,
+      name: p.name,
+      typeName: p.typeName,
+      quotaKind: p.quota_kind,
+      quota: p.quota,
+      validityDays: p.validity_days,
+      price: p.price,
+    })),
     // A format without a visitor price is not for sale; a missing member price falls back to the visitor price.
     formats: formats
       .filter((f) => isBookableCategory(f.category) && f.visitor !== null)

@@ -60,7 +60,9 @@ export async function freeResources(
       sql<boolean>`not exists (select 1 from cw_bookings b where b.resource_id = r.id and b.status = any(${occupying}::text[])
         and tstzrange(b.starts_at, b.blocked_until) && ${range})`,
     )
-    .where(sql<boolean>`(r.room_id is null or not exists (select 1 from room_bookings rb where rb.room_id = r.room_id and rb.active and rb.period && ${range}))`)
+    .where(
+      sql<boolean>`(r.room_id is null or not exists (select 1 from room_bookings rb where rb.room_id = r.room_id and rb.active and rb.period && ${range}))`,
+    )
     .orderBy("f.position")
     .orderBy("r.code")
     .execute();

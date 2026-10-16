@@ -176,7 +176,9 @@ export interface RevenueLine {
   collected: number;
 }
 
-const SOURCE = sql<RevenueLine["source"]>`case when i.cw_booking_id is not null then 'bookings' when i.cw_subscription_id is not null then 'subscriptions' else 'packs' end`;
+const SOURCE = sql<
+  RevenueLine["source"]
+>`case when i.cw_booking_id is not null then 'bookings' when i.cw_subscription_id is not null then 'subscriptions' else 'packs' end`;
 const TYPE = sql<string | null>`coalesce(r.type_id, p.type_id, pl.assigned_type_id)`;
 const OWNERS = sql`left join cw_bookings b on b.id = i.cw_booking_id
   left join cw_resources r on r.id = b.resource_id

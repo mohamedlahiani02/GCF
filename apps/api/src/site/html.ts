@@ -7,5 +7,7 @@ export function esc(value: string | number): string {
 
 /** JSON for an inline `<script type="application/ld+json">` block: `<` is escaped so the data cannot close the tag. */
 export function jsonForScript(value: unknown): string {
-  return JSON.stringify(value).replace(/</g, "\\u003c").replace(/[\u2028\u2029]/g, (c) => `\\u${c.charCodeAt(0).toString(16)}`);
+  return JSON.stringify(value)
+    .replace(/</g, "\\u003c")
+    .replace(/[\u2028\u2029]/g, (c) => `\\u${c.charCodeAt(0).toString(16)}`);
 }

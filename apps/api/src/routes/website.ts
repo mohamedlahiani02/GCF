@@ -57,7 +57,10 @@ const settingsBody = z
   .partial()
   .strict();
 
-const slug = z.string().regex(/^[a-z0-9]+(-[a-z0-9]+)*$/, "lowercase letters, digits and hyphens").max(80);
+const slug = z
+  .string()
+  .regex(/^[a-z0-9]+(-[a-z0-9]+)*$/, "lowercase letters, digits and hyphens")
+  .max(80);
 const pageCreate = z
   .object({
     kind: z.enum(["page", "article"]).default("page"),
@@ -69,10 +72,7 @@ const pageCreate = z
     articleDate: isoDate.optional(),
   })
   .strict();
-const pageUpdate = z
-  .object({ slug, parentId: uuid.nullable(), showInMenu: z.boolean(), showInFooter: z.boolean(), articleDate: isoDate })
-  .partial()
-  .strict();
+const pageUpdate = z.object({ slug, parentId: uuid.nullable(), showInMenu: z.boolean(), showInFooter: z.boolean(), articleDate: isoDate }).partial().strict();
 const reorderBody = z
   .object({ parentId: uuid.nullable(), pageIds: z.array(uuid).min(1).max(500) })
   .strict()
@@ -155,14 +155,26 @@ const presentPage = (p: PageRow) => ({
 /** Media files the site may newly reference must be active files of the centre. */
 async function assertActiveMedia(trx: Trx, centreId: string, ids: readonly string[]): Promise<void> {
   if (ids.length === 0) return;
-  const found = await trx.selectFrom("media_files").select("id").where("centre_id", "=", centreId).where("status", "=", "active").where("id", "in", ids).execute();
+  const found = await trx
+    .selectFrom("media_files")
+    .select("id")
+    .where("centre_id", "=", centreId)
+    .where("status", "=", "active")
+    .where("id", "in", ids)
+    .execute();
   const missing = ids.filter((id) => !found.some((f) => f.id === id));
   if (missing.length) throw unprocessable("unknown_media", "an image does not exist or is archived", { ids: missing });
 }
 
 async function assertLivePages(trx: Trx, centreId: string, ids: readonly string[]): Promise<void> {
   if (ids.length === 0) return;
-  const found = await trx.selectFrom("site_pages").select("id").where("centre_id", "=", centreId).where("status", "<>", "archived").where("id", "in", ids).execute();
+  const found = await trx
+    .selectFrom("site_pages")
+    .select("id")
+    .where("centre_id", "=", centreId)
+    .where("status", "<>", "archived")
+    .where("id", "in", ids)
+    .execute();
   const missing = ids.filter((id) => !found.some((f) => f.id === id));
   if (missing.length) throw unprocessable("unknown_page", "a linked page does not exist or is archived", { ids: missing });
 }
@@ -189,7 +201,8 @@ function checkPlacement(pages: readonly PageRow[], page: { id: string | null; sl
   const byId = new Map(pages.map((p) => [p.id, p]));
   if (page.parent_id) {
     const parent = byId.get(page.parent_id);
-    if (!parent || parent.kind !== "page" || parent.is_home || page.is_home) throw unprocessable("invalid_parent", "the parent must be a content page other than the home page");
+    if (!parent || parent.kind !== "page" || parent.is_home || page.is_home)
+      throw unprocessable("invalid_parent", "the parent must be a content page other than the home page");
     if (page.id && (parent.id === page.id || descendantsOf(pages, page.id).some((d) => d.id === parent.id)))
       throw unprocessable("invalid_parent", "a page cannot be placed under itself");
     const height = page.id ? Math.max(0, ...descendantsOf(pages, page.id).map((d) => depthOf(byId, d.id) - depthOf(byId, page.id))) : 0;
@@ -253,13 +266,18 @@ export const websiteRoutes: FastifyPluginAsync = async (app) => {
       if (color === undefined) continue;
       const ratio = contrastWithWhite(color);
       if (ratio < MIN_CONTRAST)
-        throw unprocessable("low_contrast", "white text on this colour is not readable enough", { field, ratio: Math.round(ratio * 100) / 100, minimum: MIN_CONTRAST });
+        throw unprocessable("low_contrast", "white text on this colour is not readable enough", {
+          field,
+          ratio: Math.round(ratio * 100) / 100,
+          minimum: MIN_CONTRAST,
+        });
     }
     return db.transaction().execute(async (trx) => {
       await ensureSiteSettings(trx, actor.centreId);
       const before = await trx.selectFrom("site_settings").selectAll().where("centre_id", "=", actor.centreId).forUpdate().executeTakeFirstOrThrow();
       const languages = body.languages ?? before.languages;
-      const defaultLanguage = body.defaultLanguage ?? (body.languages && !body.languages.includes(before.default_language) ? body.languages[0]! : before.default_language);
+      const defaultLanguage =
+        body.defaultLanguage ?? (body.languages && !body.languages.includes(before.default_language) ? body.languages[0]! : before.default_language);
       if (!languages.includes(defaultLanguage)) throw unprocessable("invalid_default_language", "the default language must be one of the site languages");
       await assertActiveMedia(
         trx,
@@ -320,7 +338,10 @@ export const websiteRoutes: FastifyPluginAsync = async (app) => {
     const drafts = ids.length ? await db.selectFrom("site_page_drafts").select(["page_id", "language", "title"]).where("page_id", "in", ids).execute() : [];
     const versionIds = pages.flatMap((p) => [p.published_version_id, p.scheduled_version_id]).filter((v): v is string => !!v);
     const numbers = new Map(
-      (versionIds.length ? await db.selectFrom("site_page_versions").select(["id", "number"]).where("id", "in", versionIds).execute() : []).map((v) => [v.id, v.number]),
+      (versionIds.length ? await db.selectFrom("site_page_versions").select(["id", "number"]).where("id", "in", versionIds).execute() : []).map((v) => [
+        v.id,
+        v.number,
+      ]),
     );
     const byId = new Map(pages.map((p) => [p.id, p]));
     type Node = ReturnType<typeof presentPage> & {
@@ -515,7 +536,12 @@ export const websiteRoutes: FastifyPluginAsync = async (app) => {
         .where("is_home", "=", true)
         .returning("id")
         .executeTakeFirst();
-      const after = await trx.updateTable("site_pages").set({ is_home: true, updated_at: new Date() }).where("id", "=", id).returning(PAGE_COLUMNS).executeTakeFirstOrThrow();
+      const after = await trx
+        .updateTable("site_pages")
+        .set({ is_home: true, updated_at: new Date() })
+        .where("id", "=", id)
+        .returning(PAGE_COLUMNS)
+        .executeTakeFirstOrThrow();
       await writeAudit(trx, {
         centreId: actor.centreId,
         userId: actor.userId,
@@ -538,8 +564,14 @@ export const websiteRoutes: FastifyPluginAsync = async (app) => {
     if (!settings.languages.includes(params.language)) throw unprocessable("language_not_enabled", "this language is not enabled on the site");
     const page = await db.selectFrom("site_pages").select("id").where("id", "=", params.id).where("centre_id", "=", centreId).executeTakeFirst();
     if (!page) throw notFound("page");
-    const draft = await db.selectFrom("site_page_drafts").selectAll().where("page_id", "=", params.id).where("language", "=", params.language).executeTakeFirst();
-    if (!draft) return { language: params.language, title: "", menuLabel: null, seoTitle: null, seoDescription: null, ogMediaId: null, sections: [], updatedAt: null };
+    const draft = await db
+      .selectFrom("site_page_drafts")
+      .selectAll()
+      .where("page_id", "=", params.id)
+      .where("language", "=", params.language)
+      .executeTakeFirst();
+    if (!draft)
+      return { language: params.language, title: "", menuLabel: null, seoTitle: null, seoDescription: null, ogMediaId: null, sections: [], updatedAt: null };
     return {
       language: draft.language,
       title: draft.title,
@@ -660,11 +692,22 @@ export const websiteRoutes: FastifyPluginAsync = async (app) => {
         languages: Object.fromEntries(
           drafts.map((d) => [
             d.language,
-            { title: d.title, menuLabel: d.menu_label, seoTitle: d.seo_title, seoDescription: d.seo_description, ogMediaId: d.og_media_id, sections: d.sections },
+            {
+              title: d.title,
+              menuLabel: d.menu_label,
+              seoTitle: d.seo_title,
+              seoDescription: d.seo_description,
+              ogMediaId: d.og_media_id,
+              sections: d.sections,
+            },
           ]),
         ),
       };
-      const last = await trx.selectFrom("site_page_versions").select(sql<number>`coalesce(max(number), 0)`.as("n")).where("page_id", "=", id).executeTakeFirstOrThrow();
+      const last = await trx
+        .selectFrom("site_page_versions")
+        .select(sql<number>`coalesce(max(number), 0)`.as("n"))
+        .where("page_id", "=", id)
+        .executeTakeFirstOrThrow();
       const version = await trx
         .insertInto("site_page_versions")
         .values({ page_id: id, number: Number(last.n) + 1, content: JSON.stringify(content), created_by: actor.userId })
@@ -838,7 +881,12 @@ export const websiteRoutes: FastifyPluginAsync = async (app) => {
     const body = redirectBody.parse(request.body);
     const created = await db.transaction().execute(async (trx) => {
       // A redirect to a path that itself redirects is pointed at the final target, so visitors never follow a chain.
-      const next = await trx.selectFrom("site_redirects").select("to_path").where("centre_id", "=", actor.centreId).where("from_path", "=", body.toPath).executeTakeFirst();
+      const next = await trx
+        .selectFrom("site_redirects")
+        .select("to_path")
+        .where("centre_id", "=", actor.centreId)
+        .where("from_path", "=", body.toPath)
+        .executeTakeFirst();
       const toPath = next?.to_path ?? body.toPath;
       if (toPath === body.fromPath) throw unprocessable("redirect_loop", "this redirect would lead back to itself");
       const row = await trx
@@ -847,7 +895,14 @@ export const websiteRoutes: FastifyPluginAsync = async (app) => {
         .returning(["id", "from_path as fromPath", "to_path as toPath", "automatic", "created_at as createdAt"])
         .executeTakeFirstOrThrow();
       await trx.updateTable("site_redirects").set({ to_path: toPath }).where("centre_id", "=", actor.centreId).where("to_path", "=", body.fromPath).execute();
-      await writeAudit(trx, { centreId: actor.centreId, userId: actor.userId, action: "site_redirect.created", objectType: "site_redirect", objectId: row.id, after: row });
+      await writeAudit(trx, {
+        centreId: actor.centreId,
+        userId: actor.userId,
+        action: "site_redirect.created",
+        objectType: "site_redirect",
+        objectId: row.id,
+        after: row,
+      });
       return row;
     });
     return reply.status(201).send(created);
@@ -864,7 +919,14 @@ export const websiteRoutes: FastifyPluginAsync = async (app) => {
         .returning(["id", "from_path as fromPath", "to_path as toPath", "automatic"])
         .executeTakeFirst();
       if (!row) throw notFound("redirect");
-      await writeAudit(trx, { centreId: actor.centreId, userId: actor.userId, action: "site_redirect.deleted", objectType: "site_redirect", objectId: id, before: row });
+      await writeAudit(trx, {
+        centreId: actor.centreId,
+        userId: actor.userId,
+        action: "site_redirect.deleted",
+        objectType: "site_redirect",
+        objectId: id,
+        before: row,
+      });
     });
     return reply.status(204).send();
   });
@@ -873,14 +935,17 @@ export const websiteRoutes: FastifyPluginAsync = async (app) => {
 
   app.get("/leads", { preHandler: leads }, async (request) => {
     const query = leadsQuery.parse(request.query);
-    let base = db
-      .selectFrom("site_leads")
-      .leftJoin("users", "users.id", "site_leads.handled_by")
-      .where("site_leads.centre_id", "=", request.user!.centreId);
+    let base = db.selectFrom("site_leads").leftJoin("users", "users.id", "site_leads.handled_by").where("site_leads.centre_id", "=", request.user!.centreId);
     if (query.status) base = base.where("site_leads.status", "=", query.status);
     if (query.kind) base = base.where("site_leads.kind", "=", query.kind);
-    if (query.from) base = base.where(sql<string>`(site_leads.created_at at time zone (select timezone from centres where id = site_leads.centre_id))::date`, ">=", query.from);
-    if (query.to) base = base.where(sql<string>`(site_leads.created_at at time zone (select timezone from centres where id = site_leads.centre_id))::date`, "<=", query.to);
+    if (query.from)
+      base = base.where(
+        sql<string>`(site_leads.created_at at time zone (select timezone from centres where id = site_leads.centre_id))::date`,
+        ">=",
+        query.from,
+      );
+    if (query.to)
+      base = base.where(sql<string>`(site_leads.created_at at time zone (select timezone from centres where id = site_leads.centre_id))::date`, "<=", query.to);
     const rows = await base
       .select([
         "site_leads.id",
@@ -939,4 +1004,3 @@ export const websiteRoutes: FastifyPluginAsync = async (app) => {
     });
   });
 };
-

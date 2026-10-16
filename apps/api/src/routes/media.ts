@@ -116,7 +116,12 @@ export const mediaRoutes: FastifyPluginAsync = async (app) => {
 
   app.get("/:id", { preHandler: read }, async (request) => {
     const { id } = idParam.parse(request.params);
-    const row = await db.selectFrom("media_files").select(MEDIA_COLUMNS).where("id", "=", id).where("centre_id", "=", request.user!.centreId).executeTakeFirst();
+    const row = await db
+      .selectFrom("media_files")
+      .select(MEDIA_COLUMNS)
+      .where("id", "=", id)
+      .where("centre_id", "=", request.user!.centreId)
+      .executeTakeFirst();
     if (!row) throw notFound("media file");
     return present(row);
   });
@@ -179,7 +184,12 @@ export const mediaRoutes: FastifyPluginAsync = async (app) => {
   // A media id never changes content, so the browser may keep the bytes for good.
   app.get("/:id/file", { preHandler: read }, async (request, reply) => {
     const { id } = idParam.parse(request.params);
-    const row = await db.selectFrom("media_files").select(["data", "mime"]).where("id", "=", id).where("centre_id", "=", request.user!.centreId).executeTakeFirst();
+    const row = await db
+      .selectFrom("media_files")
+      .select(["data", "mime"])
+      .where("id", "=", id)
+      .where("centre_id", "=", request.user!.centreId)
+      .executeTakeFirst();
     if (!row) throw notFound("media file");
     return reply.header("content-type", row.mime).header("cache-control", "private, max-age=31536000, immutable").send(row.data);
   });

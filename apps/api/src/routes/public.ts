@@ -35,8 +35,7 @@ const leadBody = z
   })
   .strict();
 
-const backTo = (page: string | undefined, section: string | undefined, flag: "envoye" | "erreur") =>
-  `${page ?? "/"}?${flag}=1${section ? `#${section}` : ""}`;
+const backTo = (page: string | undefined, section: string | undefined, flag: "envoye" | "erreur") => `${page ?? "/"}?${flag}=1${section ? `#${section}` : ""}`;
 
 /** Endpoints the public website posts to (visitor requests). */
 export const publicRoutes: FastifyPluginAsync = async (app) => {

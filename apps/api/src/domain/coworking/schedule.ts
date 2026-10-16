@@ -1,4 +1,4 @@
-import { addDays, isoWeekday, todayIn } from "@gcf/shared";
+import { addDays, isoWeekday } from "@gcf/shared";
 import { sql, type Kysely, type Transaction } from "kysely";
 import type { Database } from "../../db/types.js";
 import type { CwFormatNature } from "../../db/types.coworking.js";
@@ -31,18 +31,8 @@ export interface CentreCalendar {
 }
 
 export async function centreCalendar(db: Db, centreId: string): Promise<CentreCalendar> {
-  const row = await db
-    .selectFrom("centres")
-    .select(["timezone", "open_from", "open_to", "open_weekdays"])
-    .where("id", "=", centreId)
-    .executeTakeFirstOrThrow();
+  const row = await db.selectFrom("centres").select(["timezone", "open_from", "open_to", "open_weekdays"]).where("id", "=", centreId).executeTakeFirstOrThrow();
   return { timezone: row.timezone, openFrom: row.open_from.slice(0, 5), openTo: row.open_to.slice(0, 5), openWeekdays: row.open_weekdays };
-}
-
-/** The centre's local date at an instant. */
-export async function localToday(db: Db, centreId: string, now: Date): Promise<string> {
-  const { timezone } = await centreCalendar(db, centreId);
-  return todayIn(timezone, now);
 }
 
 /**
@@ -108,7 +98,7 @@ export interface LocalSlot {
  * Checks the length asked for a free format: a multiple of its step between its minimum and maximum. Other
  * natures have their own length and ignore it.
  */
-export function freeDuration(format: FormatRule, durationMinutes: number | undefined): number {
+function freeDuration(format: FormatRule, durationMinutes: number | undefined): number {
   const step = format.start_step_minutes!;
   const duration = durationMinutes ?? format.min_minutes!;
   if (duration < format.min_minutes! || duration > format.max_minutes! || duration % step !== 0) {
@@ -158,7 +148,11 @@ export async function localInstants(db: Db, timezone: string, items: { date: str
 
 /** Booking rules of the centre. The row is created with its column defaults the first time it is needed. */
 export async function coworkingSettings(db: Db, centreId: string) {
-  await db.insertInto("cw_settings").values({ centre_id: centreId }).onConflict((oc) => oc.column("centre_id").doNothing()).execute();
+  await db
+    .insertInto("cw_settings")
+    .values({ centre_id: centreId })
+    .onConflict((oc) => oc.column("centre_id").doNothing())
+    .execute();
   const row = await db.selectFrom("cw_settings").selectAll().where("centre_id", "=", centreId).executeTakeFirstOrThrow();
   return { ...row, offpeak_from: row.offpeak_from === null ? null : row.offpeak_from.slice(0, 5) };
 }

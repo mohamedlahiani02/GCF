@@ -94,7 +94,14 @@ export function isPublic(state: SiteState, pageId: string, language: SiteLanguag
   return state.published.get(pageId)?.languages.includes(language) ?? false;
 }
 
-function navItems(state: SiteState, language: SiteLanguage, currentId: string | null, flag: "show_in_menu" | "show_in_footer", parentId: string | null, depth: number): MenuItem[] {
+function navItems(
+  state: SiteState,
+  language: SiteLanguage,
+  currentId: string | null,
+  flag: "show_in_menu" | "show_in_footer",
+  parentId: string | null,
+  depth: number,
+): MenuItem[] {
   return state.pages
     .filter((p) => p.parent_id === parentId && p[flag] && isPublic(state, p.id, language))
     .map((p) => {

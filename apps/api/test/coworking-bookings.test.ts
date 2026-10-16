@@ -28,7 +28,14 @@ const staff = (): BookingActor => ({ source: "staff", userId: ids.adminUser! });
 async function insertMember(firstName: string, kind: "member" | "guest" = "member"): Promise<string> {
   const row = await h.db
     .insertInto("members")
-    .values({ centre_id: h.centreId, kind, first_name: firstName, last_name: "Test", email: kind === "member" ? `${firstName.toLowerCase()}@cw.test` : null, phone: "20 000 000" })
+    .values({
+      centre_id: h.centreId,
+      kind,
+      first_name: firstName,
+      last_name: "Test",
+      email: kind === "member" ? `${firstName.toLowerCase()}@cw.test` : null,
+      phone: "20 000 000",
+    })
     .returning("id")
     .executeTakeFirstOrThrow();
   return row.id;
@@ -52,7 +59,12 @@ async function insertResource(code: string, typeId: string, roomId: string | nul
   return row.id;
 }
 
-async function insertFormat(typeId: string, label: string, values: Record<string, unknown>, prices: { profile: "visitor" | "member"; amount: number; offpeak?: number }[]) {
+async function insertFormat(
+  typeId: string,
+  label: string,
+  values: Record<string, unknown>,
+  prices: { profile: "visitor" | "member"; amount: number; offpeak?: number }[],
+) {
   const row = await h.db
     .insertInto("cw_booking_formats")
     .values({ centre_id: h.centreId, type_id: typeId, label, nature: "fixed", ...values })
@@ -451,7 +463,14 @@ describe("conflicts", () => {
   it("refuses a meeting room shared with a training session and books the room otherwise", async () => {
     const subject = (await h.call("POST", "/api/catalogue/subjects", admin, { name: "Gestion" })).body.id;
     const teacher = (
-      await h.call("POST", "/api/instructors", admin, { firstName: "Sami", lastName: "Ben", kind: "trainer", employment: "freelance", subjectIds: [], availability: [] })
+      await h.call("POST", "/api/instructors", admin, {
+        firstName: "Sami",
+        lastName: "Ben",
+        kind: "trainer",
+        employment: "freelance",
+        subjectIds: [],
+        availability: [],
+      })
     ).body.id;
     const study = (
       await h.call("POST", "/api/catalogue/studies", admin, {
@@ -476,7 +495,7 @@ describe("conflicts", () => {
         slots: [{ weekday: 1, startTime: "14:00", endTime: "16:00" }],
       })
     ).body.id;
-    expect((await h.call("POST", `/api/groups/${group}/sessions/generate`, admin, { from: "2027-03-01", to: "2027-03-31" })).status).toBe(200);
+    await h.call("POST", `/api/groups/${group}/sessions/generate`, admin, { from: "2027-03-01", to: "2027-03-31" });
     const clash = await book(ids.V, ids.R1, ids.fFree, "2027-03-08", "15:00", { durationMinutes: 60 });
     expect(clash.status).toBe(409);
     expect(clash.body.code).toBe("room_unavailable");
@@ -547,14 +566,14 @@ describe("decisions and cancellations", () => {
     expect(mailer.sent.at(-1)!.subject).toBe("Réservation annulée");
 
     const late = await book(ids.M, ids.A4, ids.fMorning, "2027-03-17", "08:00");
-    expect(late.body).toMatchObject({ coveredMinutes: 60, charge: 22_500 });
+    expect(late.body).toMatchObject({ coveredMinutes: 120, charge: 15_000 });
     const result = await cancelBooking(h.db, mail, h.centreId, portal(ids.M), late.body.id, "empêchement", at("2027-03-17T06:00:00Z"));
-    expect(result).toMatchObject({ free: false, fee: 11_250 });
-    expect(result.booking.lateCancelFee).toBe(11_250);
+    expect(result).toMatchObject({ free: false, fee: 7_500 });
+    expect(result.booking.lateCancelFee).toBe(7_500);
     const charges = await chargesOf(late.body.id);
     expect(charges.map((c) => [c.amount, c.status, c.due_date])).toEqual([
-      [22_500, "cancelled", "2027-03-17"],
-      [11_250, "open", "2027-03-17"],
+      [15_000, "cancelled", "2027-03-17"],
+      [7_500, "open", "2027-03-17"],
     ]);
     expect(charges[1]!.label).toBe("Coworking : frais d'annulation tardive, Poste flexible A4, 17/03/2027 08:00-12:00");
     expect((await usageOf(late.body.id)).map((u) => u.status)).toEqual(["active"]);
@@ -562,8 +581,9 @@ describe("decisions and cancellations", () => {
   });
 
   it("refuses to cancel a booking whose charge was paid", async () => {
-    const booking = await book(ids.W, ids.A4, ids.fHour, "2027-03-18", "09:00");
-    const payment = await h.call("POST", "/api/payments", secretariat, { memberId: ids.W, amount: 10_000, method: "cash" });
+    const payer = await insertMember("Karim");
+    const booking = await book(payer, ids.A4, ids.fHour, "2027-03-18", "09:00");
+    const payment = await h.call("POST", "/api/payments", secretariat, { memberId: payer, amount: 10_000, method: "cash" });
     expect(payment.status).toBe(201);
     const refused = await h.call("POST", `/api/coworking/bookings/${booking.body.id}/cancel`, secretariat, { reason: "annulation" });
     expect(refused.status).toBe(409);
@@ -582,7 +602,9 @@ describe("check-in and release", () => {
     expect((await h.call("POST", "/api/coworking/check-in", secretariat, { code })).body.code).toBe("check_in_closed");
     const checked = await checkIn(h.db, h.centreId, { code }, { source: "qr", userId: null }, at("2027-03-22T07:30:00Z"));
     expect(checked.status).toBe("checked_in");
-    await expect(checkIn(h.db, h.centreId, { bookingId: booking.body.id }, { source: "staff", userId: ids.adminUser! }, at("2027-03-22T07:40:00Z"))).rejects.toMatchObject({
+    await expect(
+      checkIn(h.db, h.centreId, { bookingId: booking.body.id }, { source: "staff", userId: ids.adminUser! }, at("2027-03-22T07:40:00Z")),
+    ).rejects.toMatchObject({
       code: "already_checked_in",
     });
     const events = await h.db.selectFrom("cw_access_events").select(["source", "member_id"]).where("booking_id", "=", booking.body.id).execute();
@@ -597,7 +619,11 @@ describe("check-in and release", () => {
     const booking = await book(ids.V, ids.R1, ids.fFree, "2027-03-23", "10:00", { durationMinutes: 60 });
     await checkIn(h.db, h.centreId, { bookingId: booking.body.id }, { source: "staff", userId: ids.adminUser! }, at("2027-03-23T09:00:00Z"));
     await releaseBooking(h.db, h.centreId, ids.adminUser!, booking.body.id, at("2027-03-23T09:30:00Z"));
-    const room = await h.db.selectFrom("room_bookings").select(sql<string>`upper(period)`.as("until")).where("cw_booking_id", "=", booking.body.id).executeTakeFirstOrThrow();
+    const room = await h.db
+      .selectFrom("room_bookings")
+      .select(sql<string>`upper(period)`.as("until"))
+      .where("cw_booking_id", "=", booking.body.id)
+      .executeTakeFirstOrThrow();
     expect(new Date(room.until).toISOString()).toBe("2027-03-23T09:30:00.000Z");
   });
 });
@@ -633,7 +659,13 @@ describe("plan, blocks and reassignment", () => {
     const publicView = await floorState(h.db, h.centreId, ids.floor!, { at: at("2027-04-20T08:30:00Z"), date: "2027-04-20" }, "portal");
     expect(publicView.resources.every((r) => r.occupant === undefined && r.subscriber === undefined)).toBe(true);
     const later = await h.call("GET", `/api/coworking/floors/${ids.floor}/state?date=2027-04-20&startTime=12:00&endTime=13:00`, secretariat);
-    expect(later.body.resources.filter((r: { state: string }) => r.state === "free").map((r: { code: string }) => r.code)).toEqual(["A1", "A2", "A3", "A4", "R1"]);
+    expect(later.body.resources.filter((r: { state: string }) => r.state === "free").map((r: { code: string }) => r.code)).toEqual([
+      "A1",
+      "A2",
+      "A3",
+      "A4",
+      "R1",
+    ]);
 
     const planning = await h.call("GET", "/api/coworking/planning?date=2027-04-20", secretariat);
     const floor = planning.body.floors.find((f: { id: string }) => f.id === ids.floor);

@@ -118,9 +118,7 @@ function sitemap(state: SiteState, origin: string): string {
     if (page.status !== "published") continue;
     const ordered = state.settings.languages.filter((l) => languages.includes(l));
     const alternates =
-      ordered.length > 1
-        ? ordered.map((l) => `<xhtml:link rel="alternate" hreflang="${l}" href="${esc(origin + pathOf(state, page, l))}"/>`).join("")
-        : "";
+      ordered.length > 1 ? ordered.map((l) => `<xhtml:link rel="alternate" hreflang="${l}" href="${esc(origin + pathOf(state, page, l))}"/>`).join("") : "";
     for (const language of ordered) {
       urls.push(`<url><loc>${esc(origin + pathOf(state, page, language))}</loc><lastmod>${publishedAt.toISOString()}</lastmod>${alternates}</url>`);
     }
@@ -218,7 +216,12 @@ export async function handlePublicGet(app: FastifyInstance, request: FastifyRequ
     return sendHtml(reply, 200, rendered.html, rendered.usesGoogleFonts);
   }
 
-  const redirect = await db.selectFrom("site_redirects").select("to_path").where("centre_id", "=", centre.id).where("from_path", "=", pathname).executeTakeFirst();
+  const redirect = await db
+    .selectFrom("site_redirects")
+    .select("to_path")
+    .where("centre_id", "=", centre.id)
+    .where("from_path", "=", pathname)
+    .executeTakeFirst();
   if (redirect) return reply.redirect(redirect.to_path, 301);
   return notFoundPage(app, reply, state, pathname);
 }

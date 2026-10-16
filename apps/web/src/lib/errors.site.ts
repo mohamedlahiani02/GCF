@@ -1,2 +1,25 @@
 /** French wording of the website and media API error codes. */
-export const SITE_MESSAGES: Record<string, string> = {};
+export const SITE_MESSAGES: Record<string, string> = {
+  invalid_image: "L'image doit être un fichier PNG, JPEG ou WebP lisible.",
+  image_too_large: "L'image ne doit pas dépasser 5 Mo.",
+  low_contrast: "Cette couleur est trop claire : un texte blanc posé dessus ne serait pas assez lisible.",
+  invalid_default_language: "La langue par défaut doit faire partie des langues du site.",
+  unknown_media: "Une image n'existe plus ou a été archivée.",
+  unknown_page: "Une page liée n'existe plus ou a été archivée.",
+  reserved_slug: "Cette adresse est réservée par le site.",
+  slug_taken: "Une autre page utilise déjà cette adresse.",
+  invalid_parent: "Cette page ne peut pas être placée sous la page choisie.",
+  too_deep: "Les pages ne peuvent pas être imbriquées sur plus de trois niveaux.",
+  article_date_required: "Un article a une date de publication ; une page n'en a pas.",
+  invalid_order: "L'ordre doit contenir chaque page du niveau une seule fois.",
+  page_archived: "Cette page est archivée.",
+  home_page: "La page d'accueil ne peut pas être archivée : choisissez d'abord une autre page d'accueil.",
+  page_has_children: "Déplacez ou archivez d'abord les pages placées sous celle-ci.",
+  invalid_home: "La page d'accueil doit être une page de premier niveau (pas un article).",
+  language_not_enabled: "Cette langue n'est pas activée sur le site.",
+  missing_translation: "Chaque langue du site doit avoir un titre avant la publication.",
+  schedule_in_past: "La date de publication programmée doit être dans le futur.",
+  not_published: "Cette page n'est pas publiée.",
+  redirect_loop: "Cette redirection reviendrait à son point de départ.",
+  contact_required: "Indiquez au moins un e-mail ou un téléphone.",
+};

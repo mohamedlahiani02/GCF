@@ -182,7 +182,11 @@ function renderSpaces(section: Extract<SiteSection, { type: "spaces" }>, ctx: Re
       return `<article class="card">${image(s.photoId, ctx, { alt: s.name })}<h3>${esc(s.name)}</h3><p class="muted">${esc(CW_CATEGORY_LABELS[ctx.language][s.category])}</p>${s.description ? paragraphs(s.description) : ""}${capacity}${lowestPrice(s, ctx)}</article>`;
     })
     .join("");
-  return wrapSection(section, alt, `${sectionHead(section.title, section.intro)}<div class="grid">${cards}</div>${ctx.bookingUrl ? `<p><a class="btn btn-primary" href="${esc(ctx.bookingUrl)}">${esc(l.book)}</a></p>` : ""}`);
+  return wrapSection(
+    section,
+    alt,
+    `${sectionHead(section.title, section.intro)}<div class="grid">${cards}</div>${ctx.bookingUrl ? `<p><a class="btn btn-primary" href="${esc(ctx.bookingUrl)}">${esc(l.book)}</a></p>` : ""}`,
+  );
 }
 
 function renderPricing(section: Extract<SiteSection, { type: "pricing" }>, ctx: RenderContext, alt: boolean): string {
@@ -220,7 +224,9 @@ function renderPricing(section: Extract<SiteSection, { type: "pricing" }>, ctx: 
           `<tr><th scope="row">${esc(p.name)}</th><td>${esc(p.typeName)}</td><td>${esc(p.quotaKind === "minutes" ? l.quotaMinutes(p.quota) : l.quotaBookings(p.quota))}, ${esc(l.validity(p.validityDays))}</td><td class="num">${money(p.price, lang)}</td></tr>`,
       )
       .join("");
-    parts.push(`<h3>${esc(l.packs)}</h3><div class="table-scroll"><table class="tbl"><thead><tr><th scope="col">${esc(l.packs)}</th><th scope="col">${esc(l.columnSpace)}</th><th scope="col">${esc(l.columnIncludes)}</th><th scope="col" class="num">${esc(l.columnPrice)}</th></tr></thead><tbody>${rows}</tbody></table></div>`);
+    parts.push(
+      `<h3>${esc(l.packs)}</h3><div class="table-scroll"><table class="tbl"><thead><tr><th scope="col">${esc(l.packs)}</th><th scope="col">${esc(l.columnSpace)}</th><th scope="col">${esc(l.columnIncludes)}</th><th scope="col" class="num">${esc(l.columnPrice)}</th></tr></thead><tbody>${rows}</tbody></table></div>`,
+    );
   }
   return wrapSection(section, alt, parts.join(""));
 }
@@ -230,7 +236,9 @@ function renderAvailability(section: Extract<SiteSection, { type: "availability"
   if (!rows || rows.length === 0) return "";
   const l = ctx.labels;
   const cell = (value: number | null) => (value === null ? esc(l.closedNow) : String(value));
-  const body = rows.map((r) => `<tr><th scope="row">${esc(r.name)}</th><td class="num">${cell(r.freeNow)}</td><td class="num">${cell(r.freeRestOfDay)}</td></tr>`).join("");
+  const body = rows
+    .map((r) => `<tr><th scope="row">${esc(r.name)}</th><td class="num">${cell(r.freeNow)}</td><td class="num">${cell(r.freeRestOfDay)}</td></tr>`)
+    .join("");
   return wrapSection(
     section,
     alt,
@@ -245,7 +253,8 @@ function renderContact(section: Extract<SiteSection, { type: "contact" }>, ctx: 
   const address = s.address ?? centreAddress;
   const details: string[] = [];
   if (address) details.push(`<dt>${esc(l.address)}</dt><dd>${address.split("\n").map(esc).join("<br>")}</dd>`);
-  if (s.contact_phone) details.push(`<dt>${esc(l.phone)}</dt><dd><a href="tel:${esc(s.contact_phone.replace(/[^+\d]/g, ""))}">${esc(s.contact_phone)}</a></dd>`);
+  if (s.contact_phone)
+    details.push(`<dt>${esc(l.phone)}</dt><dd><a href="tel:${esc(s.contact_phone.replace(/[^+\d]/g, ""))}">${esc(s.contact_phone)}</a></dd>`);
   if (s.contact_email) details.push(`<dt>${esc(l.email)}</dt><dd><a href="mailto:${esc(s.contact_email)}">${esc(s.contact_email)}</a></dd>`);
   if (section.showMap && s.map_url) details.push(`<dd><a href="${esc(s.map_url)}">${esc(l.viewMap)}</a></dd>`);
   const columns = [details.length ? `<div><dl>${details.join("")}</dl></div>` : ""];
@@ -288,7 +297,9 @@ function renderForm(section: Extract<SiteSection, { type: "form" }>, ctx: Render
     field("email", l.formEmail, `<input id="${id("email")}" name="email" type="email" maxlength="254" autocomplete="email" aria-describedby="${id("hint")}">`),
     field("phone", l.formPhone, `<input id="${id("phone")}" name="phone" type="tel" maxlength="40" autocomplete="tel" aria-describedby="${id("hint")}">`),
     `<p class="hint" id="${id("hint")}">${esc(l.formContactHint)}</p>`,
-    section.variant === "quote" ? field("company", l.formCompany, `<input id="${id("company")}" name="company" maxlength="150" autocomplete="organization">`) : "",
+    section.variant === "quote"
+      ? field("company", l.formCompany, `<input id="${id("company")}" name="company" maxlength="150" autocomplete="organization">`)
+      : "",
     section.variant === "visit" ? field("date", l.formPreferredDate, `<input id="${id("date")}" name="preferredDate" type="date">`) : "",
     field("message", l.formMessage, `<textarea id="${id("message")}" name="message" maxlength="3000"></textarea>`),
   ].join("");
@@ -401,8 +412,7 @@ function menuList(items: readonly MenuItem[], className: string): string {
   if (items.length === 0) return "";
   return `<ul class="${className}">${items
     .map(
-      (item) =>
-        `<li><a href="${esc(item.path)}"${item.current ? ' aria-current="page"' : ""}>${esc(item.label)}</a>${menuList(item.children, "submenu")}</li>`,
+      (item) => `<li><a href="${esc(item.path)}"${item.current ? ' aria-current="page"' : ""}>${esc(item.label)}</a>${menuList(item.children, "submenu")}</li>`,
     )
     .join("")}</ul>`;
 }
@@ -477,7 +487,10 @@ export function renderDocument(input: DocumentInput): string {
   if (s.contact_email) contact.push(`<li><a href="mailto:${esc(s.contact_email)}">${esc(s.contact_email)}</a></li>`);
   if (contact.length) footerColumns.push(`<div><h2>${esc(l.contact)}</h2><ul>${contact.join("")}</ul></div>`);
   const social = socialLinks(s);
-  if (social.length) footerColumns.push(`<div><h2>${esc(l.followUs)}</h2><ul>${social.map((x) => `<li><a href="${esc(x.href)}" rel="me">${esc(x.label)}</a></li>`).join("")}</ul></div>`);
+  if (social.length)
+    footerColumns.push(
+      `<div><h2>${esc(l.followUs)}</h2><ul>${social.map((x) => `<li><a href="${esc(x.href)}" rel="me">${esc(x.label)}</a></li>`).join("")}</ul></div>`,
+    );
   const footer = `<footer class="site-footer"><div class="wrap"><div class="footer-grid">${footerColumns.join("")}</div><p class="copyright">&copy; ${new Date().getUTCFullYear()} ${esc(siteName)}</p></div></footer>`;
 
   const banner = ctx.preview ? `<div class="preview-banner" role="note">${esc(l.preview)}</div>` : "";

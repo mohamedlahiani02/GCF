@@ -48,7 +48,21 @@ export const SECTION_TYPE_LABELS: Record<SectionType, string> = {
 };
 
 /** Icons available in a features section; the site draws them, editors only choose a name. */
-export const FEATURE_ICONS = ["wifi", "coffee", "printer", "meeting", "clock", "calendar", "lock", "parking", "phone", "mail", "location", "star", "check"] as const;
+export const FEATURE_ICONS = [
+  "wifi",
+  "coffee",
+  "printer",
+  "meeting",
+  "clock",
+  "calendar",
+  "lock",
+  "parking",
+  "phone",
+  "mail",
+  "location",
+  "star",
+  "check",
+] as const;
 export type FeatureIcon = (typeof FEATURE_ICONS)[number];
 
 export const LEAD_KINDS = ["contact", "visit", "quote"] as const;
@@ -70,7 +84,10 @@ const mediaId = z.string().uuid();
 const httpsUrl = z.string().trim().max(500).refine(isHttpsUrl, "expected an https:// address");
 
 /** Section identifiers double as anchors in the page (#tarifs). */
-export const sectionIdSchema = z.string().regex(/^[a-z0-9]+(-[a-z0-9]+)*$/, "lowercase letters, digits and hyphens").max(40);
+export const sectionIdSchema = z
+  .string()
+  .regex(/^[a-z0-9]+(-[a-z0-9]+)*$/, "lowercase letters, digits and hyphens")
+  .max(40);
 
 export const inlineSchema = z
   .object({
@@ -111,7 +128,14 @@ const base = { id: sectionIdSchema };
 const titled = { ...base, title: optionalText(200) };
 
 export const heroSectionSchema = z
-  .object({ ...base, type: z.literal("hero"), title: requiredText(200), subtitle: optionalText(500), imageId: mediaId.optional(), button: buttonSchema.optional() })
+  .object({
+    ...base,
+    type: z.literal("hero"),
+    title: requiredText(200),
+    subtitle: optionalText(500),
+    imageId: mediaId.optional(),
+    button: buttonSchema.optional(),
+  })
   .strict();
 
 export const richTextSectionSchema = z.object({ ...titled, type: z.literal("rich_text"), body: richTextSchema }).strict();
