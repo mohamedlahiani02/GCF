@@ -35,6 +35,7 @@ export const authRoutes: FastifyPluginAsync = async (app) => {
       });
     }
     const ok = await verifyPassword(user.password_hash, body.password);
+    const centre = await db.selectFrom("centres").select("modules").where("id", "=", user.centre_id).executeTakeFirstOrThrow();
     if (!ok) {
       const failures = user.failed_login_count + 1;
       const lock = failures >= config.loginMaxFailures;
@@ -63,7 +64,8 @@ export const authRoutes: FastifyPluginAsync = async (app) => {
     });
     return {
       user: { id: user.id, email: user.email, fullName: user.full_name, role: user.role },
-      permissions: permissionsOf(user.role),
+      permissions: permissionsOf({ role: user.role, modules: centre.modules }),
+      modules: centre.modules,
     };
   });
 
@@ -78,7 +80,8 @@ export const authRoutes: FastifyPluginAsync = async (app) => {
     if (!user) throw unauthenticated();
     return {
       user: { id: user.userId, email: user.email, fullName: user.fullName, role: user.role },
-      permissions: permissionsOf(user.role),
+      permissions: permissionsOf(user),
+      modules: user.modules,
     };
   });
 

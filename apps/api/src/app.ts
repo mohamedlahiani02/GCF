@@ -7,6 +7,7 @@ import Fastify, { type FastifyInstance, type FastifyReply, type FastifyRequest }
 import type { Kysely } from "kysely";
 import { ZodError } from "zod";
 import { can, type Permission } from "./auth/permissions.js";
+import { resolveMemberSession, type MemberSession } from "./auth/memberSessions.js";
 import { resolveSession, type SessionUser } from "./auth/sessions.js";
 import type { Config } from "./config.js";
 import type { Database } from "./db/types.js";
@@ -18,6 +19,13 @@ import { authRoutes } from "./routes/auth.js";
 import { cashRoutes } from "./routes/cash.js";
 import { catalogueRoutes } from "./routes/catalogue.js";
 import { centreRoutes } from "./routes/centre.js";
+import { coworkingBookingRoutes } from "./routes/coworking/bookings.js";
+import { coworkingConfigRoutes } from "./routes/coworking/config.js";
+import { coworkingMemberRoutes } from "./routes/coworking/members.js";
+import { mediaRoutes } from "./routes/media.js";
+import { portalRoutes } from "./routes/portal/index.js";
+import { publicRoutes } from "./routes/public.js";
+import { websiteRoutes } from "./routes/website.js";
 import { dashboardRoutes } from "./routes/dashboard.js";
 import { enrolmentRoutes } from "./routes/enrolments.js";
 import { groupRoutes } from "./routes/groups.js";
@@ -31,8 +39,12 @@ import { searchRoutes } from "./routes/search.js";
 import { sessionRoutes } from "./routes/sessions.js";
 import { studentRoutes } from "./routes/students.js";
 import { userRoutes } from "./routes/users.js";
+import { isPublicHost } from "./publicCentre.js";
+import { handlePublicGet } from "./site/publicSurface.js";
 
 export const SESSION_COOKIE = "gcf_session";
+/** Portal sessions of coworking clients; never accepted by back-office routes. */
+export const MEMBER_COOKIE = "gcf_member";
 
 declare module "fastify" {
   interface FastifyInstance {
@@ -43,6 +55,7 @@ declare module "fastify" {
   }
   interface FastifyRequest {
     user: SessionUser | null;
+    member: MemberSession | null;
   }
 }
 
@@ -55,6 +68,8 @@ export interface AppOptions {
 }
 
 const UNSAFE_METHODS = new Set(["POST", "PUT", "PATCH", "DELETE"]);
+/** API areas called by the public surface (portal and website forms) instead of the back-office. */
+const isPublicApi = (url: string) => url.startsWith("/api/portal/") || url.startsWith("/api/public/");
 
 /** Maps PostgreSQL integrity errors to client errors; everything else is a 500 that is logged. */
 function mapDatabaseError(error: unknown): HttpError | undefined {
@@ -78,19 +93,32 @@ export async function buildApp(options: AppOptions): Promise<FastifyInstance> {
   app.decorate("config", config);
   app.decorate("mailer", options.mailer === undefined ? createMailer(config) : options.mailer);
   app.decorateRequest("user", null);
+  app.decorateRequest("member", null);
 
   await app.register(helmet);
   await app.register(cookie);
   if (options.rateLimit !== false) await app.register(rateLimit, { max: 300, timeWindow: "1 minute" });
 
-  // CSRF defence in depth: SameSite=Strict cookies plus an Origin check on every state-changing request.
+  // CSRF defence in depth: SameSite=Strict cookies plus an Origin check on every state-changing request. The
+  // portal and the website forms are called from the public origin, everything else from the back-office.
   app.addHook("onRequest", async (request) => {
     if (!UNSAFE_METHODS.has(request.method)) return;
-    const origin = request.headers.origin;
-    if (origin !== config.webOrigin) throw new HttpError(403, "bad_origin", "request origin is not allowed");
+    const expected = isPublicApi(request.url) ? config.publicOrigin : config.webOrigin;
+    if (!expected || request.headers.origin !== expected) throw new HttpError(403, "bad_origin", "request origin is not allowed");
   });
 
   app.addHook("onRequest", async (request) => {
+    if (request.url.startsWith("/api/portal/")) {
+      const memberToken = request.cookies[MEMBER_COOKIE];
+      if (memberToken) {
+        request.member =
+          (await resolveMemberSession(db, memberToken, {
+            idleMinutes: config.memberSessionIdleMinutes,
+            absoluteHours: config.memberSessionAbsoluteHours,
+          })) ?? null;
+      }
+      return;
+    }
     const token = request.cookies[SESSION_COOKIE];
     if (!token) return;
     request.user =
@@ -102,7 +130,7 @@ export async function buildApp(options: AppOptions): Promise<FastifyInstance> {
 
   app.decorate("requirePermission", (permission: Permission) => async (request: FastifyRequest) => {
     if (!request.user) throw unauthenticated();
-    if (!can(request.user.role, permission)) throw forbidden();
+    if (!can(request.user, permission)) throw forbidden();
   });
 
   app.setErrorHandler((error, request, reply: FastifyReply) => {
@@ -149,6 +177,13 @@ export async function buildApp(options: AppOptions): Promise<FastifyInstance> {
   await app.register(reportRoutes, { prefix: "/api/reports" });
   await app.register(dashboardRoutes, { prefix: "/api/dashboard" });
   await app.register(searchRoutes, { prefix: "/api/search" });
+  await app.register(mediaRoutes, { prefix: "/api/media" });
+  await app.register(coworkingConfigRoutes, { prefix: "/api/coworking" });
+  await app.register(coworkingMemberRoutes, { prefix: "/api/coworking" });
+  await app.register(coworkingBookingRoutes, { prefix: "/api/coworking" });
+  await app.register(websiteRoutes, { prefix: "/api/site" });
+  await app.register(portalRoutes, { prefix: "/api/portal" });
+  await app.register(publicRoutes, { prefix: "/api/public" });
 
   if (config.webDistDir) {
     const root = path.resolve(config.webDistDir);
@@ -166,10 +201,14 @@ export async function buildApp(options: AppOptions): Promise<FastifyInstance> {
       if (request.method !== "GET" || request.url === "/api" || request.url.startsWith("/api/")) {
         return reply.status(404).send({ code: "not_found", message: "route not found" });
       }
+      if (isPublicHost(request, config)) return handlePublicGet(app, request, reply);
       return reply.sendFile("index.html");
     });
   } else {
-    app.setNotFoundHandler((_request, reply) => reply.status(404).send({ code: "not_found", message: "route not found" }));
+    app.setNotFoundHandler((request, reply) => {
+      if (request.method === "GET" && !request.url.startsWith("/api/") && isPublicHost(request, config)) return handlePublicGet(app, request, reply);
+      return reply.status(404).send({ code: "not_found", message: "route not found" });
+    });
   }
   return app;
 }

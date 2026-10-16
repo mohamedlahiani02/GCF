@@ -4,8 +4,11 @@ import { notFound } from "../errors.js";
 
 type Db = Kysely<Database> | Transaction<Database>;
 
-/** Who owes and pays: a student (enrolments) or a renter (room rentals). */
-export type Payer = { kind: "student"; id: string } | { kind: "renter"; id: string };
+/** Who owes and pays: a student (enrolments), a renter (room rentals) or a coworking member. */
+export type Payer = { kind: "student"; id: string } | { kind: "renter"; id: string } | { kind: "member"; id: string };
+
+const PAYER_TABLE = { student: "students", renter: "renters", member: "members" } as const;
+const PAYMENT_PAYER_COLUMN = { student: "payments.student_id", renter: "payments.renter_id", member: "payments.member_id" } as const;
 export const studentPayer = (id: string): Payer => ({ kind: "student", id });
 
 export type InstallmentState = "paid" | "partial" | "overdue" | "postponed" | "upcoming" | "cancelled" | "pending_discount" | "discount" | "rejected_discount";
@@ -14,6 +17,10 @@ export interface InstallmentBalance {
   id: string;
   enrolmentId: string | null;
   rentalId: string | null;
+  memberId: string | null;
+  cwBookingId: string | null;
+  cwSubscriptionId: string | null;
+  cwPackId: string | null;
   label: string;
   kind: "charge" | "discount";
   amount: number;
@@ -30,8 +37,13 @@ export interface InstallmentBalance {
 
 /** Serialises every money operation of one payer so balances cannot be raced. */
 export async function lockPayer(trx: Transaction<Database>, payer: Payer, centreId: string): Promise<void> {
-  const table = payer.kind === "student" ? "students" : "renters";
-  const row = await trx.selectFrom(table).select("id").where("id", "=", payer.id).where("centre_id", "=", centreId).forUpdate().executeTakeFirst();
+  const row = await trx
+    .selectFrom(PAYER_TABLE[payer.kind])
+    .select("id")
+    .where("id", "=", payer.id)
+    .where("centre_id", "=", centreId)
+    .forUpdate()
+    .executeTakeFirst();
   if (!row) throw notFound(payer.kind);
 }
 
@@ -39,7 +51,11 @@ export async function lockStudent(trx: Transaction<Database>, studentId: string,
   await lockPayer(trx, studentPayer(studentId), centreId);
 }
 
-export function stateOf(row: Omit<InstallmentBalance, "state">, today: string, graceDays: number): InstallmentState {
+export function stateOf(
+  row: Pick<InstallmentBalance, "status" | "kind" | "discountStatus" | "remaining" | "dueDate" | "postponementCount" | "paid">,
+  today: string,
+  graceDays: number,
+): InstallmentState {
   if (row.status === "cancelled") return "cancelled";
   if (row.kind === "discount") {
     if (row.discountStatus === "pending") return "pending_discount";
@@ -85,6 +101,10 @@ export async function installmentBalances(
       "installments.id",
       "installments.enrolment_id as enrolmentId",
       "installments.rental_id as rentalId",
+      "installments.member_id as memberId",
+      "installments.cw_booking_id as cwBookingId",
+      "installments.cw_subscription_id as cwSubscriptionId",
+      "installments.cw_pack_id as cwPackId",
       "installments.label",
       "installments.kind",
       "installments.amount",
@@ -99,6 +119,7 @@ export async function installmentBalances(
     .where("installments.centre_id", "=", centreId)
     .$if(payer?.kind === "student", (qb) => qb.where("enrolments.student_id", "=", payer!.id))
     .$if(payer?.kind === "renter", (qb) => qb.where("rentals.renter_id", "=", payer!.id))
+    .$if(payer?.kind === "member", (qb) => qb.where("installments.member_id", "=", payer!.id))
     .$if(filter.enrolmentId !== undefined, (qb) => qb.where("installments.enrolment_id", "=", filter.enrolmentId!))
     .$if(filter.rentalId !== undefined, (qb) => qb.where("installments.rental_id", "=", filter.rentalId!))
     .$if(filter.installmentIds !== undefined, (qb) =>
@@ -117,7 +138,7 @@ export async function installmentBalances(
 
 /** Money received and not yet allocated (refunds included): the payer's credit balance. */
 export async function payerCredit(db: Db, payer: Payer): Promise<number> {
-  const column = payer.kind === "student" ? sql.ref("p.student_id") : sql.ref("p.renter_id");
+  const column = sql.ref(`p.${PAYMENT_PAYER_COLUMN[payer.kind].slice("payments.".length)}`);
   const result = await sql<{ credit: number }>`
     select (coalesce((select sum(p.amount) from payments p
                        where ${column} = ${payer.id} and p.status = 'valid' and coalesce(p.cheque_status, 'cashed') <> 'bounced'), 0)
@@ -231,7 +252,7 @@ export async function planAllocations(
       "payments.id",
     )
     .select(["payments.id", "payments.amount", sql<number>`coalesce(u.used, 0)`.as("used")])
-    .where(payer.kind === "student" ? "payments.student_id" : "payments.renter_id", "=", payer.id)
+    .where(PAYMENT_PAYER_COLUMN[payer.kind], "=", payer.id)
     .where("payments.kind", "=", "payment")
     .where("payments.status", "=", "valid")
     .where(sql<boolean>`coalesce(payments.cheque_status, 'cashed') <> 'bounced'`)

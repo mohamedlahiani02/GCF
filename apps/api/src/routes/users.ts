@@ -7,7 +7,7 @@ import { deleteUserSessions } from "../auth/sessions.js";
 import type { Database, Role } from "../db/types.js";
 import { conflict, notFound } from "../errors.js";
 
-const role = z.enum(["admin", "secretariat", "accountant"]);
+const role = z.enum(["admin", "secretariat", "accountant", "editor"]);
 const createBody = z
   .object({
     email: z.string().trim().toLowerCase().email().max(254),

@@ -14,7 +14,7 @@ export const searchRoutes: FastifyPluginAsync = async (app) => {
     if (!user) throw forbidden();
     const { q } = query.parse(request.query);
     const pattern = `%${q.toLowerCase().replace(/[\\%_]/g, (c) => `\\${c}`)}%`;
-    const students = can(user.role, "students:read")
+    const students = can(user, "students:read")
       ? await db
           .selectFrom("students")
           .select(["id", "first_name as firstName", "last_name as lastName", "phone", "status"])
@@ -30,7 +30,7 @@ export const searchRoutes: FastifyPluginAsync = async (app) => {
           .limit(8)
           .execute()
       : [];
-    const instructors = can(user.role, "instructors:read")
+    const instructors = can(user, "instructors:read")
       ? await db
           .selectFrom("instructors")
           .select(["id", "first_name as firstName", "last_name as lastName", "status"])
@@ -42,7 +42,7 @@ export const searchRoutes: FastifyPluginAsync = async (app) => {
           .limit(5)
           .execute()
       : [];
-    const receipts = can(user.role, "payments:read")
+    const receipts = can(user, "payments:read")
       ? await db
           .selectFrom("receipts")
           .select(["id", "number", "kind"])

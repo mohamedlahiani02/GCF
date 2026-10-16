@@ -34,6 +34,7 @@ async function unpaid(db: Db, centreId: string, range: ReportRange): Promise<Rep
     .leftJoin("students", "students.id", "enrolments.student_id")
     .leftJoin("rentals", "rentals.id", "installments.rental_id")
     .leftJoin("renters", "renters.id", "rentals.renter_id")
+    .leftJoin("members", "members.id", "installments.member_id")
     .leftJoin(
       db
         .selectFrom("effective_allocations")
@@ -45,7 +46,7 @@ async function unpaid(db: Db, centreId: string, range: ReportRange): Promise<Rep
     )
     .select([
       "installments.id",
-      sql<string>`coalesce(students.last_name || ' ' || students.first_name, renters.name)`.as("payer"),
+      sql<string>`coalesce(students.last_name || ' ' || students.first_name, renters.name, concat_ws(' ', members.last_name, members.first_name))`.as("payer"),
       "installments.label",
       "installments.amount",
       "installments.due_date as dueDate",
@@ -64,11 +65,7 @@ async function unpaid(db: Db, centreId: string, range: ReportRange): Promise<Rep
   const filtered = rows
     .map((r) => {
       const paid = Number(r.paid);
-      const state = stateOf(
-        { ...r, enrolmentId: null, rentalId: null, kind: "charge", discountStatus: null, status: "open", sessionId: null, paid, remaining: r.amount - paid },
-        today,
-        graceDays,
-      );
+      const state = stateOf({ ...r, kind: "charge", discountStatus: null, status: "open", paid, remaining: r.amount - paid }, today, graceDays);
       return { ...r, paid, remaining: r.amount - paid, state };
     })
     .filter((r) => r.state === "overdue" || r.state === "postponed");
@@ -76,7 +73,7 @@ async function unpaid(db: Db, centreId: string, range: ReportRange): Promise<Rep
     title: REPORTS.unpaid.title,
     subtitle: `Échéances du ${range.from.split("-").reverse().join("/")} au ${range.to.split("-").reverse().join("/")}, situation au ${today.split("-").reverse().join("/")}`,
     columns: [
-      { key: "payer", label: "Élève ou loueur", kind: "text" },
+      { key: "payer", label: "Payeur", kind: "text" },
       { key: "label", label: "Objet", kind: "text" },
       { key: "dueDate", label: "Échéance", kind: "date" },
       { key: "originalDueDate", label: "Date d'origine", kind: "date" },

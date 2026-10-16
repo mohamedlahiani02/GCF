@@ -29,7 +29,8 @@ export const SHEET: Record<string, { label: string; tone: Tone }> = {
 
 export const METHOD: Record<string, string> = { cash: "Espèces", transfer: "Virement", cheque: "Chèque", card: "Carte" };
 export const CHEQUE: Record<string, string> = { received: "Reçu", deposited: "Déposé", cashed: "Encaissé", bounced: "Impayé" };
-export const ROLE: Record<string, string> = { admin: "Admin", secretariat: "Secrétariat", accountant: "Comptable" };
+export const ROLE: Record<string, string> = { admin: "Admin", secretariat: "Secrétariat", accountant: "Comptable", editor: "Éditeur du site" };
+export const MODULE_LABEL: Record<string, string> = { training: "Formation et cours particuliers", coworking: "Coworking", website: "Site web" };
 export const EMPLOYMENT: Record<string, string> = { salaried: "Salarié", freelance: "Freelance", contractor: "Vacataire" };
 export const KIND_INSTRUCTOR: Record<string, string> = { teacher: "Professeur", trainer: "Formateur" };
 export const RENTAL_UNIT: Record<string, string> = { hour: "Heure", half_day: "Demi-journée", day: "Journée", month: "Mois", year: "Année" };

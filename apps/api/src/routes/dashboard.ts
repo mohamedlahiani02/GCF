@@ -17,8 +17,8 @@ export const dashboardRoutes: FastifyPluginAsync = async (app) => {
   app.get("/", async (request) => {
     const user = request.user;
     if (!user) throw forbidden();
-    const financial = can(user.role, "dashboard:financial") || user.role === "admin";
-    const operational = can(user.role, "dashboard:operational") || user.role === "admin";
+    const financial = can(user, "dashboard:financial") || user.role === "admin";
+    const operational = can(user, "dashboard:operational") || user.role === "admin";
     if (!financial && !operational) throw forbidden();
     const { granularity } = query.parse(request.query);
     const centreId = user.centreId;
@@ -63,18 +63,11 @@ export const dashboardRoutes: FastifyPluginAsync = async (app) => {
         remaining: c.amount - paid,
         state: stateOf(
           {
-            id: "",
-            enrolmentId: null,
-            rentalId: null,
-            label: c.label,
             kind: "charge",
-            amount: c.amount,
             dueDate: c.dueDate,
-            originalDueDate: c.originalDueDate,
             postponementCount: c.postponementCount,
             discountStatus: null,
             status: "open",
-            sessionId: null,
             paid,
             remaining: c.amount - paid,
           },

@@ -1,4 +1,5 @@
-import { createBrowserRouter, Link } from "react-router";
+import { createBrowserRouter, Link, Navigate } from "react-router";
+import { useSession } from "./auth/session";
 import { RequirePermission, Shell } from "./components/shell";
 import { AdminPage } from "./pages/admin";
 import { AttendanceDayPage, AttendanceSheetPage } from "./pages/attendance";
@@ -12,9 +13,12 @@ import { LoginPage } from "./pages/login";
 import { PaymentsPage } from "./pages/payments";
 import { InstructorPayPage, PayrollPage } from "./pages/payroll";
 import { PlanningPage } from "./pages/planning";
+import { coworkingRoutes } from "./pages/coworking/routes";
+import { coworkingSettingsRoutes } from "./pages/coworking-settings/routes";
 import { ReceiptPage, ReceiptsPage } from "./pages/receipts";
 import { ReportsPage } from "./pages/reports";
 import { RentalPage, RentalWizardPage, RoomsPage } from "./pages/rooms";
+import { siteRoutes } from "./pages/site/routes";
 import { StudentPage } from "./pages/student";
 import { StudentsPage } from "./pages/students";
 
@@ -33,12 +37,28 @@ function NotFound() {
   );
 }
 
+/** The training dashboard when that module runs, otherwise the first area the role can open. */
+function Home() {
+  const { can } = useSession();
+  if (can("students:read")) return <DashboardPage />;
+  const first = (
+    [
+      ["coworking:read", "/coworking"],
+      ["website:edit", "/site"],
+      ["website:leads", "/site/demandes"],
+      ["payments:read", "/encaissements"],
+      ["cash:read", "/caisse"],
+    ] as const
+  ).find(([permission]) => can(permission));
+  return first ? <Navigate to={first[1]} replace /> : <NotFound />;
+}
+
 export const router = createBrowserRouter([
   { path: "/connexion", element: <LoginPage /> },
   {
     element: <Shell />,
     children: [
-      { path: "/", element: <DashboardPage /> },
+      { path: "/", element: <Home /> },
       { path: "/eleves", element: guard("students:read", <StudentsPage />) },
       { path: "/eleves/:id", element: guard("students:read", <StudentPage />) },
       { path: "/inscriptions/nouvelle", element: guard("enrolments:write", <EnrolmentWizardPage />) },
@@ -64,6 +84,9 @@ export const router = createBrowserRouter([
       { path: "/caisse", element: guard("cash:read", <CashPage />) },
       { path: "/rapports", element: <ReportsPage /> },
       { path: "/administration", element: guard("centre:read", <AdminPage />) },
+      ...coworkingRoutes,
+      ...coworkingSettingsRoutes,
+      ...siteRoutes,
       { path: "*", element: <NotFound /> },
     ],
   },

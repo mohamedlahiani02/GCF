@@ -6,7 +6,7 @@ import { usePage } from "../components/shell";
 import { useToast } from "../components/toasts";
 import { Badge, Card, Empty, ErrorBanner, Field, Loading, Modal, PageHeader, Pagination, Tabs } from "../components/ui";
 import { frDateTime, weekdayLabel, zonedIso } from "../lib/format";
-import { ROLE } from "../lib/labels";
+import { MODULE_LABEL, ROLE } from "../lib/labels";
 
 const PASSWORD_MIN_LENGTH = 10;
 
@@ -31,7 +31,7 @@ interface UserRow {
   id: string;
   email: string;
   fullName: string;
-  role: "admin" | "secretariat" | "accountant";
+  role: "admin" | "secretariat" | "accountant" | "editor";
   active: boolean;
   lastLoginAt: string | null;
 }
@@ -531,14 +531,44 @@ export function AdminPage() {
     { value: "settings" as const, label: "Paramètres" },
     ...(can("users:manage") ? [{ value: "users" as const, label: "Utilisateurs" }] : []),
     ...(can("audit:read") ? [{ value: "audit" as const, label: "Journal d'audit" }] : []),
+    { value: "modules" as const, label: "Modules" },
   ];
   const [tab, setTab] = useState<(typeof tabs)[number]["value"]>("settings");
   return (
     <>
       <PageHeader title="Administration" />
       <Tabs value={tab} tabs={tabs} onChange={setTab} />
-      {tab === "settings" ? <CentreSettings /> : tab === "users" ? <Users /> : <AuditLog />}
+      {tab === "settings" ? <CentreSettings /> : tab === "users" ? <Users /> : tab === "audit" ? <AuditLog /> : <Modules />}
     </>
+  );
+}
+
+/** Modules are activated by the software vendor; the centre sees what it subscribed to. */
+function Modules() {
+  const { session } = useSession();
+  const active = new Set(session?.modules ?? []);
+  return (
+    <Card title="Modules souscrits">
+      <div className="xs">
+        <table className="tbl">
+          <thead>
+            <tr>
+              <th>Module</th>
+              <th>État</th>
+            </tr>
+          </thead>
+          <tbody>
+            {Object.entries(MODULE_LABEL).map(([key, label]) => (
+              <tr key={key}>
+                <td>{label}</td>
+                <td>{active.has(key as "training") ? <Badge tone="green">Actif</Badge> : <Badge tone="gray">Non souscrit</Badge>}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      <p className="cap card-b">Pour activer un module, contactez l'éditeur du logiciel.</p>
+    </Card>
   );
 }
 

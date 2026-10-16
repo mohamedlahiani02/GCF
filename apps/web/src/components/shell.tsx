@@ -7,12 +7,15 @@ import { setTimeZone } from "../lib/format";
 import { ROLE } from "../lib/labels";
 import { PasswordModal } from "../pages/admin";
 import { CollectDrawer } from "../pages/collect";
+import { WalkInButton } from "../pages/coworking/walkin";
 
 interface NavItem {
   to: string;
   label: string;
   icon: string;
   permission: string | string[];
+  /** Active only on this exact path (a section home whose sub-pages have their own entries). */
+  end?: boolean;
 }
 
 interface NavSection {
@@ -39,6 +42,17 @@ const ICONS = {
   cash: "M2 6h20v12H2zM12 9.5a2.5 2.5 0 1 0 0 5 2.5 2.5 0 0 0 0-5",
   reports: "M3 3v18h18M7 15l4-4 3 3 5-6",
   admin: "M12 8a4 4 0 1 0 0 8 4 4 0 0 0 0-8zM12 2v3M12 19v3M2 12h3M19 12h3M5 5l2 2M17 17l2 2M19 5l-2 2M7 17l-2 2",
+  floorPlan: "M3 3h18v18H3zM3 12h8M11 3v18M15 8h2M15 15h2",
+  inbox: "M22 12h-6l-2 3h-4l-2-3H2M5.5 5h13L22 12v7H2v-7z",
+  members: "M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2M12 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8z",
+  subscriptions: "M3 5h18v14H3zM3 10h18M7 15h4",
+  mail: "M3 5h18v14H3zM3 6l9 7 9-7",
+  stats: "M4 20V10M10 20V4M16 20v-7M22 20H2",
+  settings: "M4 6h10M18 6h2M4 12h4M12 12h8M4 18h12M20 18h0M14 4v4M8 10v4M16 16v4",
+  pages: "M14 3H6v18h12V7zM14 3v4h4",
+  palette: "M12 3a9 9 0 1 0 0 18c1 0 1.5-.8 1.5-1.5 0-1-1-1.5-1-2.5S13.3 15 14.5 15H17a4 4 0 0 0 4-4c0-4.4-4-8-9-8zM7.5 11h0M10 7h0M15 7h0",
+  media: "M3 5h18v14H3zM3 16l5-5 4 4 3-3 6 6M15.5 9.5h0",
+  leads: "M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z",
 };
 
 /** Daily work first, reference data folded under "Référentiels", then the other modules. */
@@ -61,6 +75,30 @@ const NAV: NavSection[] = [
       { to: "/intervenants", label: "Intervenants", icon: ICONS.instructors, permission: "instructors:read" },
       { to: "/cours-particuliers", label: "Cours particuliers", icon: ICONS.lessons, permission: "catalogue:read" },
       { to: "/formations", label: "Formations", icon: ICONS.trainings, permission: "catalogue:read" },
+    ],
+  },
+  {
+    title: "Coworking",
+    items: [
+      { to: "/coworking", label: "Plan en direct", icon: ICONS.floorPlan, permission: "coworking:read", end: true },
+      { to: "/coworking/demandes", label: "Demandes", icon: ICONS.inbox, permission: "coworking:write" },
+      { to: "/coworking/planning", label: "Planning coworking", icon: ICONS.planning, permission: "coworking:read" },
+      { to: "/coworking/membres", label: "Membres", icon: ICONS.members, permission: "coworking:read" },
+      { to: "/coworking/abonnements", label: "Abonnements", icon: ICONS.subscriptions, permission: "coworking:read" },
+      { to: "/coworking/courrier", label: "Courrier", icon: ICONS.mail, permission: "coworking:read" },
+      { to: "/coworking/statistiques", label: "Statistiques", icon: ICONS.stats, permission: "coworking:reports" },
+      { to: "/coworking/parametres", label: "Paramètres coworking", icon: ICONS.settings, permission: "coworking:manage" },
+    ],
+  },
+  {
+    title: "Site web",
+    collapsible: true,
+    items: [
+      { to: "/site", label: "Pages", icon: ICONS.pages, permission: "website:edit", end: true },
+      { to: "/site/apparence", label: "Apparence", icon: ICONS.palette, permission: "website:edit" },
+      { to: "/site/medias", label: "Médiathèque", icon: ICONS.media, permission: "website:edit" },
+      { to: "/site/demandes", label: "Demandes du site", icon: ICONS.leads, permission: "website:leads" },
+      { to: "/site/parametres", label: "Paramètres du site", icon: ICONS.settings, permission: "website:edit" },
     ],
   },
   {
@@ -110,7 +148,7 @@ const personInitials = (fullName: string) =>
 
 function NavEntry({ item }: { item: NavItem }) {
   return (
-    <NavLink to={item.to} end={item.to === "/"} className={({ isActive }) => `navi${isActive ? " on" : ""}`} title={item.label}>
+    <NavLink to={item.to} end={item.to === "/" || item.end === true} className={({ isActive }) => `navi${isActive ? " on" : ""}`} title={item.label}>
       <Icon d={item.icon} />
       <span>{item.label}</span>
     </NavLink>
@@ -283,13 +321,6 @@ export function Shell() {
                   </div>
                 );
               })}
-              <span className="navi off" aria-disabled="true" title="Coworking : phase 2">
-                <Icon d="M5 11h14v10H5zM8 11V7a4 4 0 0 1 8 0v4" />
-                <span>Coworking</span>
-                <span className="b b-gray lbl" style={{ marginInlineStart: "auto" }}>
-                  Phase 2
-                </span>
-              </span>
             </nav>
             <div className="side-foot">
               <span className="avatar" aria-hidden="true">
@@ -316,6 +347,7 @@ export function Shell() {
                 {crumbs.map((c, i) => (i === crumbs.length - 1 ? <strong key={i}>{c}</strong> : <span key={i}>{c} ›</span>))}
               </nav>
               <div className="row center" style={{ gap: 8 }}>
+                {can("coworking:write") ? <WalkInButton /> : null}
                 {can("payments:write") ? (
                   <button type="button" className="btn btn-p" onClick={() => setCollect({})}>
                     + Encaisser

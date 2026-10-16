@@ -11,12 +11,14 @@ import { conflict, notFound, unprocessable } from "../errors.js";
 import { idParam, isoDate, millimes, optionalText, reason, uuid } from "../validation.js";
 
 const cheque = z.object({ number: z.string().trim().min(1).max(40), bank: z.string().trim().min(1).max(100) }).strict();
-const payerFields = { studentId: uuid.optional(), renterId: uuid.optional() };
-const onePayer = (p: { studentId?: string | undefined; renterId?: string | undefined }) => !!p.studentId !== !!p.renterId;
-const payerOf = (p: { studentId?: string | undefined; renterId?: string | undefined }): Payer =>
-  p.studentId ? { kind: "student", id: p.studentId } : { kind: "renter", id: p.renterId! };
-const payerOfRow = (row: { student_id: string | null; renter_id: string | null }): Payer =>
-  row.student_id ? { kind: "student", id: row.student_id } : { kind: "renter", id: row.renter_id! };
+type PayerInput = { studentId?: string | undefined; renterId?: string | undefined; memberId?: string | undefined };
+const payerFields = { studentId: uuid.optional(), renterId: uuid.optional(), memberId: uuid.optional() };
+const onePayer = (p: PayerInput) => [p.studentId, p.renterId, p.memberId].filter(Boolean).length === 1;
+const ONE_PAYER = "give exactly one of studentId, renterId and memberId";
+const payerOf = (p: PayerInput): Payer =>
+  p.studentId ? { kind: "student", id: p.studentId } : p.memberId ? { kind: "member", id: p.memberId } : { kind: "renter", id: p.renterId! };
+const payerOfRow = (row: { student_id: string | null; renter_id: string | null; member_id: string | null }): Payer =>
+  row.student_id ? { kind: "student", id: row.student_id } : row.member_id ? { kind: "member", id: row.member_id } : { kind: "renter", id: row.renter_id! };
 
 const paymentBody = z
   .object({
@@ -29,16 +31,16 @@ const paymentBody = z
     installmentIds: z.array(uuid).max(200).default([]),
   })
   .strict()
-  .refine(onePayer, "give either studentId or renterId")
+  .refine(onePayer, ONE_PAYER)
   .refine((p) => (p.method === "cheque") === !!p.cheque, "a cheque needs its number and bank, other methods none");
 const previewBody = z
   .object({ ...payerFields, amount: millimes.min(1), installmentIds: z.array(uuid).max(200).default([]) })
   .strict()
-  .refine(onePayer, "give either studentId or renterId");
+  .refine(onePayer, ONE_PAYER);
 const refundBody = z
   .object({ ...payerFields, amount: millimes.min(1), method: z.enum(["cash", "transfer", "cheque", "card"]), cheque: cheque.optional(), reason })
   .strict()
-  .refine(onePayer, "give either studentId or renterId");
+  .refine(onePayer, ONE_PAYER);
 const chequeStatusBody = z.object({ status: z.enum(["deposited", "cashed", "bounced"]), reason: reason.optional() }).strict();
 const cancelBody = z.object({ reason }).strict();
 const listQuery = z.object({
@@ -48,6 +50,7 @@ const listQuery = z.object({
   userId: uuid.optional(),
   studentId: uuid.optional(),
   renterId: uuid.optional(),
+  memberId: uuid.optional(),
   page: z.coerce.number().int().min(1).default(1),
   pageSize: z.coerce.number().int().min(1).max(200).default(50),
 });
@@ -82,6 +85,9 @@ async function allocationAxes(trx: Transaction<Database>, paymentId: string) {
       "allocations.amount",
       "installments.id as installmentId",
       "installments.rental_id as rentalId",
+      "installments.cw_booking_id as cwBookingId",
+      "installments.cw_subscription_id as cwSubscriptionId",
+      "installments.cw_pack_id as cwPackId",
       "rentals.room_id as roomId",
       "enrolments.id as enrolmentId",
       "groups.id as groupId",
@@ -106,7 +112,7 @@ export const paymentRoutes: FastifyPluginAsync = async (app) => {
       .leftJoin("rentals", "rentals.id", "installments.rental_id")
       .select("installments.id")
       .where("installments.id", "in", installmentIds)
-      .where(payer.kind === "student" ? "enrolments.student_id" : "rentals.renter_id", "=", payer.id)
+      .where(payer.kind === "student" ? "enrolments.student_id" : payer.kind === "renter" ? "rentals.renter_id" : "installments.member_id", "=", payer.id)
       .where("installments.centre_id", "=", centreId)
       .where("installments.kind", "=", "charge")
       .where("installments.status", "=", "open")
@@ -149,6 +155,7 @@ export const paymentRoutes: FastifyPluginAsync = async (app) => {
           centre_id: actor.centreId,
           student_id: body.studentId ?? null,
           renter_id: body.renterId ?? null,
+          member_id: body.memberId ?? null,
           amount: body.amount,
           method: body.method,
           cheque_number: body.cheque?.number ?? null,
@@ -173,7 +180,11 @@ export const paymentRoutes: FastifyPluginAsync = async (app) => {
           userId: actor.userId,
           studentId: body.studentId ?? null,
           renterId: body.renterId ?? null,
+          memberId: body.memberId ?? null,
           rentalId: a.rentalId,
+          cwBookingId: a.cwBookingId,
+          cwSubscriptionId: a.cwSubscriptionId,
+          cwPackId: a.cwPackId,
           roomId: a.roomId,
           installmentId: a.installmentId,
           enrolmentId: a.enrolmentId,
@@ -192,6 +203,7 @@ export const paymentRoutes: FastifyPluginAsync = async (app) => {
                 userId: actor.userId,
                 studentId: body.studentId ?? null,
                 renterId: body.renterId ?? null,
+                memberId: body.memberId ?? null,
                 payload: { paymentId: payment.id, method: body.method, advance: true },
               },
             ]
@@ -226,6 +238,7 @@ export const paymentRoutes: FastifyPluginAsync = async (app) => {
       .selectFrom("payments")
       .leftJoin("students", "students.id", "payments.student_id")
       .leftJoin("renters", "renters.id", "payments.renter_id")
+      .leftJoin("members", "members.id", "payments.member_id")
       .leftJoin("users", "users.id", "payments.created_by")
       .leftJoin("receipts", (join) => join.onRef("receipts.payment_id", "=", "payments.id").on("receipts.kind", "!=", "cancellation"))
       .select([
@@ -237,6 +250,8 @@ export const paymentRoutes: FastifyPluginAsync = async (app) => {
         "students.first_name as firstName",
         "students.last_name as lastName",
         "renters.name as renterName",
+        "payments.member_id as memberId",
+        sql<string | null>`case when members.id is null then null else concat_ws(' ', members.first_name, members.last_name) end`.as("memberName"),
         "payments.amount",
         "payments.method",
         "payments.cheque_status as chequeStatus",
@@ -252,6 +267,7 @@ export const paymentRoutes: FastifyPluginAsync = async (app) => {
       .$if(query.userId !== undefined, (qb) => qb.where("payments.created_by", "=", query.userId!))
       .$if(query.studentId !== undefined, (qb) => qb.where("payments.student_id", "=", query.studentId!))
       .$if(query.renterId !== undefined, (qb) => qb.where("payments.renter_id", "=", query.renterId!))
+      .$if(query.memberId !== undefined, (qb) => qb.where("payments.member_id", "=", query.memberId!))
       .orderBy("payments.received_at", "desc")
       .limit(query.pageSize + 1)
       .offset((query.page - 1) * query.pageSize)
@@ -268,7 +284,7 @@ export const paymentRoutes: FastifyPluginAsync = async (app) => {
     return db.transaction().execute(async (trx) => {
       const payment = await trx
         .selectFrom("payments")
-        .select(["id", "student_id", "renter_id", "method", "cheque_status", "status", "amount"])
+        .select(["id", "student_id", "renter_id", "member_id", "method", "cheque_status", "status", "amount"])
         .where("id", "=", id)
         .where("centre_id", "=", actor.centreId)
         .forUpdate()
@@ -288,6 +304,7 @@ export const paymentRoutes: FastifyPluginAsync = async (app) => {
             userId: actor.userId,
             studentId: payment.student_id,
             renterId: payment.renter_id,
+            memberId: payment.member_id,
             payload: { paymentId: id, reason: body.reason },
           },
         ]);
@@ -315,7 +332,7 @@ export const paymentRoutes: FastifyPluginAsync = async (app) => {
     const result = await db.transaction().execute(async (trx) => {
       const payment = await trx
         .selectFrom("payments")
-        .select(["id", "student_id", "renter_id", "status", "amount", "kind"])
+        .select(["id", "student_id", "renter_id", "member_id", "status", "amount", "kind"])
         .where("id", "=", id)
         .where("centre_id", "=", actor.centreId)
         .forUpdate()
@@ -356,7 +373,11 @@ export const paymentRoutes: FastifyPluginAsync = async (app) => {
           userId: actor.userId,
           studentId: payment.student_id,
           renterId: payment.renter_id,
+          memberId: payment.member_id,
           rentalId: a.rentalId,
+          cwBookingId: a.cwBookingId,
+          cwSubscriptionId: a.cwSubscriptionId,
+          cwPackId: a.cwPackId,
           roomId: a.roomId,
           installmentId: a.installmentId,
           enrolmentId: a.enrolmentId,
@@ -375,6 +396,7 @@ export const paymentRoutes: FastifyPluginAsync = async (app) => {
                 userId: actor.userId,
                 studentId: payment.student_id,
                 renterId: payment.renter_id,
+                memberId: payment.member_id,
                 payload: { paymentId: id },
               },
             ]
@@ -422,6 +444,7 @@ export const paymentRoutes: FastifyPluginAsync = async (app) => {
           kind: "refund",
           student_id: body.studentId ?? null,
           renter_id: body.renterId ?? null,
+          member_id: body.memberId ?? null,
           amount: -body.amount,
           method: body.method,
           cheque_number: body.cheque?.number ?? null,
@@ -440,6 +463,7 @@ export const paymentRoutes: FastifyPluginAsync = async (app) => {
           userId: actor.userId,
           studentId: body.studentId ?? null,
           renterId: body.renterId ?? null,
+          memberId: body.memberId ?? null,
           payload: { paymentId: refund.id, refund: true },
         },
       ]);
