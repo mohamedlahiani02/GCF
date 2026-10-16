@@ -1,4 +1,4 @@
-import { FAQ_SECTION_TYPE, sectionMediaIds, type SiteLanguage, type SiteSection } from "@gcf/shared";
+import { sectionMediaIds, type SiteLanguage, type SiteSection } from "@gcf/shared";
 import { sql, type Kysely } from "kysely";
 import type { Database, Module } from "../db/types.js";
 import { loadSectionData } from "./dynamic.js";
@@ -222,7 +222,7 @@ export async function renderSitePage(db: Kysely<Database>, state: SiteState, r: 
       openingHoursSpecification: [openingHoursSpecification(centre)],
     });
   }
-  const faqs = sections.flatMap((s) => (s.type === FAQ_SECTION_TYPE ? s.items : []));
+  const faqs = sections.flatMap((s) => (s.type === "faq" ? s.items : []));
   if (faqs.length) {
     jsonLd.push({
       "@context": "https://schema.org",
