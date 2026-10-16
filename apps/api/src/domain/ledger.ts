@@ -277,7 +277,7 @@ export async function planAllocations(
   return planned;
 }
 
-export async function applyAllocations(trx: Transaction<Database>, centreId: string, planned: PlannedAllocation[], userId: string): Promise<void> {
+export async function applyAllocations(trx: Transaction<Database>, centreId: string, planned: PlannedAllocation[], userId: string | null): Promise<void> {
   if (planned.length === 0) return;
   await trx
     .insertInto("allocations")
@@ -295,7 +295,7 @@ export async function applyAllocations(trx: Transaction<Database>, centreId: str
 }
 
 /** Applies discounts and credit to open charges. Called whenever charges, payments or discounts change. */
-export async function settlePayer(trx: Transaction<Database>, centreId: string, payer: Payer, userId: string): Promise<PlannedAllocation[]> {
+export async function settlePayer(trx: Transaction<Database>, centreId: string, payer: Payer, userId: string | null): Promise<PlannedAllocation[]> {
   const planned = await planAllocations(trx, centreId, payer);
   await applyAllocations(trx, centreId, planned, userId);
   return planned;

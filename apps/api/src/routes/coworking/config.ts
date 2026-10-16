@@ -38,11 +38,17 @@ const settingsBody = z
   .strict();
 
 const floorCreate = z.object({ name: requiredText(100), position: position.optional() }).strict();
-const floorUpdate = z.object({ name: requiredText(100), position }).partial().strict();
+const floorUpdate = z
+  .object({ name: requiredText(100), position })
+  .partial()
+  .strict();
 const planBody = z.object({ mediaId: uuid.nullable() }).strict();
 
 const zoneCreate = z.object({ floorId: uuid, name: requiredText(100), color: color.optional() }).strict();
-const zoneUpdate = z.object({ name: requiredText(100), color }).partial().strict();
+const zoneUpdate = z
+  .object({ name: requiredText(100), color })
+  .partial()
+  .strict();
 const zoneQuery = z.object({ floorId: uuid.optional(), status: z.enum(["active", "archived", "all"]).default("active") });
 
 const attributeBody = z.object({ name: requiredText(100) }).strict();
@@ -58,11 +64,7 @@ const typeFields = {
   position,
   public: z.boolean(),
 };
-const typeCreate = z
-  .object(typeFields)
-  .partial()
-  .required({ name: true, category: true })
-  .strict();
+const typeCreate = z.object(typeFields).partial().required({ name: true, category: true }).strict();
 const typeUpdate = z.object(typeFields).partial().strict();
 
 const resourceFields = {
@@ -75,11 +77,7 @@ const resourceFields = {
   attributeIds: z.array(uuid).max(50),
   roomId: uuid.nullable().optional(),
 };
-const resourceCreate = z
-  .object(resourceFields)
-  .partial()
-  .required({ code: true, typeId: true, floorId: true })
-  .strict();
+const resourceCreate = z.object(resourceFields).partial().required({ code: true, typeId: true, floorId: true }).strict();
 const resourceUpdate = z.object(resourceFields).partial().strict();
 const resourceQuery = z.object({
   floorId: uuid.optional(),
@@ -109,9 +107,7 @@ const formatUpdate = z.object(formatFields).partial().strict();
 const formatQuery = z.object({ typeId: uuid.optional(), status: z.enum(["active", "archived", "all"]).default("active") });
 const pricesBody = z
   .object({
-    prices: z
-      .array(z.object({ profile: z.enum(["visitor", "member"]), amount: millimes, offpeakAmount: millimes.nullable() }).strict())
-      .max(2),
+    prices: z.array(z.object({ profile: z.enum(["visitor", "member"]), amount: millimes, offpeakAmount: millimes.nullable() }).strict()).max(2),
   })
   .strict();
 
@@ -136,11 +132,7 @@ const planFields = {
   position,
   entitlements: z.array(entitlementInput).max(30),
 };
-const planCreate = z
-  .object(planFields)
-  .partial()
-  .required({ name: true, period: true, price: true, billing: true })
-  .strict();
+const planCreate = z.object(planFields).partial().required({ name: true, period: true, price: true, billing: true }).strict();
 const planUpdate = z.object(planFields).partial().strict();
 
 const packFields = {
@@ -174,11 +166,7 @@ const promoFields = {
     .min(1)
     .max(2),
 };
-const promoCreate = z
-  .object(promoFields)
-  .partial()
-  .required({ code: true, kind: true, value: true, validFrom: true, validTo: true })
-  .strict();
+const promoCreate = z.object(promoFields).partial().required({ code: true, kind: true, value: true, validFrom: true, validTo: true }).strict();
 const promoUpdate = z.object(promoFields).partial().strict();
 
 const isAssigned = (category: CwCategory) => ASSIGNED_CATEGORIES.includes(category);
@@ -238,7 +226,8 @@ async function validateLayout(db: Db, centreId: string, floorId: string, value: 
       ).map((r) => r.id),
     );
     const missing = resourceIds.filter((id) => !found.has(id));
-    if (missing.length) throw unprocessable("unknown_plan_resource", "the layout places resources that are not live resources of this floor", { resourceIds: missing });
+    if (missing.length)
+      throw unprocessable("unknown_plan_resource", "the layout places resources that are not live resources of this floor", { resourceIds: missing });
   }
   const zoneIds = [...new Set(layout.areas.map((a) => a.zoneId))];
   if (zoneIds.length) {
@@ -313,10 +302,12 @@ function formatValues(input: FormatInput): FormatValues {
   if (extra.length) throw unprocessable("format_fields_mismatch", `these fields do not apply to a ${input.nature} format`, { fields: extra });
   const validStep = v.step !== null && [15, 30, 60].includes(v.step);
   if (input.nature === "fixed") {
-    if (v.duration === null || v.duration < 15 || v.duration > 1440) throw unprocessable("format_duration_invalid", "the duration must be between 15 and 1440 minutes");
+    if (v.duration === null || v.duration < 15 || v.duration > 1440)
+      throw unprocessable("format_duration_invalid", "the duration must be between 15 and 1440 minutes");
     if (!validStep) throw unprocessable("format_step_invalid", "start times are spaced 15, 30 or 60 minutes apart");
   } else if (input.nature === "named") {
-    if (v.start === null || v.end === null || toClock(v.end) <= toClock(v.start)) throw unprocessable("format_hours_invalid", "the end time must be after the start time");
+    if (v.start === null || v.end === null || toClock(v.end) <= toClock(v.start))
+      throw unprocessable("format_hours_invalid", "the end time must be after the start time");
   } else {
     if (v.min === null || v.max === null || v.min < 15 || v.min > 1440 || v.max < v.min || v.max > 1440) {
       throw unprocessable("format_range_invalid", "the minimum is between 15 and 1440 minutes and the maximum between the minimum and 1440");
@@ -357,7 +348,8 @@ async function validatePlan(
   const typeIds = plan.entitlements.map((e) => e.typeId);
   if (new Set(typeIds).size !== typeIds.length) throw unprocessable("duplicate_entitlement", "each resource type appears once in the entitlements");
   for (const e of plan.entitlements) {
-    if ((e.quotaKind === "unlimited") !== (e.quota === null)) throw unprocessable("invalid_quota", "an unlimited entitlement has no quota, the others need one");
+    if ((e.quotaKind === "unlimited") !== (e.quota === null))
+      throw unprocessable("invalid_quota", "an unlimited entitlement has no quota, the others need one");
   }
   if (typeIds.length) {
     const types = await db
@@ -399,7 +391,11 @@ const SETTINGS_COLUMNS = [
 ] as const;
 
 async function loadSettings(db: Db, centreId: string, lock = false) {
-  await db.insertInto("cw_settings").values({ centre_id: centreId }).onConflict((oc) => oc.column("centre_id").doNothing()).execute();
+  await db
+    .insertInto("cw_settings")
+    .values({ centre_id: centreId })
+    .onConflict((oc) => oc.column("centre_id").doNothing())
+    .execute();
   return db
     .selectFrom("cw_settings")
     .select(SETTINGS_COLUMNS)
@@ -457,17 +453,7 @@ const PACK_COLUMNS = [
   "public",
   "status",
 ] as const;
-const PROMO_COLUMNS = [
-  "id",
-  "code",
-  "kind",
-  "value",
-  "valid_from as validFrom",
-  "valid_to as validTo",
-  "max_uses as maxUses",
-  "profiles",
-  "status",
-] as const;
+const PROMO_COLUMNS = ["id", "code", "kind", "value", "valid_from as validFrom", "valid_to as validTo", "max_uses as maxUses", "profiles", "status"] as const;
 const CLOSURE_COLUMNS = ["id", "starts_on as startsOn", "ends_on as endsOn", "label", "open_from as openFrom", "open_to as openTo"] as const;
 
 const presentClosure = (c: { id: string; startsOn: string; endsOn: string; label: string; openFrom: string | null; openTo: string | null }) => ({
@@ -514,8 +500,14 @@ export const coworkingConfigRoutes: FastifyPluginAsync = async (app) => {
   const read = app.requirePermission("coworking:read");
   const manage = app.requirePermission("coworking:manage");
 
-  const audit = (trx: Transaction<Database>, actor: SessionUser, action: string, objectType: string, objectId: string, extra: { before?: unknown; after?: unknown; reason?: string }) =>
-    writeAudit(trx, { centreId: actor.centreId, userId: actor.userId, action, objectType, objectId, ...extra });
+  const audit = (
+    trx: Transaction<Database>,
+    actor: SessionUser,
+    action: string,
+    objectType: string,
+    objectId: string,
+    extra: { before?: unknown; after?: unknown; reason?: string },
+  ) => writeAudit(trx, { centreId: actor.centreId, userId: actor.userId, action, objectType, objectId, ...extra });
 
   /* Rules */
 
@@ -706,7 +698,9 @@ export const coworkingConfigRoutes: FastifyPluginAsync = async (app) => {
         .set({ draft_layout: JSON.stringify(layout) })
         .where("id", "=", id)
         .execute();
-      await audit(trx, actor, "cw_floor.draft_saved", "cw_floor", id, { after: { items: layout.items.length, labels: layout.labels.length, areas: layout.areas.length } });
+      await audit(trx, actor, "cw_floor.draft_saved", "cw_floor", id, {
+        after: { items: layout.items.length, labels: layout.labels.length, areas: layout.areas.length },
+      });
       return { id, draftLayout: layout };
     });
   });
@@ -784,7 +778,13 @@ export const coworkingConfigRoutes: FastifyPluginAsync = async (app) => {
     const { id } = idParam.parse(request.params);
     const body = zoneUpdate.parse(request.body);
     return db.transaction().execute(async (trx) => {
-      const before = await trx.selectFrom("cw_zones").select(ZONE_COLUMNS).where("id", "=", id).where("centre_id", "=", actor.centreId).forUpdate().executeTakeFirst();
+      const before = await trx
+        .selectFrom("cw_zones")
+        .select(ZONE_COLUMNS)
+        .where("id", "=", id)
+        .where("centre_id", "=", actor.centreId)
+        .forUpdate()
+        .executeTakeFirst();
       if (!before) throw notFound("zone");
       const after = await trx
         .updateTable("cw_zones")
@@ -829,7 +829,11 @@ export const coworkingConfigRoutes: FastifyPluginAsync = async (app) => {
     const actor = request.user!;
     const body = attributeBody.parse(request.body);
     const row = await db.transaction().execute(async (trx) => {
-      const created = await trx.insertInto("cw_attributes").values({ centre_id: actor.centreId, name: body.name }).returning(ATTRIBUTE_COLUMNS).executeTakeFirstOrThrow();
+      const created = await trx
+        .insertInto("cw_attributes")
+        .values({ centre_id: actor.centreId, name: body.name })
+        .returning(ATTRIBUTE_COLUMNS)
+        .executeTakeFirstOrThrow();
       await audit(trx, actor, "cw_attribute.created", "cw_attribute", created.id, { after: created });
       return created;
     });
@@ -945,7 +949,8 @@ export const coworkingConfigRoutes: FastifyPluginAsync = async (app) => {
           trx.selectFrom("cw_pack_products").select("id").where("type_id", "=", id).executeTakeFirst(),
           trx.selectFrom("cw_booking_formats").select("id").where("type_id", "=", id).executeTakeFirst(),
         ]);
-        if (resource || plan || entitlement || pack || format) throw conflict("category_locked", "the category cannot change once resources, formats, plans or packs use this type");
+        if (resource || plan || entitlement || pack || format)
+          throw conflict("category_locked", "the category cannot change once resources, formats, plans or packs use this type");
       }
       if (body.photoMediaId) await assertMedia(trx, actor.centreId, body.photoMediaId);
       const after = await trx
@@ -1021,7 +1026,9 @@ export const coworkingConfigRoutes: FastifyPluginAsync = async (app) => {
         "rooms.name as roomName",
         "cw_resources.status",
         "cw_resources.out_of_service_reason as outOfServiceReason",
-        sql<string[]>`coalesce((select array_agg(ra.attribute_id order by ra.attribute_id) from cw_resource_attributes ra where ra.resource_id = cw_resources.id), '{}')`.as(
+        sql<
+          string[]
+        >`coalesce((select array_agg(ra.attribute_id order by ra.attribute_id) from cw_resource_attributes ra where ra.resource_id = cw_resources.id), '{}')`.as(
           "attributeIds",
         ),
       ])
@@ -1497,7 +1504,12 @@ export const coworkingConfigRoutes: FastifyPluginAsync = async (app) => {
     const actor = request.user!;
     const { id } = idParam.parse(request.params);
     await db.transaction().execute(async (trx) => {
-      const deleted = await trx.deleteFrom("cw_closures").where("id", "=", id).where("centre_id", "=", actor.centreId).returning(CLOSURE_COLUMNS).executeTakeFirst();
+      const deleted = await trx
+        .deleteFrom("cw_closures")
+        .where("id", "=", id)
+        .where("centre_id", "=", actor.centreId)
+        .returning(CLOSURE_COLUMNS)
+        .executeTakeFirst();
       if (!deleted) throw notFound("closure");
       await audit(trx, actor, "cw_closure.deleted", "cw_closure", id, { before: presentClosure(deleted) });
     });

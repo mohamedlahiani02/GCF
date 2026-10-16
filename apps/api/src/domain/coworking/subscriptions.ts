@@ -39,7 +39,10 @@ export function periodEnd(startsOn: string, period: CwPeriod): string {
 export function subscriptionChargeLines(planName: string, price: number, billing: CwBilling, period: CwPeriod, startsOn: string, endsOn: string): ChargeLine[] {
   if (billing === "upfront") return [{ label: `Abonnement ${planName} du ${frDate(startsOn)} au ${frDate(endsOn)}`, amount: price, dueDate: startsOn }];
   const months = PERIOD_MONTHS[period];
-  return allocate(price, Array.from({ length: months }, () => 1)).map((amount, i) => {
+  return allocate(
+    price,
+    Array.from({ length: months }, () => 1),
+  ).map((amount, i) => {
     const dueDate = addMonthsClamped(startsOn, i);
     return { label: `Abonnement ${planName}, mensualité ${i + 1}/${months} (${frDate(dueDate)})`, amount, dueDate };
   });
@@ -49,16 +52,7 @@ export function subscriptionChargeLines(planName: string, price: number, billing
 export async function loadPlanForSale(db: Kysely<Database> | Transaction<Database>, centreId: string, planId: string): Promise<PlanForSale | undefined> {
   const plan = await db
     .selectFrom("cw_plans")
-    .select([
-      "id",
-      "name",
-      "period",
-      "price",
-      "billing",
-      "includes_domiciliation as includesDomiciliation",
-      "assigned_type_id as assignedTypeId",
-      "status",
-    ])
+    .select(["id", "name", "period", "price", "billing", "includes_domiciliation as includesDomiciliation", "assigned_type_id as assignedTypeId", "status"])
     .where("id", "=", planId)
     .where("centre_id", "=", centreId)
     .executeTakeFirst();
@@ -93,7 +87,8 @@ export async function assertAssignableResource(
     .forUpdate()
     .executeTakeFirst();
   const usable = resource && (resource.status === "active" || (options.allowOutOfService && resource.status === "out_of_service"));
-  if (!resource || resource.type_id !== typeId || !usable) throw unprocessable("invalid_assigned_resource", "the resource is not an available resource of the plan type");
+  if (!resource || resource.type_id !== typeId || !usable)
+    throw unprocessable("invalid_assigned_resource", "the resource is not an available resource of the plan type");
   const taken = await trx
     .selectFrom("cw_subscriptions")
     .select("id")
@@ -120,24 +115,6 @@ export interface NewSubscription {
  * Settles a member after a change made by the background job. settlePayer attributes allocations to a user; the job
  * has none, so the same plan is applied with an empty author.
  */
-async function settleWithoutUser(trx: Transaction<Database>, centreId: string, payer: Payer): Promise<void> {
-  const planned = await planAllocations(trx, centreId, payer);
-  if (planned.length === 0) return;
-  await trx
-    .insertInto("allocations")
-    .values(
-      planned.map((p) => ({
-        centre_id: centreId,
-        payment_id: p.source === "payment" ? p.sourceId : null,
-        discount_id: p.source === "discount" ? p.sourceId : null,
-        installment_id: p.installmentId,
-        amount: p.amount,
-        created_by: null,
-      })),
-    )
-    .execute();
-}
-
 /**
  * Sells a subscription: snapshots the plan price and quotas, creates its charges and lets the member's credit pay
  * them. The caller locks the member first and checks the assigned resource. Two active subscriptions can never hold
@@ -176,8 +153,7 @@ export async function createSubscription(trx: Transaction<Database>, input: NewS
   const lines = subscriptionChargeLines(plan.name, plan.price, plan.billing, plan.period, input.startsOn, endsOn);
   await issueMemberCharges(trx, input.centreId, input.memberId, { cwSubscriptionId: row.id }, lines, input.userId);
   const payer: Payer = { kind: "member", id: input.memberId };
-  if (input.userId) await settlePayer(trx, input.centreId, payer, input.userId);
-  else await settleWithoutUser(trx, input.centreId, payer);
+  await settlePayer(trx, input.centreId, payer, input.userId);
   return { id: row.id, startsOn: input.startsOn, endsOn };
 }
 

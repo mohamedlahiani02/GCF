@@ -148,7 +148,7 @@ function button(value: SectionButton | undefined, ctx: RenderContext, className 
   return href ? `<p><a class="${className}" href="${esc(href)}">${esc(value.label)}</a></p>` : "";
 }
 
-function image(id: string | null | undefined, ctx: RenderContext, options: { alt?: string | null; eager?: boolean } = {}): string {
+function image(id: string | null | undefined, ctx: RenderContext, options: { alt?: string | null | undefined; eager?: boolean } = {}): string {
   if (!id) return "";
   const media = ctx.media.get(id);
   if (!media) return "";

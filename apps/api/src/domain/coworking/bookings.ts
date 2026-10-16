@@ -923,7 +923,7 @@ export async function createBlock(db: Kysely<Database>, centreId: string, userId
     ]);
     const startsAt = start!.startsAt;
     const endsAt = end!.startsAt;
-    if (endsAt <= startsAt) throw unprocessable("invalid_times", "the end must be after the start");
+    if (endsAt <= startsAt) throw unprocessable("invalid_period", "the end must be after the start");
     if (endsAt <= now) throw unprocessable("slot_past", "this period is over");
     if (resource.room_id && (await roomBusy(trx, resource.room_id, startsAt, endsAt, null))) throw roomUnavailable();
     let blockId: string;

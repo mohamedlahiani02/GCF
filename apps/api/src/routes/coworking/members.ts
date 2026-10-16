@@ -1,4 +1,4 @@
-import { formatTnd } from "@gcf/shared";
+import { addDays } from "@gcf/shared";
 import type { FastifyPluginAsync } from "fastify";
 import { sql, type Transaction } from "kysely";
 import { z } from "zod";
@@ -10,17 +10,10 @@ import type { CwMailKind } from "../../db/types.coworking.js";
 import type { Database } from "../../db/types.js";
 import { cancelMemberCharges, issueMemberCharges } from "../../domain/coworking/memberCharges.js";
 import { portalLink, sendMemberMail } from "../../domain/coworking/memberMail.js";
-import {
-  assertAssignableResource,
-  createSubscription,
-  loadPlanForSale,
-  periodEnd,
-  renewSubscription,
-} from "../../domain/coworking/subscriptions.js";
+import { assertAssignableResource, createSubscription, loadPlanForSale, periodEnd, renewSubscription } from "../../domain/coworking/subscriptions.js";
 import { centreClock, installmentBalances, lockPayer, payerTotals, settlePayer, type Payer } from "../../domain/ledger.js";
-import { addDays } from "@gcf/shared";
 import { conflict, HttpError, notFound, unprocessable } from "../../errors.js";
-import { archiveBody, idParam, optionalEmail, optionalText, reason, requiredText, uuid } from "../../validation.js";
+import { archiveBody, idParam, isoDate, optionalEmail, optionalText, reason, requiredText, uuid } from "../../validation.js";
 
 const page = { page: z.coerce.number().int().min(1).default(1), pageSize: z.coerce.number().int().min(1).max(100).default(25) };
 const flag = z.enum(["true", "false"]).optional();
@@ -59,7 +52,7 @@ const memberQuery = z.object({
 const convertBody = z.object({ email, lastName: optionalText(100), phone: optionalText(40) }).strict();
 
 const subscriptionCreate = z
-  .object({ memberId: uuid, planId: uuid, startsOn: z.string(), assignedResourceId: uuid.nullable().optional(), autoRenew: z.boolean().optional() })
+  .object({ memberId: uuid, planId: uuid, startsOn: isoDate, assignedResourceId: uuid.nullable().optional(), autoRenew: z.boolean().optional() })
   .strict();
 const subscriptionQuery = z.object({
   status: z.enum(["current", "upcoming", "ended", "cancelled", "all"]).default("all"),
@@ -68,13 +61,15 @@ const subscriptionQuery = z.object({
   unpaid: flag,
   ...page,
 });
-const terminateBody = z.object({ endsOn: z.string(), reason }).strict();
+const terminateBody = z.object({ endsOn: isoDate, reason }).strict();
 const autoRenewBody = z.object({ autoRenew: z.boolean() }).strict();
 
 const packSell = z.object({ memberId: uuid, productId: uuid }).strict();
 
 const MAIL_KINDS = ["letter", "registered", "parcel", "other"] as const;
-const mailCreate = z.object({ memberId: uuid, kind: z.enum(MAIL_KINDS), sender: optionalText(200), reference: optionalText(100), notes: optionalText(1000) }).strict();
+const mailCreate = z
+  .object({ memberId: uuid, kind: z.enum(MAIL_KINDS), sender: optionalText(200), reference: optionalText(100), notes: optionalText(1000) })
+  .strict();
 const mailQuery = z.object({
   status: z.enum(["open", "received", "notified", "collected", "returned", "all"]).default("all"),
   memberId: uuid.optional(),
@@ -83,16 +78,8 @@ const mailQuery = z.object({
 const collectBody = z.object({ collectedByName: requiredText(150), notes: optionalText(1000) }).strict();
 const MAIL_KIND_FR: Record<CwMailKind, string> = { letter: "une lettre", registered: "une lettre recommandée", parcel: "un colis", other: "un envoi" };
 
-const NARROW_NBSP = String.fromCharCode(0x202f);
-const tnd = (amount: number) => `${formatTnd(amount, "fr").split(NARROW_NBSP).join(" ")} TND`;
 const frDate = (iso: string) => iso.split("-").reverse().join("/");
 const escapeLike = (value: string) => `%${value.toLowerCase().replace(/[\\%_]/g, (c) => `\\${c}`)}%`;
-const isoDate = (value: string, field: string) => {
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(value) || new Date(`${value}T00:00:00Z`).toISOString().slice(0, 10) !== value) {
-    throw new HttpError(400, "invalid_input", "the request is invalid", [{ path: field, message: "expected a valid YYYY-MM-DD date" }]);
-  }
-  return value;
-};
 
 const MEMBER_COLUMNS = [
   "members.id",
@@ -129,8 +116,14 @@ export const coworkingMemberRoutes: FastifyPluginAsync = async (app) => {
   const read = app.requirePermission("coworking:read");
   const write = app.requirePermission("coworking:write");
 
-  const audit = (trx: Transaction<Database>, actor: SessionUser, action: string, objectType: string, objectId: string, extra: { before?: unknown; after?: unknown; reason?: string }) =>
-    writeAudit(trx, { centreId: actor.centreId, userId: actor.userId, action, objectType, objectId, ...extra });
+  const audit = (
+    trx: Transaction<Database>,
+    actor: SessionUser,
+    action: string,
+    objectType: string,
+    objectId: string,
+    extra: { before?: unknown; after?: unknown; reason?: string },
+  ) => writeAudit(trx, { centreId: actor.centreId, userId: actor.userId, action, objectType, objectId, ...extra });
 
   const centreName = async (centreId: string) => (await db.selectFrom("centres").select("name").where("id", "=", centreId).executeTakeFirstOrThrow()).name;
 
@@ -153,9 +146,7 @@ export const coworkingMemberRoutes: FastifyPluginAsync = async (app) => {
       .where("centre_id", "=", request.user!.centreId)
       .$if(query.status !== "all", (qb) => qb.where("status", "=", query.status as "active" | "archived"))
       .$if(!!query.q, (qb) =>
-        qb.where((eb) =>
-          eb.or([eb(sql`lower(name)`, "like", escapeLike(query.q!)), eb(sql`lower(coalesce(tax_id, ''))`, "like", escapeLike(query.q!))]),
-        ),
+        qb.where((eb) => eb.or([eb(sql`lower(name)`, "like", escapeLike(query.q!)), eb(sql`lower(coalesce(tax_id, ''))`, "like", escapeLike(query.q!))])),
       )
       .orderBy(sql`lower(name)`)
       .limit(200)
@@ -364,7 +355,7 @@ export const coworkingMemberRoutes: FastifyPluginAsync = async (app) => {
         .where("s.ends_on", ">=", today)
         .orderBy("s.starts_on", "desc")
         .executeTakeFirst()) ?? null;
-    const packs = (await packRows(centreId, today).where("k.member_id", "=", id).where("k.status", "=", "active").where("k.expires_on", ">=", today).execute())
+    const packs = (await packRows(centreId).where("k.member_id", "=", id).where("k.status", "=", "active").where("k.expires_on", ">=", today).execute())
       .map(presentPack(today))
       .filter((p) => p.remaining > 0);
     const counters = await sql<{ bookingsLast30Days: number; upcomingBookings: number; noShowsLast90Days: number; openMail: number }>`
@@ -591,16 +582,13 @@ export const coworkingMemberRoutes: FastifyPluginAsync = async (app) => {
 
   /* Subscriptions */
 
-  const subscriptionBase = (centreId: string, today: string) =>
+  const subscriptionBase = (centreId: string) =>
     db
       .selectFrom("cw_subscriptions as s")
       .innerJoin("members as m", "m.id", "s.member_id")
       .innerJoin("cw_plans as p", "p.id", "s.plan_id")
       .leftJoin("cw_resources as r", "r.id", "s.assigned_resource_id")
-      .where("s.centre_id", "=", centreId)
-      .where(sql<boolean>`true`)
-      .$narrowType<{ today: string }>()
-      .where(sql<boolean>`${today}::date is not null`);
+      .where("s.centre_id", "=", centreId);
 
   const subscriptionColumns = (today: string) =>
     [
@@ -631,7 +619,7 @@ export const coworkingMemberRoutes: FastifyPluginAsync = async (app) => {
 
   const loadSubscription = async (centreId: string, id: string) => {
     const { today } = await centreClock(db, centreId);
-    const row = await subscriptionBase(centreId, today).select(subscriptionColumns(today)).where("s.id", "=", id).executeTakeFirst();
+    const row = await subscriptionBase(centreId).select(subscriptionColumns(today)).where("s.id", "=", id).executeTakeFirst();
     if (!row) throw notFound("subscription");
     const installments = (await installmentBalances(db, centreId, { payer: { kind: "member", id: row.memberId } })).filter((i) => i.cwSubscriptionId === id);
     return { ...row, installments };
@@ -666,14 +654,11 @@ export const coworkingMemberRoutes: FastifyPluginAsync = async (app) => {
     const centreId = request.user!.centreId;
     const query = subscriptionQuery.parse(request.query);
     const { today } = await centreClock(db, centreId);
-    let base = subscriptionBase(centreId, today);
+    let base = subscriptionBase(centreId);
     if (query.status !== "all") base = base.where(sql<boolean>`${subscriptionState(today)} = ${query.status}`);
     if (query.memberId) base = base.where("s.member_id", "=", query.memberId);
     if (query.endingWithinDays !== undefined) {
-      base = base
-        .where("s.status", "=", "active")
-        .where("s.ends_on", ">=", today)
-        .where("s.ends_on", "<=", addDays(today, query.endingWithinDays));
+      base = base.where("s.status", "=", "active").where("s.ends_on", ">=", today).where("s.ends_on", "<=", addDays(today, query.endingWithinDays));
     }
     if (query.unpaid) base = base.where(sql<boolean>`${subscriptionDue(today)} ${query.unpaid === "true" ? sql`>` : sql`=`} 0`);
     const [{ total }] = (await base.select((eb) => eb.fn.countAll<number>().as("total")).execute()) as [{ total: number }];
@@ -695,7 +680,7 @@ export const coworkingMemberRoutes: FastifyPluginAsync = async (app) => {
   app.post("/subscriptions", { preHandler: write }, async (request, reply) => {
     const actor = request.user!;
     const body = subscriptionCreate.parse(request.body);
-    const startsOn = isoDate(body.startsOn, "startsOn");
+    const { startsOn } = body;
     const id = await db.transaction().execute(async (trx) => {
       await lockPayer(trx, { kind: "member", id: body.memberId }, actor.centreId);
       const member = await trx.selectFrom("members").select("status").where("id", "=", body.memberId).executeTakeFirstOrThrow();
@@ -734,7 +719,7 @@ export const coworkingMemberRoutes: FastifyPluginAsync = async (app) => {
     const actor = request.user!;
     const { id } = idParam.parse(request.params);
     const body = terminateBody.parse(request.body);
-    const endsOn = isoDate(body.endsOn, "endsOn");
+    const { endsOn } = body;
     await db.transaction().execute(async (trx) => {
       const sub = await lockSubscription(trx, actor.centreId, id);
       if (sub.status !== "active") throw conflict("subscription_cancelled", "the subscription is cancelled");
@@ -772,7 +757,8 @@ export const coworkingMemberRoutes: FastifyPluginAsync = async (app) => {
         .select(sql<number>`coalesce(sum(effective_allocations.amount), 0)::bigint`.as("paid"))
         .where("installments.cw_subscription_id", "=", id)
         .executeTakeFirstOrThrow();
-      if (Number(paid.paid) > 0) throw conflict("installment_paid", "money was received on this subscription; terminate it instead or cancel the payment first");
+      if (Number(paid.paid) > 0)
+        throw conflict("installment_paid", "money was received on this subscription; terminate it instead or cancel the payment first");
       const charges = await openSubscriptionCharges(trx, id);
       await cancelMemberCharges(trx, actor.centreId, sub.member_id, { cwSubscriptionId: id }, charges, actor.userId, `abonnement annulé : ${reason}`);
       await trx
@@ -814,7 +800,7 @@ export const coworkingMemberRoutes: FastifyPluginAsync = async (app) => {
 
   /* Credit packs */
 
-  const packRows = (centreId: string, _today: string) =>
+  const packRows = (centreId: string) =>
     db
       .selectFrom("cw_packs as k")
       .innerJoin("cw_pack_products as pp", "pp.id", "k.product_id")
@@ -851,7 +837,7 @@ export const coworkingMemberRoutes: FastifyPluginAsync = async (app) => {
     const { id } = idParam.parse(request.params);
     await memberView(centreId, id);
     const { today } = await centreClock(db, centreId);
-    const rows = await packRows(centreId, today).where("k.member_id", "=", id).orderBy("k.expires_on", "desc").orderBy("k.created_at", "desc").execute();
+    const rows = await packRows(centreId).where("k.member_id", "=", id).orderBy("k.expires_on", "desc").orderBy("k.created_at", "desc").execute();
     return rows.map(presentPack(today));
   });
 
@@ -898,11 +884,13 @@ export const coworkingMemberRoutes: FastifyPluginAsync = async (app) => {
         actor.userId,
       );
       await settlePayer(trx, actor.centreId, { kind: "member", id: body.memberId }, actor.userId);
-      await audit(trx, actor, "cw_pack.sold", "cw_pack", pack.id, { after: { ...body, quota: product.quota, price: product.price, startsOn: today, expiresOn } });
+      await audit(trx, actor, "cw_pack.sold", "cw_pack", pack.id, {
+        after: { ...body, quota: product.quota, price: product.price, startsOn: today, expiresOn },
+      });
       return pack.id;
     });
     const { today } = await centreClock(db, actor.centreId);
-    const row = await packRows(actor.centreId, today).where("k.id", "=", id).executeTakeFirstOrThrow();
+    const row = await packRows(actor.centreId).where("k.id", "=", id).executeTakeFirstOrThrow();
     return reply.status(201).send(presentPack(today)(row));
   });
 
@@ -940,7 +928,7 @@ export const coworkingMemberRoutes: FastifyPluginAsync = async (app) => {
       await audit(trx, actor, "cw_pack.cancelled", "cw_pack", id, { after: { status: "cancelled", cancelledCharges: charges.length }, reason });
     });
     const { today } = await centreClock(db, actor.centreId);
-    return presentPack(today)(await packRows(actor.centreId, today).where("k.id", "=", id).executeTakeFirstOrThrow());
+    return presentPack(today)(await packRows(actor.centreId).where("k.id", "=", id).executeTakeFirstOrThrow());
   });
 
   /* Domiciliation and mail */
@@ -1142,7 +1130,4 @@ export const coworkingMemberRoutes: FastifyPluginAsync = async (app) => {
     });
     return loadMailItem(actor.centreId, id);
   });
-
-  /** Kept for the money screens of a member: the amount formatted like on receipts. */
-  void tnd;
 };
