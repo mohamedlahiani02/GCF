@@ -207,6 +207,8 @@ export interface CwSubscriptionsTable {
   price: number;
   billing: CwBilling;
   includes_domiciliation: boolean;
+  /** Snapshot of the plan entitlements: { typeId, quotaKind, quota }[]. */
+  entitlements: ColumnType<unknown, string | undefined, string>;
   assigned_resource_id: string | null;
   auto_renew: Generated<boolean>;
   renewed_from_id: string | null;

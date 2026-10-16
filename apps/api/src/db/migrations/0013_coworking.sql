@@ -236,6 +236,8 @@ create table cw_subscriptions (
   price bigint not null check (price > 0),
   billing text not null check (billing in ('upfront', 'monthly')),
   includes_domiciliation boolean not null,
+  -- The plan's quotas when the subscription was sold: later plan changes never alter what was bought.
+  entitlements jsonb not null default '[]',
   assigned_resource_id uuid references cw_resources (id),
   auto_renew boolean not null default false,
   renewed_from_id uuid references cw_subscriptions (id),
