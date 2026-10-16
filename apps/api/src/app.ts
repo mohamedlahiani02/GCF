@@ -78,6 +78,7 @@ function mapDatabaseError(error: unknown): HttpError | undefined {
   const constraint = (error as { constraint?: string }).constraint;
   if (code === "23505") return new HttpError(409, "duplicate", "this value already exists", { constraint });
   if (code === "23514") return new HttpError(422, "constraint_violation", "a business rule was violated", { constraint });
+  if (code === "23P01") return new HttpError(409, "schedule_conflict", "the period overlaps an existing one", { constraint });
   if (code === "23503") return new HttpError(422, "invalid_reference", "a referenced record does not exist", { constraint });
   return undefined;
 }

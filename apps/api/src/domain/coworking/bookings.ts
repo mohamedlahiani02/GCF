@@ -7,7 +7,7 @@ import type { CwBookingStatus, CwCategory, CwProfile } from "../../db/types.cowo
 import { conflict, forbidden, HttpError, notFound, unprocessable } from "../../errors.js";
 import type { Mailer } from "../../mail.js";
 import { recordFinancialEvents } from "../financialEvents.js";
-import { installmentBalances, lockPayer, planAllocations, settlePayer, type Payer } from "../ledger.js";
+import { installmentBalances, lockPayer, settlePayer } from "../ledger.js";
 import { activeSubscriptions, computeCoverage, profileOf, releaseUsage, writeUsage, type Coverage } from "./entitlements.js";
 import { portalLink, sendMemberMail } from "./memberMail.js";
 import { applyPromotion, listPrice, type AppliedPromotion } from "./pricing.js";
@@ -385,29 +385,6 @@ const slotText = (b: Pick<BookingRecord, "category" | "resourceCode" | "localDat
   `${CW_CATEGORY_LABELS.fr[b.category]} ${b.resourceCode}, ${frenchDate(b.localDate)} ${b.startTime}-${b.endTime}`;
 
 /** Applies the member's credit to new charges. A portal operation has no staff user to record on allocations. */
-async function settleMember(trx: Transaction<Database>, centreId: string, memberId: string, userId: string | null): Promise<void> {
-  const payer: Payer = { kind: "member", id: memberId };
-  if (userId) {
-    await settlePayer(trx, centreId, payer, userId);
-    return;
-  }
-  const planned = await planAllocations(trx, centreId, payer);
-  if (planned.length === 0) return;
-  await trx
-    .insertInto("allocations")
-    .values(
-      planned.map((p) => ({
-        centre_id: centreId,
-        payment_id: p.source === "payment" ? p.sourceId : null,
-        discount_id: p.source === "discount" ? p.sourceId : null,
-        installment_id: p.installmentId,
-        amount: p.amount,
-        created_by: null,
-      })),
-    )
-    .execute();
-}
-
 /** A charge of a booking due on `dueDate`, with its financial event. */
 async function issueCharge(
   trx: Transaction<Database>,
@@ -453,7 +430,7 @@ async function issueBookingCharge(trx: Transaction<Database>, centreId: string, 
     booking.localDate,
     userId,
   );
-  await settleMember(trx, centreId, booking.memberId, userId);
+  await settlePayer(trx, centreId, { kind: "member", id: booking.memberId }, userId);
 }
 
 /** Frees the training room shared with a resource once the booking no longer occupies it. */
@@ -762,7 +739,7 @@ export async function cancelBooking(
         todayIn(timezone, now),
         userId,
       );
-      await settleMember(trx, centreId, before.memberId!, userId);
+      await settlePayer(trx, centreId, { kind: "member", id: before.memberId! }, userId);
     }
     await writeAudit(trx, {
       centreId,

@@ -4,7 +4,7 @@ import type { CwBilling, CwPeriod, CwQuotaKind } from "../../db/types.coworking.
 import type { Database } from "../../db/types.js";
 import { writeAudit } from "../../audit.js";
 import { conflict, HttpError, notFound, unprocessable } from "../../errors.js";
-import { lockPayer, planAllocations, settlePayer, type Payer } from "../ledger.js";
+import { lockPayer, settlePayer, type Payer } from "../ledger.js";
 import { issueMemberCharges, type ChargeLine } from "./memberCharges.js";
 
 const PERIOD_MONTHS: Record<CwPeriod, number> = { month: 1, quarter: 3, year: 12 };
