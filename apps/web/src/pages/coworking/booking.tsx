@@ -71,8 +71,17 @@ export function BookingPage() {
       <div className="grid4">
         <Kpi label="Montant" value={<span className="num">{tnd(b.charge)}</span>} sub={`TND, tarif ${tnd(b.listPrice)}`} />
         <Kpi label="Réglé" value={<span className="num">{tnd(b.paid)}</span>} sub="TND" />
-        <Kpi label="Reste à payer" value={<span className="num">{tnd(b.due)}</span>} sub="TND" tone={b.due > 0 && b.charges.some((c) => c.state === "overdue") ? "red" : undefined} />
-        <Kpi label="Couvert par les droits" value={durationLabel(b.coveredMinutes)} sub={b.coverageDiscount ? `${tnd(b.coverageDiscount)} TND déduits` : "aucune déduction"} />
+        <Kpi
+          label="Reste à payer"
+          value={<span className="num">{tnd(b.due)}</span>}
+          sub="TND"
+          tone={b.due > 0 && b.charges.some((c) => c.state === "overdue") ? "red" : undefined}
+        />
+        <Kpi
+          label="Couvert par les droits"
+          value={durationLabel(b.coveredMinutes)}
+          sub={b.coverageDiscount ? `${tnd(b.coverageDiscount)} TND déduits` : "aucune déduction"}
+        />
       </div>
       <Card title="Actions">
         <div className="card-b">
@@ -150,7 +159,9 @@ export function BookingPage() {
                           {u.status === "released" ? ", rendu" : ""}
                         </div>
                       </td>
-                      <td className="num">{u.quotaKind === "minutes" ? durationLabel(u.amount) : u.quotaKind === "bookings" ? `${u.amount} réservation` : ""}</td>
+                      <td className="num">
+                        {u.quotaKind === "minutes" ? durationLabel(u.amount) : u.quotaKind === "bookings" ? `${u.amount} réservation` : ""}
+                      </td>
                     </tr>
                   ))}
                 </tbody>

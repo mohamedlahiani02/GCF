@@ -86,7 +86,9 @@ export function RequestsPage() {
                     <tr key={r.id}>
                       <td>
                         <Badge tone={left < 60 ? "red" : left < 240 ? "amber" : "neutral"}>{left > 0 ? durationLabel(left) : "Expirée"}</Badge>
-                        <div className="cap">demandée le {frDate(r.requestedAt)} à {frTime(r.requestedAt)}</div>
+                        <div className="cap">
+                          demandée le {frDate(r.requestedAt)} à {frTime(r.requestedAt)}
+                        </div>
                       </td>
                       <td>
                         <Link to={`/coworking/membres/${r.memberId}`}>{r.memberName}</Link>

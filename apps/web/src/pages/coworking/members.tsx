@@ -50,7 +50,14 @@ export function MembersPage() {
       <Card
         title={
           <div className="row center" style={{ gap: 8, flexWrap: "wrap" }}>
-            <input className="input" type="search" aria-label="Rechercher" placeholder="Nom, téléphone, e-mail, société" value={text} onChange={(e) => setText(e.target.value)} />
+            <input
+              className="input"
+              type="search"
+              aria-label="Rechercher"
+              placeholder="Nom, téléphone, e-mail, société"
+              value={text}
+              onChange={(e) => setText(e.target.value)}
+            />
             <select className="input" aria-label="Type" value={kind} onChange={filter(setKind)}>
               <option value="">Tous les types</option>
               <option value="member">Membres</option>
@@ -69,7 +76,11 @@ export function MembersPage() {
             </select>
           </div>
         }
-        footer={list.data ? <Pagination page={page} hasMore={page * PAGE_SIZE < list.data.total} onPage={setPage} total={list.data.total} pageSize={PAGE_SIZE} /> : null}
+        footer={
+          list.data ? (
+            <Pagination page={page} hasMore={page * PAGE_SIZE < list.data.total} onPage={setPage} total={list.data.total} pageSize={PAGE_SIZE} />
+          ) : null
+        }
       >
         <ErrorBanner error={list.error} retry={() => list.refetch()} />
         {list.isPending ? (

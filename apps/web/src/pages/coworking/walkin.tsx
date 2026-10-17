@@ -6,7 +6,19 @@ import { useToast } from "../../components/toasts";
 import { ErrorBanner, Field, Loading, Modal } from "../../components/ui";
 import { errorMessage } from "../../lib/errors";
 import { tnd, todayIso } from "../../lib/format";
-import { CATEGORY, durationLabel, memberName, useFloors, useFormats, useResourceTypes, type Booking, type FloorState, type MemberRow, type Quote, type SlotsResponse } from "./api";
+import {
+  CATEGORY,
+  durationLabel,
+  memberName,
+  useFloors,
+  useFormats,
+  useResourceTypes,
+  type Booking,
+  type FloorState,
+  type MemberRow,
+  type Quote,
+  type SlotsResponse,
+} from "./api";
 import { QuickBooking, isDeskBookable, quarterNow, useMemberCollect } from "./bookingParts";
 import { MemberPicker } from "./memberPicker";
 
@@ -27,7 +39,9 @@ function SeatStep({ onPick }: { onPick: (seat: Seat) => void }) {
   const date = todayIso();
   const now = quarterNow().time;
   const sellable = (formats.data ?? []).filter((f) => f.prices.length > 0);
-  const bookableTypes = (types.data ?? []).filter((t) => t.status === "active" && isDeskBookable({ category: t.category, status: "active" }) && sellable.some((f) => f.typeId === t.id));
+  const bookableTypes = (types.data ?? []).filter(
+    (t) => t.status === "active" && isDeskBookable({ category: t.category, status: "active" }) && sellable.some((f) => f.typeId === t.id),
+  );
   const [typeId, setTypeId] = useState("");
   const type = bookableTypes.find((t) => t.id === typeId) ?? bookableTypes[0];
   const typeFormats = sellable.filter((f) => f.typeId === type?.id);
@@ -52,9 +66,7 @@ function SeatStep({ onPick }: { onPick: (seat: Seat) => void }) {
     queryKey: ["cw-walkin-free", type?.id, date, slot?.startTime, slot?.endTime, floors.data?.map((f) => f.id)],
     queryFn: async () => {
       const states = await Promise.all(
-        floors.data!.map((f) =>
-          api.get<FloorState>(`/coworking/floors/${f.id}/state`, { date, startTime: slot!.startTime, endTime: slot!.endTime }),
-        ),
+        floors.data!.map((f) => api.get<FloorState>(`/coworking/floors/${f.id}/state`, { date, startTime: slot!.startTime, endTime: slot!.endTime })),
       );
       return states.flatMap((s) =>
         s.resources.filter((r) => r.typeId === type!.id && r.state === "free" && r.status === "active").map((r) => ({ ...r, floorName: s.floor.name })),
@@ -111,7 +123,10 @@ function SeatStep({ onPick }: { onPick: (seat: Seat) => void }) {
             </select>
           </Field>
         ) : null}
-        <Field label="Créneau d'aujourd'hui" error={slots.data && !open.length ? (slots.data.open ? "Plus aucun créneau aujourd'hui" : "Fermé aujourd'hui") : null}>
+        <Field
+          label="Créneau d'aujourd'hui"
+          error={slots.data && !open.length ? (slots.data.open ? "Plus aucun créneau aujourd'hui" : "Fermé aujourd'hui") : null}
+        >
           <select className="input" value={slot?.startTime ?? ""} disabled={!open.length} onChange={(e) => setStartTime(e.target.value)}>
             {open.map((s) => (
               <option key={s.startTime} value={s.startTime}>

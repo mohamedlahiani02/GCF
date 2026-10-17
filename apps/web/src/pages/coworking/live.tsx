@@ -122,24 +122,24 @@ function ResourceDrawer({
   }
   return (
     <Drawer
-        title={`${resource.code} · ${resource.typeName}`}
-        onClose={onClose}
-        footer={
-          can("coworking:write") && !bookingId && resource.state !== "blocked" ? (
-            <button type="button" className="btn" onClick={onBlock}>
-              Bloquer cette ressource
-            </button>
-          ) : undefined
-        }
-      >
-        <div className="row center" style={{ gap: 8 }}>
-          <span className="cap">
-            {CATEGORY[resource.category]} · {resource.capacity} place(s)
-          </span>
-          <Badge tone="neutral">{PLAN_STATE[resource.state]}</Badge>
-        </div>
-        {body}
-      </Drawer>
+      title={`${resource.code} · ${resource.typeName}`}
+      onClose={onClose}
+      footer={
+        can("coworking:write") && !bookingId && resource.state !== "blocked" ? (
+          <button type="button" className="btn" onClick={onBlock}>
+            Bloquer cette ressource
+          </button>
+        ) : undefined
+      }
+    >
+      <div className="row center" style={{ gap: 8 }}>
+        <span className="cap">
+          {CATEGORY[resource.category]} · {resource.capacity} place(s)
+        </span>
+        <Badge tone="neutral">{PLAN_STATE[resource.state]}</Badge>
+      </div>
+      {body}
+    </Drawer>
   );
 }
 
@@ -275,7 +275,12 @@ export function LivePlanPage() {
       <Card>
         <div className="card-b stack">
           <div className="row center cw-live-controls">
-            <button type="button" className="btn btn-g" aria-label="Jour précédent" onClick={() => (setPickedTime(null), update({ date: addDaysIso(date, -1) }))}>
+            <button
+              type="button"
+              className="btn btn-g"
+              aria-label="Jour précédent"
+              onClick={() => (setPickedTime(null), update({ date: addDaysIso(date, -1) }))}
+            >
               ‹
             </button>
             <input

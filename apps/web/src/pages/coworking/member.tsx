@@ -39,7 +39,8 @@ function ConvertModal({ member, onClose }: { member: MemberDetail; onClose: () =
   const client = useQueryClient();
   const toast = useToast();
   const save = useMutation({
-    mutationFn: () => api.post(`/coworking/members/${member.id}/convert`, { email: email.trim(), lastName: lastName.trim() || null, phone: phone.trim() || null }),
+    mutationFn: () =>
+      api.post(`/coworking/members/${member.id}/convert`, { email: email.trim(), lastName: lastName.trim() || null, phone: phone.trim() || null }),
     onSuccess: async () => {
       await client.invalidateQueries();
       toast("Client converti en membre. Envoyez-lui l'invitation à son espace client.");
@@ -157,7 +158,14 @@ function ProfileTab({ member }: { member: MemberDetail }) {
     ["Téléphone", member.phone ?? ""],
     ["E-mail", member.email ?? ""],
     ["Société", member.companyName ?? ""],
-    ["Espace client", member.kind === "guest" ? "Aucun (client de passage)" : member.hasPassword ? `Activé${member.lastLoginAt ? `, dernière connexion le ${frDateTime(member.lastLoginAt)}` : ""}` : "Invitation à envoyer"],
+    [
+      "Espace client",
+      member.kind === "guest"
+        ? "Aucun (client de passage)"
+        : member.hasPassword
+          ? `Activé${member.lastLoginAt ? `, dernière connexion le ${frDateTime(member.lastLoginAt)}` : ""}`
+          : "Invitation à envoyer",
+    ],
     ["Client depuis le", frDate(member.createdAt)],
     ["Notes internes", member.notes ?? ""],
   ];
@@ -322,7 +330,13 @@ function SubscriptionsTab({ member }: { member: MemberDetail }) {
       }
     >
       <ErrorBanner error={list.error} retry={() => list.refetch()} />
-      {list.isPending ? <Loading /> : list.data?.items.length === 0 ? <Empty title="Aucun abonnement" /> : <SubscriptionsTable items={list.data?.items ?? []} showMember={false} />}
+      {list.isPending ? (
+        <Loading />
+      ) : list.data?.items.length === 0 ? (
+        <Empty title="Aucun abonnement" />
+      ) : (
+        <SubscriptionsTable items={list.data?.items ?? []} showMember={false} />
+      )}
       {selling ? <SellSubscriptionModal memberId={member.id} onClose={() => setSelling(false)} /> : null}
     </Card>
   );
@@ -446,9 +460,7 @@ function AccountTab({ memberId }: { memberId: string }) {
               <tbody>
                 {installments.map((i) => (
                   <tr key={i.id}>
-                    <td>
-                      {i.cwBookingId ? <Link to={`/coworking/reservations/${i.cwBookingId}`}>{i.label}</Link> : i.label}
-                    </td>
+                    <td>{i.cwBookingId ? <Link to={`/coworking/reservations/${i.cwBookingId}`}>{i.label}</Link> : i.label}</td>
                     <td>
                       {frDate(i.dueDate)}
                       {i.dueDate !== i.originalDueDate ? <div className="cap">origine {frDate(i.originalDueDate)}</div> : null}
@@ -546,7 +558,13 @@ function MailTab({ member }: { member: MemberDetail }) {
       }
     >
       <ErrorBanner error={list.error} retry={() => list.refetch()} />
-      {list.isPending ? <Loading /> : list.data?.items.length === 0 ? <Empty title="Aucun courrier" /> : <MailItemsTable items={list.data?.items ?? []} showMember={false} />}
+      {list.isPending ? (
+        <Loading />
+      ) : list.data?.items.length === 0 ? (
+        <Empty title="Aucun courrier" />
+      ) : (
+        <MailItemsTable items={list.data?.items ?? []} showMember={false} />
+      )}
       {registering ? <RegisterMailModal member={{ id: member.id, name: memberName(member) }} onClose={() => setRegistering(false)} /> : null}
     </Card>
   );
@@ -596,7 +614,12 @@ export function MemberPage() {
           sub={`à venir · ${m.bookingsLast30Days} sur 30 jours${m.noShowsLast90Days ? ` · ${m.noShowsLast90Days} absence(s) sur 90 jours` : ""}`}
           tone={m.noShowsLast90Days >= 3 ? "amber" : undefined}
         />
-        <Kpi label="Reste à payer" value={<span className="num">{tnd(m.totals.due)}</span>} sub={`TND · crédit ${tnd(m.totals.credit)} TND`} tone={m.totals.due > 0 ? "amber" : undefined} />
+        <Kpi
+          label="Reste à payer"
+          value={<span className="num">{tnd(m.totals.due)}</span>}
+          sub={`TND · crédit ${tnd(m.totals.credit)} TND`}
+          tone={m.totals.due > 0 ? "amber" : undefined}
+        />
         <Kpi
           label="Carnets et courrier"
           value={m.packs.length}

@@ -132,7 +132,10 @@ export function MailItemsTable({ items, showMember }: { items: MailItem[]; showM
     mutationFn: (id: string) => api.post<MailItem & { mail: "sent" | "failed" }>(`/coworking/mail-items/${id}/notify`),
     onSuccess: async (r) => {
       await client.invalidateQueries();
-      toast(r.mail === "sent" ? `${r.memberName} est prévenu par e-mail.` : "L'envoi de l'e-mail a échoué ; il est noté au journal d'envoi.", r.mail === "sent" ? "success" : "error");
+      toast(
+        r.mail === "sent" ? `${r.memberName} est prévenu par e-mail.` : "L'envoi de l'e-mail a échoué ; il est noté au journal d'envoi.",
+        r.mail === "sent" ? "success" : "error",
+      );
     },
     onError: (error) => toast(errorMessage(error), "error"),
   });
@@ -256,7 +259,11 @@ export function MailPage() {
             ]}
           />
         }
-        footer={items.data ? <Pagination page={page} hasMore={page * PAGE_SIZE < items.data.total} onPage={setPage} total={items.data.total} pageSize={PAGE_SIZE} /> : null}
+        footer={
+          items.data ? (
+            <Pagination page={page} hasMore={page * PAGE_SIZE < items.data.total} onPage={setPage} total={items.data.total} pageSize={PAGE_SIZE} />
+          ) : null
+        }
       >
         <ErrorBanner error={items.error} retry={() => items.refetch()} />
         {items.isPending ? (

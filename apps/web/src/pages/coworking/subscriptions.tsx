@@ -319,9 +319,21 @@ export function SubscriptionsPage() {
           { value: "ended", label: "Terminés" },
         ]}
       />
-      <Card footer={list.data ? <Pagination page={page} hasMore={page * PAGE_SIZE < list.data.total} onPage={setPage} total={list.data.total} pageSize={PAGE_SIZE} /> : null}>
+      <Card
+        footer={
+          list.data ? (
+            <Pagination page={page} hasMore={page * PAGE_SIZE < list.data.total} onPage={setPage} total={list.data.total} pageSize={PAGE_SIZE} />
+          ) : null
+        }
+      >
         <ErrorBanner error={list.error} retry={() => list.refetch()} />
-        {list.isPending ? <Loading /> : list.data?.items.length === 0 ? <Empty title="Aucun abonnement" /> : <SubscriptionsTable items={list.data?.items ?? []} showMember />}
+        {list.isPending ? (
+          <Loading />
+        ) : list.data?.items.length === 0 ? (
+          <Empty title="Aucun abonnement" />
+        ) : (
+          <SubscriptionsTable items={list.data?.items ?? []} showMember />
+        )}
       </Card>
     </>
   );

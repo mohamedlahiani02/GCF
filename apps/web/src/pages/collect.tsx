@@ -53,10 +53,10 @@ function PayerPicker({ onPick }: { onPick: (payer: Payer, name: string) => void 
   const members = useQuery({
     queryKey: ["members-pick", text],
     queryFn: () =>
-      api.get<{ items: { id: string; firstName: string; lastName: string | null; companyName: string | null; phone: string | null }[] }>(
-        "/coworking/members",
-        { q: text, pageSize: 8 },
-      ),
+      api.get<{ items: { id: string; firstName: string; lastName: string | null; companyName: string | null; phone: string | null }[] }>("/coworking/members", {
+        q: text,
+        pageSize: 8,
+      }),
     enabled: kind === "member" && searching,
   });
   const rows: PickRow[] =

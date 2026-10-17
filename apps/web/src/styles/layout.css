@@ -932,3 +932,104 @@ button.nav-title:focus-visible,
   border-radius: 6px;
   background: var(--soft);
 }
+
+/* Coworking operations: live plan controls, planning bars by booking status, walk-in steps, check-in, heat maps. */
+.cw-live-controls {
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.cw-slider {
+  flex: 1 1 240px;
+  min-width: 160px;
+  accent-color: var(--accent);
+}
+.cw-heat-swatch {
+  background: #0e5a8a;
+  border-color: #0e5a8a;
+}
+.cw-blk-requested {
+  background: #fdf0d2;
+  color: #7a4a00;
+  border-color: #ebcb86;
+}
+.cw-blk-confirmed {
+  background: #e1ecfb;
+  color: #1d4f9e;
+  border-color: #afc8ee;
+}
+.cw-blk-checked-in {
+  background: #1d4f9e;
+  color: #ffffff;
+  border-color: #12346b;
+}
+.cw-blk-completed {
+  background: #e3f4e8;
+  color: #14633a;
+  border-color: #a9d6b7;
+}
+.cw-blk-no-show {
+  background: #fbe4e1;
+  color: #a3261b;
+  border-color: #e7a59d;
+}
+.cw-blk-block {
+  background: #eceef2;
+  color: #3f4a5a;
+  border-color: #8a94a3;
+  border-style: dashed;
+}
+.cw-floor-row {
+  padding: 10px 4px 6px;
+  border-top: 1px solid var(--line);
+  background: var(--soft);
+}
+.cw-steps {
+  display: flex;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  font-size: 12px;
+  color: var(--muted);
+}
+.cw-steps li {
+  flex: 1;
+  padding: 6px 8px;
+  border-bottom: 3px solid var(--line);
+}
+.cw-steps li[aria-current="step"] {
+  color: var(--ink);
+  font-weight: 600;
+  border-bottom-color: var(--accent);
+}
+.cw-seat-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(110px, 1fr));
+  gap: 8px;
+}
+.cw-seat-list .btn {
+  flex-direction: column;
+  align-items: flex-start;
+  min-height: 52px;
+}
+.cw-checkin {
+  align-items: center;
+  text-align: center;
+  padding: 32px 16px;
+}
+.cw-checkin-button {
+  width: min(100%, 420px);
+  min-height: 72px;
+  font-size: 20px;
+}
+.cw-heat th,
+.cw-heat td {
+  text-align: center;
+}
+.cw-heat-cell {
+  min-width: 36px;
+  font-size: 12px;
+}
+.cw-heat-closed {
+  background: var(--soft);
+}

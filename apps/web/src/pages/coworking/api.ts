@@ -145,7 +145,16 @@ export interface PlanningDay {
   floors: {
     id: string;
     name: string;
-    resources: { id: string; code: string; name: string | null; status: string; typeId: string; typeName: string; category: CwCategory; bookings: PlanningBooking[] }[];
+    resources: {
+      id: string;
+      code: string;
+      name: string | null;
+      status: string;
+      typeId: string;
+      typeName: string;
+      category: CwCategory;
+      bookings: PlanningBooking[];
+    }[];
   }[];
 }
 
@@ -248,7 +257,16 @@ export interface BookingDetail extends Booking {
   charges: ChargeBalance[];
   paid: number;
   due: number;
-  usage: { id: string; subscriptionId: string | null; packId: string | null; label: string; quotaKind: QuotaKind; amount: number; windowStart: string | null; status: "active" | "released" }[];
+  usage: {
+    id: string;
+    subscriptionId: string | null;
+    packId: string | null;
+    label: string;
+    quotaKind: QuotaKind;
+    amount: number;
+    windowStart: string | null;
+    status: "active" | "released";
+  }[];
   accessEvents: { id: string; at: string; source: "staff" | "qr"; recordedBy: string | null }[];
 }
 
@@ -265,7 +283,11 @@ export interface Quote {
   endsAt: string;
   listPrice: number;
   offpeak: boolean;
-  coverage: { coveredMinutes: number; discount: number; sources: { kind: "subscription" | "pack"; id: string; label: string; quotaKind: QuotaKind; amount: number; coveredMinutes: number }[] };
+  coverage: {
+    coveredMinutes: number;
+    discount: number;
+    sources: { kind: "subscription" | "pack"; id: string; label: string; quotaKind: QuotaKind; amount: number; coveredMinutes: number }[];
+  };
   promotion: { id: string; code: string; kind: "percent" | "amount"; value: number; discount: number } | null;
   charge: number;
   status: "requested" | "confirmed";

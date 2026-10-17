@@ -38,7 +38,17 @@ function formFromSearch(text: string): MemberForm {
   return { ...EMPTY_FORM, firstName: first, lastName: rest.join(" ") };
 }
 
-function MemberFields({ form, onChange, creating, autoFocus }: { form: MemberForm; onChange: (f: MemberForm) => void; creating: boolean; autoFocus?: boolean }) {
+function MemberFields({
+  form,
+  onChange,
+  creating,
+  autoFocus,
+}: {
+  form: MemberForm;
+  onChange: (f: MemberForm) => void;
+  creating: boolean;
+  autoFocus?: boolean;
+}) {
   const companies = useQuery({
     queryKey: ["cw-companies"],
     queryFn: () => api.get<{ id: string; name: string }[]>("/coworking/companies"),
@@ -108,7 +118,9 @@ export function MemberFormModal({ member, onClose, onSaved }: { member: MemberRo
   const client = useQueryClient();
   const save = useMutation({
     mutationFn: () =>
-      member ? api.patch<MemberRow>(`/coworking/members/${member.id}`, memberBody(form, false)) : api.post<MemberRow>("/coworking/members", memberBody(form, true)),
+      member
+        ? api.patch<MemberRow>(`/coworking/members/${member.id}`, memberBody(form, false))
+        : api.post<MemberRow>("/coworking/members", memberBody(form, true)),
     onSuccess: async (saved) => {
       await client.invalidateQueries();
       onSaved(saved);
@@ -151,7 +163,7 @@ export function MemberFormModal({ member, onClose, onSaved }: { member: MemberRo
  * Finds a client by name, phone, e-mail or company, or creates one on the spot (a guest needs only a name). Enter
  * in the search field picks the first result, so the desk can work from the keyboard.
  */
-export function MemberPicker({ onPick, autoFocus }: { onPick: (m: MemberRow) => void; autoFocus?: boolean }) {
+export function MemberPicker({ onPick, autoFocus }: { onPick: (m: MemberRow) => void; autoFocus?: boolean | undefined }) {
   const [text, setText] = useState("");
   const [debounced, setDebounced] = useState("");
   const [creating, setCreating] = useState<MemberForm | null>(null);
@@ -189,7 +201,11 @@ export function MemberPicker({ onPick, autoFocus }: { onPick: (m: MemberRow) => 
         <MemberFields form={creating} onChange={setCreating} creating autoFocus />
         <ErrorBanner error={create.error} />
         <div className="row" style={{ gap: 8 }}>
-          <button type="submit" className="btn btn-p" disabled={!creating.firstName.trim() || (creating.kind === "member" && !creating.email.trim()) || create.isPending}>
+          <button
+            type="submit"
+            className="btn btn-p"
+            disabled={!creating.firstName.trim() || (creating.kind === "member" && !creating.email.trim()) || create.isPending}
+          >
             Créer le client
           </button>
           <button type="button" className="btn" onClick={() => setCreating(null)}>
@@ -238,7 +254,11 @@ export function MemberPicker({ onPick, autoFocus }: { onPick: (m: MemberRow) => 
               </span>
               <span className="row center" style={{ gap: 6 }}>
                 {m.currentPlan ? <Badge tone="violet">{m.currentPlan}</Badge> : null}
-                {m.status === "active" ? <Badge tone="neutral">{MEMBER_KIND[m.kind]}</Badge> : <Badge tone={MEMBER_STATUS[m.status].tone}>{MEMBER_STATUS[m.status].label}</Badge>}
+                {m.status === "active" ? (
+                  <Badge tone="neutral">{MEMBER_KIND[m.kind]}</Badge>
+                ) : (
+                  <Badge tone={MEMBER_STATUS[m.status].tone}>{MEMBER_STATUS[m.status].label}</Badge>
+                )}
               </span>
             </button>
           ))}

@@ -147,7 +147,7 @@ export function QuickBooking({
   /** Format, start and length already chosen (walk-in flow). */
   initial?: { formatId: string; startTime: string; durationMinutes: number | null } | undefined;
   onCreated: (booking: Booking & { quote: Quote }) => void;
-  autoFocus?: boolean;
+  autoFocus?: boolean | undefined;
 }) {
   const [member, setMember] = useState<MemberRow | null>(fixedMember ?? null);
   const formats = useFormats();
@@ -197,8 +197,7 @@ export function QuickBooking({
   useEffect(() => setOverride(false), [quote.data]);
 
   const create = useMutation({
-    mutationFn: () =>
-      api.post<Booking & { quote: Quote }>("/coworking/bookings", { ...input, ...(notes.trim() ? { notes: notes.trim() } : {}), override }),
+    mutationFn: () => api.post<Booking & { quote: Quote }>("/coworking/bookings", { ...input, ...(notes.trim() ? { notes: notes.trim() } : {}), override }),
     onSuccess: async (created) => {
       await client.invalidateQueries();
       toast(`Réservation ${created.resourceCode} enregistrée.`);
@@ -516,8 +515,8 @@ export function BookingActions({ booking, due, onCollect }: { booking: Booking; 
               "Calcul des frais…"
             ) : fee > 0 ? (
               <span>
-                Annulation tardive : les droits utilisés restent consommés, l'échéance non payée est annulée et des frais de{" "}
-                <strong>{tnd(fee)} TND</strong> sont facturés au client.
+                Annulation tardive : les droits utilisés restent consommés, l'échéance non payée est annulée et des frais de <strong>{tnd(fee)} TND</strong>{" "}
+                sont facturés au client.
               </span>
             ) : (
               "Annulation sans frais : les droits utilisés sont rendus et l'échéance non payée est annulée."
@@ -532,7 +531,9 @@ export function BookingActions({ booking, due, onCollect }: { booking: Booking; 
           }}
         />
       ) : null}
-      {dialog === "reassign" || dialog === "propose" ? <ReassignModal booking={booking} approve={dialog === "propose"} onClose={() => setDialog(null)} /> : null}
+      {dialog === "reassign" || dialog === "propose" ? (
+        <ReassignModal booking={booking} approve={dialog === "propose"} onClose={() => setDialog(null)} />
+      ) : null}
     </>
   );
 }
