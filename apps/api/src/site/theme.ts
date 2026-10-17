@@ -101,7 +101,7 @@ main:focus{outline:none}
 .tbl td.num,.tbl th.num{text-align:right;white-space:nowrap}
 .table-scroll{overflow-x:auto}
 .gallery{display:grid;gap:1rem;grid-template-columns:repeat(auto-fill,minmax(14rem,1fr));margin:0;padding:0;list-style:none}
-.gallery figure{margin:0}
+.gallery figure,figure.quote{margin:0}
 .gallery figcaption{color:var(--muted);font-size:.95rem;margin-top:.4rem}
 blockquote{margin:0}
 .quote p{font-size:1.1rem}

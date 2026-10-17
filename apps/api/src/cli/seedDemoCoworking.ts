@@ -115,17 +115,26 @@ export async function seedCoworking({ call, db, centreId, userId, today }: Conte
     two: await resource("B-2", types.office, zones.offices, 2, [], "Bureau Elyssa"),
   };
 
-  const desk = (resourceId: string, x: number, y: number) => ({ resourceId, x, y, w: 0.07, h: 0.1, rotation: 0, shape: "rect" as const });
+  // Plan coordinates are the centre of each shape; the layout below is drawn from top-left corners.
+  const place = (resourceId: string, left: number, top: number, w: number, h: number, shape: "rect" | "ellipse" = "rect") => ({
+    resourceId,
+    x: left + w / 2,
+    y: top + h / 2,
+    w,
+    h,
+    rotation: 0,
+    shape,
+  });
   const layout: FloorLayout = {
     aspect: 1.6,
     items: [
-      ...desks.slice(0, 6).map((id, i) => desk(id, 0.06 + (i % 3) * 0.1, i < 3 ? 0.12 : 0.32)),
-      ...desks.slice(6).map((id, i) => desk(id, 0.06 + i * 0.1, 0.62)),
-      { resourceId: rooms.small, x: 0.42, y: 0.08, w: 0.2, h: 0.28, rotation: 0, shape: "rect" },
-      { resourceId: rooms.large, x: 0.66, y: 0.08, w: 0.28, h: 0.28, rotation: 0, shape: "rect" },
-      { resourceId: booth, x: 0.42, y: 0.5, w: 0.08, h: 0.12, rotation: 0, shape: "ellipse" },
-      { resourceId: offices.one, x: 0.56, y: 0.5, w: 0.18, h: 0.36, rotation: 0, shape: "rect" },
-      { resourceId: offices.two, x: 0.77, y: 0.5, w: 0.17, h: 0.36, rotation: 0, shape: "rect" },
+      ...desks.slice(0, 6).map((id, i) => place(id, 0.06 + (i % 3) * 0.1, i < 3 ? 0.1 : 0.3, 0.07, 0.1)),
+      ...desks.slice(6).map((id, i) => place(id, 0.06 + i * 0.1, 0.62, 0.07, 0.1)),
+      place(rooms.small, 0.42, 0.08, 0.2, 0.28),
+      place(rooms.large, 0.66, 0.08, 0.28, 0.28),
+      place(booth, 0.42, 0.5, 0.08, 0.12, "ellipse"),
+      place(offices.one, 0.56, 0.5, 0.18, 0.36),
+      place(offices.two, 0.77, 0.5, 0.17, 0.36),
     ],
     labels: [
       { text: "Accueil", x: 0.2, y: 0.88, size: "m" },
@@ -139,6 +148,15 @@ export async function seedCoworking({ call, db, centreId, userId, today }: Conte
           [0.36, 0.05],
           [0.36, 0.48],
           [0.03, 0.48],
+        ],
+      },
+      {
+        zoneId: zones.quiet,
+        points: [
+          [0.03, 0.56],
+          [0.36, 0.56],
+          [0.36, 0.78],
+          [0.03, 0.78],
         ],
       },
       {
