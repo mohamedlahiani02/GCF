@@ -119,13 +119,11 @@ export function RulesTab() {
     >
       <div className="card-b stack">
         <h3 className="h2">Réservations depuis l'espace client</h3>
-        <span className="cap">Ces limites s'appliquent aux réservations faites par les clients. L'accueil peut les dépasser ; le dépassement est noté au journal.</span>
+        <span className="cap">
+          Ces limites s'appliquent aux réservations faites par les clients. L'accueil peut les dépasser ; le dépassement est noté au journal.
+        </span>
         <div className="grid3">
-          <Field
-            label="Horizon de réservation (jours)"
-            hint="Un client réserve au plus ce nombre de jours à l'avance."
-            error={errors.bookingHorizonDays}
-          >
+          <Field label="Horizon de réservation (jours)" hint="Un client réserve au plus ce nombre de jours à l'avance." error={errors.bookingHorizonDays}>
             <input
               className="input num"
               type="number"
@@ -193,14 +191,7 @@ export function RulesTab() {
             hint="Avant ce délai, l'annulation libère le quota et annule l'échéance non payée."
             error={errors.freeCancelHours}
           >
-            <input
-              className="input num"
-              type="number"
-              min={0}
-              max={720}
-              value={v.freeCancelHours}
-              onChange={(e) => set("freeCancelHours", e.target.value)}
-            />
+            <input className="input num" type="number" min={0} max={720} value={v.freeCancelHours} onChange={(e) => set("freeCancelHours", e.target.value)} />
           </Field>
           <Field
             label="Frais d'annulation tardive (%)"
@@ -243,13 +234,7 @@ export function RulesTab() {
               hint="Une réservation qui commence à cette heure ou plus tard paie le tarif heures creuses du format, s'il en a un."
               error={errors.offpeakFrom}
             >
-              <input
-                className="input"
-                type="time"
-                disabled={!v.offpeakEnabled}
-                value={v.offpeakFrom}
-                onChange={(e) => set("offpeakFrom", e.target.value)}
-              />
+              <input className="input" type="time" disabled={!v.offpeakEnabled} value={v.offpeakFrom} onChange={(e) => set("offpeakFrom", e.target.value)} />
             </Field>
           </div>
         </div>

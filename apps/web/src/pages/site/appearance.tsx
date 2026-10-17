@@ -178,7 +178,10 @@ function MiniPreview({ value, siteName, logoId }: { value: Appearance; siteName:
             textAlign: "center",
           }}
         >
-          Envie de visiter ? <span className="site-mini-btn" style={{ background: "#fff", color: value.primaryColor, borderRadius: radius }}>Nous contacter</span>
+          Envie de visiter ?{" "}
+          <span className="site-mini-btn" style={{ background: "#fff", color: value.primaryColor, borderRadius: radius }}>
+            Nous contacter
+          </span>
         </div>
       </div>
     </div>
@@ -288,7 +291,12 @@ function AppearanceForm({ settings, homeId }: { settings: SiteSettings; homeId: 
           </div>
           <div className="field">
             <span className="lab">Angles des boutons et cartes</span>
-            <Segmented label="Angles" value={value.radius} onChange={(v) => set("radius", v)} options={RADII.map((r) => ({ value: r.value, label: r.label }))} />
+            <Segmented
+              label="Angles"
+              value={value.radius}
+              onChange={(v) => set("radius", v)}
+              options={RADII.map((r) => ({ value: r.value, label: r.label }))}
+            />
           </div>
           <div className="grid2">
             <ImageField label="Logo" value={value.logoMediaId} onChange={(id) => set("logoMediaId", id)} hint="Affiché dans l'en-tête du site." />
@@ -325,7 +333,6 @@ function AppearanceForm({ settings, homeId }: { settings: SiteSettings; homeId: 
     </div>
   );
 }
-
 
 export function AppearancePage() {
   usePage(["Site web", "Apparence"]);

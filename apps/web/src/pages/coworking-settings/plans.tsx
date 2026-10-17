@@ -138,7 +138,10 @@ function PlanModal({ plan, types, onClose }: { plan: Plan | null; types: Resourc
             ))}
           </select>
         </Field>
-        <Field label="Facturation" hint={period === "month" ? "Une formule mensuelle se paie en une fois." : "Mensuelle : une échéance par mois de la période."}>
+        <Field
+          label="Facturation"
+          hint={period === "month" ? "Une formule mensuelle se paie en une fois." : "Mensuelle : une échéance par mois de la période."}
+        >
           <select className="input" value={effectiveBilling} disabled={period === "month"} onChange={(e) => setBilling(e.target.value as Plan["billing"])}>
             {Object.entries(BILLING).map(([value, label]) => (
               <option key={value} value={value}>
@@ -334,7 +337,7 @@ export function PlansCard({ types }: { types: ResourceType[] }) {
           title="Archiver la formule"
           explanation={`${archiving.name} n'est plus proposée à la vente. ${
             archiving.subscriptionCount
-              ? `Les ${archiving.subscriptionCount} abonnement(s) en cours continuent jusqu'à leur fin ; leur renouvellement reste possible.`
+              ? `Les ${archiving.subscriptionCount} abonnement(s) en cours continuent jusqu'à leur fin mais ne pourront plus être renouvelés.`
               : "Aucun abonnement en cours."
           }`}
           confirmLabel="Archiver"

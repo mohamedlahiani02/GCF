@@ -89,8 +89,8 @@ function ClosureModal({ onClose }: { onClose: () => void }) {
         </div>
       ) : null}
       <span className="cap">
-        Ces jours-là, les horaires remplacent les heures d'ouverture du centre pour les nouvelles réservations du coworking. Vérifiez le planning coworking
-        pour les réservations déjà faites.
+        Ces jours-là, les horaires remplacent les heures d'ouverture du centre pour les nouvelles réservations du coworking. Vérifiez le planning coworking pour
+        les réservations déjà faites.
       </span>
       <ErrorBanner error={save.error} />
     </Modal>
@@ -184,8 +184,8 @@ export function ClosuresTab() {
           }
         >
           <p>
-            {deleting.label} ({deleting.startsOn === deleting.endsOn ? frDate(deleting.startsOn) : `${frDate(deleting.startsOn)} au ${frDate(deleting.endsOn)}`}) :
-            les heures d'ouverture habituelles s'appliquent de nouveau.
+            {deleting.label} ({deleting.startsOn === deleting.endsOn ? frDate(deleting.startsOn) : `${frDate(deleting.startsOn)} au ${frDate(deleting.endsOn)}`}
+            ) : les heures d'ouverture habituelles s'appliquent de nouveau.
           </p>
           <ErrorBanner error={remove.error} />
         </Modal>

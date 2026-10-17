@@ -1,11 +1,11 @@
-import { addDays, CW_CATEGORY_LABELS, isBookableCategory, OCCUPYING_STATUSES, percentOf, SITE_LANGUAGES, todayIn } from "@gcf/shared";
+import { addDays, CW_CATEGORY_LABELS, isBookableCategory, OCCUPYING_STATUSES, SITE_LANGUAGES, todayIn } from "@gcf/shared";
 import type { FastifyPluginAsync, FastifyRequest } from "fastify";
 import { sql, type Kysely } from "kysely";
 import QRCode from "qrcode";
 import { z } from "zod";
 import type { Database } from "../../db/types.js";
 import { floorState, freeCounts } from "../../domain/coworking/availability.js";
-import { cancelBooking, createBooking, quoteBooking, type BookingActor, type MailContext } from "../../domain/coworking/bookings.js";
+import { cancelBooking, cancellationTerms, createBooking, quoteBooking, type BookingActor, type MailContext } from "../../domain/coworking/bookings.js";
 import { activeSubscriptions, profileOf } from "../../domain/coworking/entitlements.js";
 import { listPrice } from "../../domain/coworking/pricing.js";
 import { centreCalendar, formatSlots, localInstants, openingOn, type CoworkingSettings } from "../../domain/coworking/schedule.js";
@@ -93,18 +93,15 @@ type BookingRow = Awaited<ReturnType<ReturnType<typeof bookingRows>["execute"]>>
 
 /**
  * The portal view of a booking. Whether it can be cancelled and what a cancellation now would cost follow rule 11
- * as cancelBooking applies it: requests and confirmed bookings without money received on their charge; free for a
- * request or before the start minus free_cancel_hours, otherwise late_cancel_fee_bp of the charge.
+ * through cancellationTerms, like cancelBooking: requests and confirmed bookings without money received on their charge.
  */
 function presentBooking(row: BookingRow, settings: CoworkingSettings, now: Date) {
   const { memberId: _memberId, paidOnOpenCharges, ...booking } = row;
   const cancellable = (row.status === "requested" || row.status === "confirmed") && paidOnOpenCharges === 0;
-  const freeUntil = new Date(row.startsAt.getTime() - settings.free_cancel_hours * 3_600_000);
-  const free = row.status === "requested" || now < freeUntil;
   return {
     ...booking,
     cancellable,
-    cancellation: cancellable ? { free, fee: free ? 0 : percentOf(row.charge, settings.late_cancel_fee_bp), freeUntil } : null,
+    cancellation: cancellable ? cancellationTerms(row, settings, now) : null,
     qrAvailable: row.status === "confirmed" && row.endsAt > now,
   };
 }

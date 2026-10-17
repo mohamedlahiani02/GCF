@@ -339,7 +339,13 @@ export function RichTextEditor({ value, onChange, label }: { value: RichBlock[];
       <div className="row center" style={{ gap: 4 }}>
         <span className="cap">Ajouter :</span>
         {(Object.keys(KIND_LABEL) as BlockKind[]).map((k) => (
-          <button key={k} type="button" className="btn btn-g" disabled={items.length >= SECTION_LIMITS.richBlocks} onClick={() => insertAfter(items.length - 1, k)}>
+          <button
+            key={k}
+            type="button"
+            className="btn btn-g"
+            disabled={items.length >= SECTION_LIMITS.richBlocks}
+            onClick={() => insertAfter(items.length - 1, k)}
+          >
             + {KIND_LABEL[k]}
           </button>
         ))}

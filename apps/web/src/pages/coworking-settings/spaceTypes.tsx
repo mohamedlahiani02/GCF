@@ -102,7 +102,9 @@ function TypeModal({ type, onClose }: { type: ResourceType | null; onClose: () =
         <textarea className="input" value={description} maxLength={2000} onChange={(e) => setDescription(e.target.value)} />
       </Field>
       <div className="logo-setting">
-        <span className="logo-preview">{photoMediaId ? <img src={mediaUrl(photoMediaId)} alt={`Photo de ${name}`} /> : <span className="cap">Aucune photo</span>}</span>
+        <span className="logo-preview">
+          {photoMediaId ? <img src={mediaUrl(photoMediaId)} alt={`Photo de ${name}`} /> : <span className="cap">Aucune photo</span>}
+        </span>
         <div className="stack" style={{ gap: 6 }}>
           <span className="lab">Photo</span>
           <span className="cap">PNG, JPEG ou WebP ; réduite à 2560 pixels et convertie en WebP avant l'envoi.</span>
@@ -220,7 +222,7 @@ export function SpaceTypesTab() {
                       <td>
                         {CW_CATEGORY_LABELS.fr[t.category]} {bookable ? <Badge tone="blue">Réservable</Badge> : <Badge tone="violet">Attribué</Badge>}
                       </td>
-                      <td>{bookable ? (t.requiresApproval ? <Badge tone="amber">Toujours</Badge> : "Selon les règles") : "-"}</td>
+                      <td>{bookable ? t.requiresApproval ? <Badge tone="amber">Toujours</Badge> : "Selon les règles" : "-"}</td>
                       <td className="num">{bookable && t.maxMinutesPerDay ? durationLabel(t.maxMinutesPerDay) : "-"}</td>
                       <td className="num">{bookable && t.bufferMinutes ? `${t.bufferMinutes} min` : "-"}</td>
                       <td className="num">{t.resourceCount}</td>
@@ -266,7 +268,8 @@ export function SpaceTypesTab() {
             try {
               await api.post(`/coworking/resource-types/${archiving.id}/archive`, { reason });
             } catch (error) {
-              if (error instanceof ApiError && error.code === "resource_has_bookings") setBlocked((error.details as { count?: number } | undefined)?.count ?? null);
+              if (error instanceof ApiError && error.code === "resource_has_bookings")
+                setBlocked((error.details as { count?: number } | undefined)?.count ?? null);
               throw error;
             }
             await client.invalidateQueries({ queryKey: CW_KEYS.all });

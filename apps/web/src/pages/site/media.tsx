@@ -52,7 +52,17 @@ function useFolders(): string[] {
   return [...new Set((all.data?.items ?? []).map((m) => m.folder).filter((f): f is string => !!f))].sort((a, b) => a.localeCompare(b, "fr"));
 }
 
-function UploadModal({ folders, defaultFolder, onClose, onUploaded }: { folders: string[]; defaultFolder: string; onClose: () => void; onUploaded?: (m: MediaFile) => void }) {
+function UploadModal({
+  folders,
+  defaultFolder,
+  onClose,
+  onUploaded,
+}: {
+  folders: string[];
+  defaultFolder: string;
+  onClose: () => void;
+  onUploaded?: (m: MediaFile) => void;
+}) {
   const client = useQueryClient();
   const toast = useToast();
   const listId = useId();
@@ -233,7 +243,7 @@ export function MediaPage() {
         {list.isPending ? (
           <Loading />
         ) : list.data?.items.length === 0 ? (
-          <Empty title="Aucune image" text={status === "active" ? "Ajoutez des photos des espaces pour illustrer le site." : undefined} />
+          <Empty title="Aucune image" {...(status === "active" ? { text: "Ajoutez des photos des espaces pour illustrer le site." } : {})} />
         ) : (
           <ul className="site-media-grid card-b">
             {list.data?.items.map((m) => (
@@ -358,8 +368,8 @@ export function ImageField({
   label: string;
   value: string | null | undefined;
   onChange: (id: string | null) => void;
-  hint?: string;
-  error?: string | null;
+  hint?: string | undefined;
+  error?: string | null | undefined;
 }) {
   const [picking, setPicking] = useState(false);
   return (

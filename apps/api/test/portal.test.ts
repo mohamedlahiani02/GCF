@@ -478,8 +478,8 @@ describe("client portal", () => {
     expect(unfolded).toContain(`UID:cw-booking-${ids.confirmed}\r\n`);
     expect(unfolded).toMatch(/DTSTAMP:\d{8}T\d{6}Z\r\n/);
     const booking = await h.db.selectFrom("cw_bookings").select(["starts_at", "ends_at"]).where("id", "=", ids.confirmed).executeTakeFirstOrThrow();
-    const stamp = (d: Date) =>
-      d
+    const stamp = (d: Date | string) =>
+      new Date(d)
         .toISOString()
         .replace(/\.\d{3}Z$/, "Z")
         .replace(/[-:]/g, "");

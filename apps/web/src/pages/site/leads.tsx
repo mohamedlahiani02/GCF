@@ -98,7 +98,9 @@ export function LeadsPage() {
   const [selected, setSelected] = useState<Lead | null>(null);
   const filters = { status: status === "all" ? undefined : status, kind, from, to, page, pageSize: PAGE_SIZE };
   const leads = useQuery({ queryKey: [...siteKeys.leads, filters], queryFn: () => api.get<LeadList>("/site/leads", filters) });
-  const reset = <T,>(setter: (v: T) => void) => (v: T) => (setter(v), setPage(1));
+  const reset =
+    <T,>(setter: (v: T) => void) =>
+    (v: T) => (setter(v), setPage(1));
   return (
     <>
       <PageHeader title="Demandes du site" subtitle="Messages, demandes de visite et de devis envoyés depuis les formulaires du site." />
@@ -140,7 +142,7 @@ export function LeadsPage() {
         {leads.isPending ? (
           <Loading />
         ) : leads.data?.items.length === 0 ? (
-          <Empty title="Aucune demande" text={status === "new" ? "Toutes les demandes ont été traitées." : undefined} />
+          <Empty title="Aucune demande" {...(status === "new" ? { text: "Toutes les demandes ont été traitées." } : {})} />
         ) : (
           <div className="xs">
             <table className="tbl">

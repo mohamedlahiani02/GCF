@@ -136,6 +136,7 @@ export function QuickBooking({
   date,
   time,
   member: fixedMember,
+  initial,
   onCreated,
   autoFocus,
 }: {
@@ -143,17 +144,19 @@ export function QuickBooking({
   date: string;
   time: string;
   member?: MemberRow | undefined;
+  /** Format, start and length already chosen (walk-in flow). */
+  initial?: { formatId: string; startTime: string; durationMinutes: number | null } | undefined;
   onCreated: (booking: Booking & { quote: Quote }) => void;
   autoFocus?: boolean;
 }) {
   const [member, setMember] = useState<MemberRow | null>(fixedMember ?? null);
   const formats = useFormats();
   const choices = (formats.data ?? []).filter((f) => f.typeId === resource.typeId && f.prices.length > 0);
-  const [formatId, setFormatId] = useState("");
+  const [formatId, setFormatId] = useState(initial?.formatId ?? "");
   const format = choices.find((f) => f.id === formatId) ?? choices[0];
-  const [duration, setDuration] = useState<number | null>(null);
+  const [duration, setDuration] = useState<number | null>(initial?.durationMinutes ?? null);
   const minutes = format?.nature === "free" ? (duration ?? format.minMinutes ?? undefined) : undefined;
-  const [startTime, setStartTime] = useState("");
+  const [startTime, setStartTime] = useState(initial?.startTime ?? "");
   const [promo, setPromo] = useState("");
   const [debouncedPromo, setDebouncedPromo] = useState("");
   const [notes, setNotes] = useState("");

@@ -292,7 +292,8 @@ export function FormatsTab() {
   const formats = useQuery({ queryKey: CW_KEYS.formats, queryFn: () => api.get<BookingFormat[]>("/coworking/formats") });
   const settings = useQuery({ queryKey: CW_KEYS.settings, queryFn: () => api.get<CwSettings>("/coworking/settings") });
   const bookable = (types.data ?? []).filter((t) => isBookableCategory(t.category));
-  if (types.error || formats.error) return <ErrorBanner error={types.error ?? formats.error} retry={() => void Promise.all([types.refetch(), formats.refetch()])} />;
+  if (types.error || formats.error)
+    return <ErrorBanner error={types.error ?? formats.error} retry={() => void Promise.all([types.refetch(), formats.refetch()])} />;
   if (types.isPending || formats.isPending) return <Loading />;
   return (
     <>

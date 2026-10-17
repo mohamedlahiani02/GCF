@@ -672,6 +672,17 @@ export interface CancelResult {
   fee: number;
 }
 
+/** Rule 11: a request or a booking cancelled before its start minus free_cancel_hours is free, otherwise a fee. */
+export function cancellationTerms(
+  booking: { status: string; startsAt: Date; charge: number },
+  settings: { free_cancel_hours: number; late_cancel_fee_bp: number },
+  now: Date,
+): { free: boolean; fee: number; freeUntil: Date } {
+  const freeUntil = new Date(booking.startsAt.getTime() - settings.free_cancel_hours * 3_600_000);
+  const free = booking.status === "requested" || now < freeUntil;
+  return { free, fee: free ? 0 : percentOf(booking.charge, settings.late_cancel_fee_bp), freeUntil };
+}
+
 /**
  * Cancels a request or a confirmed booking (rule 11), by the staff or by the member who owns it. In time (before
  * the start minus free_cancel_hours) the quotas are given back and the unpaid charge is cancelled; later the quotas
@@ -695,13 +706,12 @@ export async function cancelBooking(
       throw conflict("not_cancellable", "only a request or a confirmed booking can be cancelled");
     }
     const settings = await coworkingSettings(trx, centreId);
-    const free = before.status === "requested" || now.getTime() < before.startsAt.getTime() - settings.free_cancel_hours * 3_600_000;
+    const { free, fee } = cancellationTerms(before, settings, now);
     const chargeIds = (
       await trx.selectFrom("installments").select("id").where("cw_booking_id", "=", id).where("kind", "=", "charge").where("status", "=", "open").execute()
     ).map((c) => c.id);
     const charges = chargeIds.length ? await installmentBalances(trx, centreId, { installmentIds: chargeIds }) : [];
     if (charges.some((c) => c.paid > 0)) throw conflict("installment_paid", "a charge of this booking has received a payment; cancel the payment first");
-    const fee = free ? 0 : percentOf(before.charge, settings.late_cancel_fee_bp);
     await trx
       .updateTable("cw_bookings")
       .set({ status: "cancelled", cancelled_at: now, cancelled_by: userId, cancel_reason: reason, late_cancel_fee: fee, updated_at: now })

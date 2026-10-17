@@ -402,8 +402,8 @@ function PublishCard({ page, dirty }: { page: PageNode; dirty: boolean }) {
             toast(`Publication programmée le ${date.split("-").reverse().join("/")} à ${time}.`);
           }}
         >
-          Le brouillon enregistré est figé maintenant dans une nouvelle version, qui sera mise en ligne le {date.split("-").reverse().join("/")} à {time}{" "}
-          (heure du centre). Les modifications faites ensuite ne seront pas incluses.
+          Le brouillon enregistré est figé maintenant dans une nouvelle version, qui sera mise en ligne le {date.split("-").reverse().join("/")} à {time} (heure
+          du centre). Les modifications faites ensuite ne seront pas incluses.
         </ConfirmDialog>
       ) : null}
       {confirming === "cancel" ? (
@@ -449,7 +449,12 @@ function VersionsCard({ pageId, languages, onRestored }: { pageId: string; langu
                       {frDateTime(v.createdAt)}
                       {v.createdBy ? ` · ${v.createdBy}` : ""}
                     </div>
-                    <div className="cap">{languages.map((l) => v.titles[l]).filter(Boolean).join(" / ")}</div>
+                    <div className="cap">
+                      {languages
+                        .map((l) => v.titles[l])
+                        .filter(Boolean)
+                        .join(" / ")}
+                    </div>
                   </td>
                   <td style={{ textAlign: "right" }}>
                     <button type="button" className="btn btn-g" aria-label={`Restaurer la version ${v.number}`} onClick={() => setRestoring(v)}>
@@ -474,16 +479,21 @@ function VersionsCard({ pageId, languages, onRestored }: { pageId: string; langu
             toast(`Version ${restoring.number} restaurée dans le brouillon.`);
           }}
         >
-          Le brouillon de chaque langue de cette version est remplacé par son contenu, y compris les modifications non enregistrées. La page en ligne ne
-          change pas tant que vous ne publiez pas.
+          Le brouillon de chaque langue de cette version est remplacé par son contenu, y compris les modifications non enregistrées. La page en ligne ne change
+          pas tant que vous ne publiez pas.
         </ConfirmDialog>
       ) : null}
     </Card>
   );
 }
 
+/** Editor of the page in the address; a fresh editor for each page so no state leaks from one page to another. */
 export function PageEditorPage() {
   const { id = "" } = useParams();
+  return <PageEditor key={id} id={id} />;
+}
+
+function PageEditor({ id }: { id: string }) {
   const client = useQueryClient();
   const toast = useToast();
   const settings = useQuery({ queryKey: siteKeys.settings, queryFn: fetchSettings });
@@ -567,8 +577,7 @@ export function PageEditorPage() {
   });
 
   if (settings.isPending || pages.isPending) return <Loading />;
-  if (settings.error || pages.error)
-    return <ErrorBanner error={settings.error ?? pages.error} retry={() => (settings.refetch(), pages.refetch())} />;
+  if (settings.error || pages.error) return <ErrorBanner error={settings.error ?? pages.error} retry={() => (settings.refetch(), pages.refetch())} />;
   if (!page)
     return (
       <Card>
@@ -677,7 +686,10 @@ export function PageEditorPage() {
             </Card>
             <div className="row between center">
               <h2 className="h2">
-                Sections <span className="cap">({form.sections.length} / {SECTION_LIMITS.sections})</span>
+                Sections{" "}
+                <span className="cap">
+                  ({form.sections.length} / {SECTION_LIMITS.sections})
+                </span>
               </h2>
               <div className="row" style={{ gap: 8 }}>
                 <button type="button" className="btn btn-g" onClick={() => setOpenSections(form.sections.map((s) => s.uid))}>

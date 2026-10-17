@@ -130,8 +130,8 @@ function PlanImageCard({ floor }: { floor: FloorDetail }) {
     <Card title="Image du plan">
       <div className="card-b stack">
         <span className="cap">
-          Plan d'architecte ou photo du plan d'évacuation. L'image est réduite à 2560 pixels et convertie en WebP avant l'envoi. Elle s'affiche aussitôt sur
-          le plan publié ; les positions des ressources restent relatives à l'image.
+          Plan d'architecte ou photo du plan d'évacuation. L'image est réduite à 2560 pixels et convertie en WebP avant l'envoi. Elle s'affiche aussitôt sur le
+          plan publié ; les positions des ressources restent relatives à l'image.
         </span>
         <div className="row" style={{ gap: 8 }}>
           <label className={`btn${setPlan.isPending ? " disabled" : ""}`}>
@@ -206,7 +206,8 @@ function Editor({ floor }: { floor: FloorDetail }) {
   const wrapRef = useRef<HTMLDivElement>(null);
   const dragRef = useRef<Drag | null>(null);
 
-  const image = floor.planMediaId && floor.planWidth && floor.planHeight ? { url: mediaUrl(floor.planMediaId), width: floor.planWidth, height: floor.planHeight } : null;
+  const image =
+    floor.planMediaId && floor.planWidth && floor.planHeight ? { url: mediaUrl(floor.planMediaId), width: floor.planWidth, height: floor.planHeight } : null;
   const height = planHeight(layout, image);
   const resources = useMemo(() => new Map(floor.resources.map((r) => [r.id, r])), [floor.resources]);
   const placed = useMemo(() => new Set(layout.items.map((i) => i.resourceId)), [layout.items]);
@@ -328,8 +329,7 @@ function Editor({ floor }: { floor: FloorDetail }) {
       setSelection({ kind: "items", ids: [next.id] });
     }
   };
-  const canDuplicate =
-    selection?.kind === "label" || selection?.kind === "area" || (selectedItems.length === 1 && nextOfType(selectedItems[0]!) !== null);
+  const canDuplicate = selection?.kind === "label" || selection?.kind === "area" || (selectedItems.length === 1 && nextOfType(selectedItems[0]!) !== null);
 
   const rotateSelection = (delta: number) => {
     if (selection?.kind !== "items") return;
@@ -518,12 +518,12 @@ function Editor({ floor }: { floor: FloorDetail }) {
           </g>
         );
       })}
-      {selectedLabel ? (
-        (() => {
-          const b = labelBox(selectedLabel, height);
-          return <rect className="fpe-outline" x={b.x - 3} y={b.y - 3} width={b.w + 6} height={b.h + 6} />;
-        })()
-      ) : null}
+      {selectedLabel
+        ? (() => {
+            const b = labelBox(selectedLabel, height);
+            return <rect className="fpe-outline" x={b.x - 3} y={b.y - 3} width={b.w + 6} height={b.h + 6} />;
+          })()
+        : null}
       {selectedArea && selection?.kind === "area"
         ? areaPoints(selectedArea, height).map((pt, i) => <circle key={i} data-vertex={i} className="fpe-handle" cx={pt.x} cy={pt.y} r={7} />)
         : null}
@@ -664,7 +664,13 @@ function Editor({ floor }: { floor: FloorDetail }) {
                 <input type="checkbox" className="chk" checked={snap} onChange={(e) => setSnap(e.target.checked)} />
                 Grille magnétique
               </label>
-              <select className="input fpe-grid-size" aria-label="Pas de la grille" value={grid} disabled={!snap} onChange={(e) => setGrid(Number(e.target.value))}>
+              <select
+                className="input fpe-grid-size"
+                aria-label="Pas de la grille"
+                value={grid}
+                disabled={!snap}
+                onChange={(e) => setGrid(Number(e.target.value))}
+              >
                 {GRID_SIZES.map((g) => (
                   <option key={g} value={g}>
                     Pas de {g}
@@ -675,8 +681,8 @@ function Editor({ floor }: { floor: FloorDetail }) {
             {drawing ? (
               <div className="ban ban-blue">
                 <span>
-                  Cliquez sur le plan pour poser les sommets de la zone ({drawing.length} posé{drawing.length > 1 ? "s" : ""}, 3 au minimum). Entrée ou « Terminer »
-                  ferme la forme, Échap l'abandonne.
+                  Cliquez sur le plan pour poser les sommets de la zone ({drawing.length} posé{drawing.length > 1 ? "s" : ""}, 3 au minimum). Entrée ou «
+                  Terminer » ferme la forme, Échap l'abandonne.
                 </span>
                 <button type="button" className="btn" disabled={drawing.length < 2} onClick={() => setDrawing(drawing.slice(0, -1))}>
                   Retirer le dernier point
@@ -787,8 +793,8 @@ function Editor({ floor }: { floor: FloorDetail }) {
                 </>
               ) : (
                 <span className="cap">
-                  Cliquez sur une ressource, un texte ou une zone du plan pour le modifier. Les ressources de l'étage qui ne sont pas encore sur le plan sont listées
-                  ci-dessous.
+                  Cliquez sur une ressource, un texte ou une zone du plan pour le modifier. Les ressources de l'étage qui ne sont pas encore sur le plan sont
+                  listées ci-dessous.
                 </span>
               )}
               {selectedItems.length ? (
@@ -853,7 +859,13 @@ function Editor({ floor }: { floor: FloorDetail }) {
                     <span>
                       <strong>{r.code}</strong> <span className="cap">{r.typeName}</span>
                     </span>
-                    <button type="button" className="btn btn-g" disabled={!!drawing} aria-label={`Placer ${r.code} au centre du plan`} onClick={() => placeResource(r)}>
+                    <button
+                      type="button"
+                      className="btn btn-g"
+                      disabled={!!drawing}
+                      aria-label={`Placer ${r.code} au centre du plan`}
+                      onClick={() => placeResource(r)}
+                    >
                       Placer
                     </button>
                   </li>
@@ -923,9 +935,7 @@ function Editor({ floor }: { floor: FloorDetail }) {
             </>
           }
         >
-          <p>
-            Le plan en direct de l'accueil et l'espace client affichent aussitôt cette version{dirty ? ", enregistrée avant la publication" : ""}.
-          </p>
+          <p>Le plan en direct de l'accueil et l'espace client affichent aussitôt cette version{dirty ? ", enregistrée avant la publication" : ""}.</p>
           <span className="cap">
             {layout.items.length} ressource(s) placée(s), {unplaced.length} non placée(s) (non visibles sur le plan), {layout.areas.length} zone(s) tracée(s),{" "}
             {layout.labels.length} texte(s).

@@ -172,7 +172,12 @@ function ItemsEditor<T>({
               {noun} {index + 1}
             </span>
             <span className="row center" style={{ gap: 2, flexWrap: "nowrap" }}>
-              <MoveButtons label={`${noun.toLowerCase()} ${index + 1}`} index={index} count={items.length} onMove={(to) => onChange(moveItem(items, index, to))} />
+              <MoveButtons
+                label={`${noun.toLowerCase()} ${index + 1}`}
+                index={index}
+                count={items.length}
+                onMove={(to) => onChange(moveItem(items, index, to))}
+              />
               <button
                 type="button"
                 className="btn btn-g"
@@ -227,7 +232,11 @@ function ButtonEditor({ value, onChange, links }: { value: SectionButton; onChan
     <div className="grid2">
       <TextInput label="Libellé du bouton" required max={60} value={value.label} onChange={(label) => onChange({ ...value, label })} />
       <Field label="Le bouton mène à">
-        <select className="input" value={target.kind} onChange={(e) => onChange({ ...value, target: defaultTarget(e.target.value as LinkTarget["kind"], links) })}>
+        <select
+          className="input"
+          value={target.kind}
+          onChange={(e) => onChange({ ...value, target: defaultTarget(e.target.value as LinkTarget["kind"], links) })}
+        >
           {(Object.keys(TARGET_LABEL) as LinkTarget["kind"][]).map((k) => (
             <option key={k} value={k}>
               {TARGET_LABEL[k]}
@@ -324,7 +333,7 @@ export function SectionForm({
   /** Changes when the content is reloaded, so the rich text editor starts again from the new value. */
   editorKey: string;
 }) {
-  const titleField = (s: Extract<SiteSection, { title?: string }>) => (
+  const titleField = <S extends SiteSection>(s: S & { title?: string | undefined }) => (
     <TextInput label="Titre de la section" max={200} value={s.title} onChange={(v) => onChange(withText(s, "title", v))} />
   );
   switch (section.type) {
@@ -367,7 +376,7 @@ export function SectionForm({
       return (
         <div className="stack">
           {titleField(section)}
-          <ItemsEditor
+          <ItemsEditor<(typeof section.items)[number]>
             items={section.items}
             noun="Atout"
             min={1}
@@ -420,7 +429,7 @@ export function SectionForm({
       return (
         <div className="stack">
           {titleField(section)}
-          <ItemsEditor
+          <ItemsEditor<(typeof section.items)[number]>
             items={section.items}
             noun="Image"
             min={0}
@@ -445,7 +454,7 @@ export function SectionForm({
       return (
         <div className="stack">
           {titleField(section)}
-          <ItemsEditor
+          <ItemsEditor<(typeof section.items)[number]>
             items={section.items}
             noun="Témoignage"
             min={1}
@@ -467,7 +476,7 @@ export function SectionForm({
       return (
         <div className="stack">
           {titleField(section)}
-          <ItemsEditor
+          <ItemsEditor<(typeof section.items)[number]>
             items={section.items}
             noun="Question"
             min={1}
@@ -498,7 +507,10 @@ export function SectionForm({
           {titleField(section)}
           <TextInput label="Introduction" multiline max={500} value={section.intro} onChange={(v) => onChange(withText(section, "intro", v))} />
           <div className="grid2">
-            <Field label="Type de demande" hint={section.variant === "visit" ? "Ajoute une date souhaitée." : section.variant === "quote" ? "Ajoute l'entreprise." : undefined}>
+            <Field
+              label="Type de demande"
+              hint={section.variant === "visit" ? "Ajoute une date souhaitée." : section.variant === "quote" ? "Ajoute l'entreprise." : undefined}
+            >
               <select className="input" value={section.variant} onChange={(e) => onChange({ ...section, variant: e.target.value as LeadKind })}>
                 {LEAD_KINDS.map((k) => (
                   <option key={k} value={k}>

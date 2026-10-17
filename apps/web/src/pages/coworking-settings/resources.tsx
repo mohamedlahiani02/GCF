@@ -116,10 +116,7 @@ function ResourceModal({
         </Field>
       </div>
       <div className="grid3">
-        <Field
-          label="Type *"
-          hint={resource && typeId !== resource.typeId ? "Possible seulement sans réservation à venir ni abonnement en cours." : undefined}
-        >
+        <Field label="Type *" hint={resource && typeId !== resource.typeId ? "Possible seulement sans réservation à venir ni abonnement en cours." : undefined}>
           <select className="input" value={typeId} onChange={(e) => setTypeId(e.target.value)}>
             {types.map((t) => (
               <option key={t.id} value={t.id}>
@@ -128,10 +125,7 @@ function ResourceModal({
             ))}
           </select>
         </Field>
-        <Field
-          label="Étage *"
-          hint={resource && floorId !== resource.floorId ? "Retirez d'abord la ressource du plan publié de son étage actuel." : undefined}
-        >
+        <Field label="Étage *" hint={resource && floorId !== resource.floorId ? "Retirez d'abord la ressource du plan publié de son étage actuel." : undefined}>
           <select
             className="input"
             value={floorId}

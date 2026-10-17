@@ -48,7 +48,11 @@ function FloorModal({ floor, onClose }: { floor: FloorRow | null; onClose: () =>
       <Field label="Nom *" hint="Par exemple : Rez-de-chaussée, 1er étage.">
         <input className="input" value={name} maxLength={100} onChange={(e) => setName(e.target.value)} />
       </Field>
-      <Field label="Ordre d'affichage" hint="Les étages sont listés du plus petit au plus grand." error={positionValue === null ? "Un nombre entier positif." : null}>
+      <Field
+        label="Ordre d'affichage"
+        hint="Les étages sont listés du plus petit au plus grand."
+        error={positionValue === null ? "Un nombre entier positif." : null}
+      >
         <input className="input num" type="number" min={0} value={position} onChange={(e) => setPosition(e.target.value)} />
       </Field>
       <ErrorBanner error={save.error} />
