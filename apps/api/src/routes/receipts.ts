@@ -1,4 +1,5 @@
 import type { FastifyPluginAsync } from "fastify";
+import { sql } from "kysely";
 import { z } from "zod";
 import { writeAudit } from "../audit.js";
 import { renderReceipt, type ReceiptSnapshot } from "../domain/receiptPdf.js";
@@ -24,6 +25,7 @@ export const receiptRoutes: FastifyPluginAsync = async (app) => {
       .innerJoin("payments", "payments.id", "receipts.payment_id")
       .leftJoin("students", "students.id", "payments.student_id")
       .leftJoin("renters", "renters.id", "payments.renter_id")
+      .leftJoin("members", "members.id", "payments.member_id")
       .select((eb) => [
         "receipts.id",
         "receipts.number",
@@ -32,6 +34,7 @@ export const receiptRoutes: FastifyPluginAsync = async (app) => {
         "students.first_name as firstName",
         "students.last_name as lastName",
         "renters.name as renterName",
+        sql<string | null>`case when members.id is null then null else concat_ws(' ', members.first_name, members.last_name) end`.as("memberName"),
         "payments.amount",
         "payments.status as paymentStatus",
         eb
@@ -131,6 +134,7 @@ export const receiptRoutes: FastifyPluginAsync = async (app) => {
       .innerJoin("payments", "payments.id", "receipts.payment_id")
       .leftJoin("students", "students.id", "payments.student_id")
       .leftJoin("renters", "renters.id", "payments.renter_id")
+      .leftJoin("members", "members.id", "payments.member_id")
       .innerJoin("centres", "centres.id", "receipts.centre_id")
       .select([
         "receipts.id",
@@ -143,6 +147,8 @@ export const receiptRoutes: FastifyPluginAsync = async (app) => {
         "students.guardian_email as guardianEmail",
         "students.is_minor as isMinor",
         "renters.email as renterEmail",
+        "payments.member_id as memberId",
+        "members.email as memberEmail",
         "centres.name as centreName",
       ])
       .where("receipts.id", "=", id)
@@ -151,7 +157,11 @@ export const receiptRoutes: FastifyPluginAsync = async (app) => {
     if (!receipt) throw notFound("receipt");
     const to =
       body.to ??
-      (receipt.renterId ? receipt.renterEmail : (receipt.receiptEmail ?? (receipt.isMinor ? receipt.guardianEmail : receipt.email) ?? receipt.email));
+      (receipt.memberId
+        ? receipt.memberEmail
+        : receipt.renterId
+          ? receipt.renterEmail
+          : (receipt.receiptEmail ?? (receipt.isMinor ? receipt.guardianEmail : receipt.email) ?? receipt.email));
     if (!to) throw new HttpError(422, "no_recipient", "no e-mail address is known for this payer");
     let status: "sent" | "failed" = "sent";
     let error: string | null = null;
@@ -175,6 +185,7 @@ export const receiptRoutes: FastifyPluginAsync = async (app) => {
         receipt_id: id,
         student_id: receipt.studentId,
         renter_id: receipt.renterId,
+        member_id: receipt.memberId,
         recipient: to,
         status,
         error,

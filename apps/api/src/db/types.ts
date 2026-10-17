@@ -1,9 +1,14 @@
 import type { ColumnType, Generated, Insertable, Selectable, Updateable } from "kysely";
+import type { CoworkingTables } from "./types.coworking.js";
+import type { WebsiteTables } from "./types.website.js";
 
-type Timestamp = ColumnType<Date, Date | string | undefined, Date | string>;
-type Json = ColumnType<unknown, string | null | undefined, string | null>;
+export type Timestamp = ColumnType<Date, Date | string | undefined, Date | string>;
+export type Json = ColumnType<unknown, string | null | undefined, string | null>;
 
-export type Role = "admin" | "secretariat" | "accountant";
+export type Role = "admin" | "secretariat" | "accountant" | "editor";
+
+/** Modules a centre subscribed to (see src/modules.ts). */
+export type Module = "training" | "coworking" | "website";
 
 export interface CentresTable {
   id: Generated<string>;
@@ -27,6 +32,7 @@ export interface CentresTable {
   logo: Buffer | null;
   logo_mime: "image/png" | "image/jpeg" | "image/webp" | null;
   logo_updated_at: NullableTimestamp;
+  modules: Generated<Module[]>;
   created_at: Timestamp;
   updated_at: Timestamp;
 }
@@ -89,10 +95,12 @@ export interface StudentsTable {
   created_by: string | null;
 }
 
-type DateColumn = ColumnType<string, string, string>;
-type NullableDate = ColumnType<string | null, string | null | undefined, string | null>;
-type NullableTimestamp = ColumnType<Date | null, Date | string | null | undefined, Date | string | null>;
-type Status = Generated<"active" | "archived">;
+export type DateColumn = ColumnType<string, string, string>;
+export type NullableDate = ColumnType<string | null, string | null | undefined, string | null>;
+export type NullableTimestamp = ColumnType<Date | null, Date | string | null | undefined, Date | string | null>;
+export type Status = Generated<"active" | "archived">;
+/** A column added by a later migration: optional on insert, nullable on read. */
+export type OptionalRef = ColumnType<string | null, string | null | undefined, string | null>;
 
 export interface SubjectsTable {
   id: Generated<string>;
@@ -276,6 +284,10 @@ export interface InstallmentsTable {
   cancel_reason: string | null;
   carried_from_id: string | null;
   session_id: string | null;
+  member_id: OptionalRef;
+  cw_booking_id: OptionalRef;
+  cw_subscription_id: OptionalRef;
+  cw_pack_id: OptionalRef;
   created_by: string | null;
   created_at: Timestamp;
 }
@@ -307,6 +319,7 @@ export interface RoomBookingsTable {
   period: string;
   session_id: string | null;
   rental_slot_id: ColumnType<string | null, string | null | undefined, string | null>;
+  cw_booking_id: OptionalRef;
   active: Generated<boolean>;
 }
 
@@ -341,6 +354,10 @@ export interface FinancialEventsTable {
   installment_id: string | null;
   rental_id: ColumnType<string | null, string | null | undefined, string | null>;
   renter_id: ColumnType<string | null, string | null | undefined, string | null>;
+  member_id: OptionalRef;
+  cw_booking_id: OptionalRef;
+  cw_subscription_id: OptionalRef;
+  cw_pack_id: OptionalRef;
   payload: Json;
 }
 
@@ -353,6 +370,7 @@ export interface PaymentsTable {
   kind: Generated<"payment" | "refund">;
   student_id: string | null;
   renter_id: ColumnType<string | null, string | null | undefined, string | null>;
+  member_id: OptionalRef;
   received_at: Timestamp;
   amount: number;
   method: PaymentMethod;
@@ -410,13 +428,16 @@ export interface ReceiptPrintsTable {
   duplicate: boolean;
 }
 
+export type MailDispatchKind = "receipt" | "reminder" | "member_activation" | "password_reset" | "booking" | "mail_item" | "subscription";
+
 export interface MailDispatchesTable {
   id: Generated<string>;
   centre_id: string;
-  kind: "receipt" | "reminder";
+  kind: MailDispatchKind;
   receipt_id: string | null;
   student_id: string | null;
   renter_id: ColumnType<string | null, string | null | undefined, string | null>;
+  member_id: OptionalRef;
   recipient: string;
   status: "sent" | "failed";
   error: string | null;
@@ -591,7 +612,7 @@ export interface CashClosingsTable {
   closed_at: Timestamp;
 }
 
-export interface Database {
+export interface Database extends CoworkingTables, WebsiteTables {
   centres: CentresTable;
   users: UsersTable;
   sessions: SessionsTable;
@@ -634,6 +655,88 @@ export interface Database {
   rentals: RentalsTable;
   rental_slots: RentalSlotsTable;
   cash_closings: CashClosingsTable;
+  companies: CompaniesTable;
+  members: MembersTable;
+  member_sessions: MemberSessionsTable;
+  member_tokens: MemberTokensTable;
+  media_files: MediaFilesTable;
+}
+
+export interface CompaniesTable {
+  id: Generated<string>;
+  centre_id: string;
+  name: string;
+  tax_id: string | null;
+  address: string | null;
+  email: string | null;
+  phone: string | null;
+  status: Status;
+  created_by: string | null;
+  created_at: Timestamp;
+  updated_at: Timestamp;
+}
+
+export type MemberKind = "member" | "guest";
+export type MemberStatus = "pending" | "active" | "disabled";
+
+export interface MembersTable {
+  id: Generated<string>;
+  centre_id: string;
+  kind: MemberKind;
+  first_name: string;
+  last_name: string | null;
+  email: string | null;
+  phone: string | null;
+  company_id: string | null;
+  company_role: "admin" | "member" | null;
+  status: Generated<MemberStatus>;
+  password_hash: string | null;
+  email_verified_at: NullableTimestamp;
+  failed_login_count: Generated<number>;
+  locked_until: NullableTimestamp;
+  last_login_at: NullableTimestamp;
+  notes: string | null;
+  created_by: string | null;
+  created_at: Timestamp;
+  updated_at: Timestamp;
+}
+
+export interface MemberSessionsTable {
+  id: Generated<string>;
+  member_id: string;
+  token_hash: Buffer;
+  created_at: Timestamp;
+  last_seen_at: Timestamp;
+  absolute_expires_at: Date | string;
+  user_agent: string | null;
+}
+
+export interface MemberTokensTable {
+  id: Generated<string>;
+  member_id: string;
+  purpose: "activation" | "password_reset";
+  token_hash: Buffer;
+  expires_at: Date | string;
+  used_at: NullableTimestamp;
+  created_at: Timestamp;
+}
+
+export type ImageMime = "image/png" | "image/jpeg" | "image/webp";
+
+export interface MediaFilesTable {
+  id: Generated<string>;
+  centre_id: string;
+  data: Buffer;
+  mime: ImageMime;
+  bytes: number;
+  width: number;
+  height: number;
+  sha256: string;
+  alt: string | null;
+  folder: string | null;
+  status: Status;
+  created_by: string | null;
+  created_at: Timestamp;
 }
 
 export type Student = Selectable<StudentsTable>;

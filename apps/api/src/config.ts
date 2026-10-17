@@ -20,6 +20,15 @@ const schema = z.object({
   MAIL_FROM: z.string().min(3).optional(),
   /** Built web client (apps/web/dist). When set, the API also serves the single-page application. */
   WEB_DIST_DIR: z.string().min(1).optional(),
+  /**
+   * Origin of the public surface (website and client portal), for example https://www.coworking.tn. Requests
+   * whose host is this origin's host get the website and the portal instead of the back-office.
+   */
+  PUBLIC_ORIGIN: z.string().url().optional(),
+  /** Built client portal (apps/portal/dist), served under /espace/ on the public origin. */
+  PORTAL_DIST_DIR: z.string().min(1).optional(),
+  MEMBER_SESSION_IDLE_MINUTES: z.coerce.number().int().min(5).default(10080),
+  MEMBER_SESSION_ABSOLUTE_HOURS: z.coerce.number().int().min(1).default(720),
 });
 
 export interface Config {
@@ -35,6 +44,10 @@ export interface Config {
   loginLockMinutes: number;
   smtp: { host: string; port: number; secure: boolean; user: string | undefined; pass: string | undefined; from: string } | null;
   webDistDir: string | null;
+  publicOrigin: string | null;
+  portalDistDir: string | null;
+  memberSessionIdleMinutes: number;
+  memberSessionAbsoluteHours: number;
 }
 
 export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
@@ -62,5 +75,9 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
       ? { host: e.SMTP_HOST, port: e.SMTP_PORT, secure: e.SMTP_SECURE === "true", user: e.SMTP_USER, pass: e.SMTP_PASS, from: e.MAIL_FROM! }
       : null,
     webDistDir: e.WEB_DIST_DIR ?? null,
+    publicOrigin: e.PUBLIC_ORIGIN ? new URL(e.PUBLIC_ORIGIN).origin : null,
+    portalDistDir: e.PORTAL_DIST_DIR ?? null,
+    memberSessionIdleMinutes: e.MEMBER_SESSION_IDLE_MINUTES,
+    memberSessionAbsoluteHours: e.MEMBER_SESSION_ABSOLUTE_HOURS,
   };
 }

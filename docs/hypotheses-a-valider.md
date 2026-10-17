@@ -93,3 +93,47 @@ Administration, sans intervention technique.
 
 16. **Statut de l'intervenant** : payer un salarié au prorata de la présence des élèves peut poser un problème en droit
     du travail tunisien. À faire valider par un juriste ; l'application ne bloque pas cette combinaison.
+
+## Phase 2 : modules, coworking et site web
+
+### Décisions validées par le client
+
+- **Modules** : formation, coworking et site web se vendent séparément. Un centre peut acheter un module sans les
+  autres ; l'éditeur du logiciel les active avec la commande `modules` (journalisée).
+- **Paiement en ligne** : reporté. Le client réserve en ligne et règle à l'accueil (espèces, carte, chèque, virement) ;
+  l'encaissement entre dans la recette du jour, ventilée par activité (formation, locations, coworking).
+- **Langues du site et du portail** : français et anglais, au choix du centre pour le site et du visiteur pour le
+  portail.
+- **Domiciliation et courrier** : inclus. Un abonnement peut comprendre la domiciliation ; le courrier reçu est
+  enregistré, notifié au client puis remis ou retourné.
+- **Contrôle d'accès physique** : hors périmètre pour cette version. Chaque arrivée (au comptoir ou par QR code) est
+  historisée dans `cw_access_events`, que pourra alimenter un futur lecteur de badges.
+
+### Valeurs par défaut du coworking (paramétrables dans Paramètres coworking > Règles)
+
+| Réglage                                | Défaut                                                                              |
+| -------------------------------------- | ----------------------------------------------------------------------------------- |
+| Portail client                         | Fermé tant que l'administrateur ne l'ouvre pas                                      |
+| Inscription depuis le portail          | Validée par le personnel                                                            |
+| Validation des réservations du portail | Visiteurs seulement (les clients avec un abonnement en cours réservent directement) |
+| Horizon de réservation                 | 30 jours                                                                            |
+| Réservations actives par client        | 5                                                                                   |
+| Annulation gratuite                    | Jusqu'à 24 heures avant le début ; frais d'annulation tardive : 0 %                 |
+| Demande sans réponse                   | Expirée après 24 heures (ou au début du créneau)                                    |
+| Absence (no-show)                      | Réservation libérée 30 minutes après le début sans arrivée                          |
+
+### Hypothèses retenues pour cette version (à confirmer)
+
+17. **Reçus du coworking** : un encaissement de coworking produit un reçu de la même série que la formation
+    (`REC-AAAA-000001`). Aucune facture n'est émise. Si les entreprises clientes (matricule fiscal renseigné) ont
+    besoin d'une facture avec TVA et timbre fiscal, le format, la numérotation et le taux sont à valider avec le
+    comptable du centre avant de les ajouter.
+18. **Prix** : un prix est fixé par formule et par profil (visiteur, membre), avec un prix heures creuses facultatif à
+    partir de l'heure réglée. Une formule à durée libre est tarifée à l'heure, au prorata des minutes réservées.
+19. **Abonnements** : le prix et les droits sont figés à la souscription ; modifier une offre ne change que les
+    nouvelles souscriptions et les renouvellements. La facturation mensuelle n'existe que pour les offres
+    trimestrielles et annuelles.
+20. **Échéances payées** : une réservation ou un pack qui a déjà reçu un paiement ne s'annule pas tant que ce paiement
+    n'est pas annulé (message « échéance déjà payée »), comme pour la formation. Un abonnement payé ne s'annule pas
+    non plus : il se résilie à une date, et les échéances dues après cette date sont annulées.
+21. **Surface publique** : une installation sert le site et le portail d'un seul centre, à l'adresse `PUBLIC_ORIGIN`.

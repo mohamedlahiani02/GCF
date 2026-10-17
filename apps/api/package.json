@@ -10,7 +10,8 @@
     "typecheck": "tsc --noEmit && tsc --noEmit -p test",
     "test": "vitest run",
     "bootstrap": "tsx --env-file=.env src/cli/bootstrap.ts",
-    "seed:demo": "tsx --env-file=.env src/cli/seedDemo.ts"
+    "seed:demo": "tsx --env-file=.env src/cli/seedDemo.ts",
+    "modules": "tsx --env-file=.env src/cli/modules.ts"
   },
   "dependencies": {
     "@fastify/cookie": "^11.1.3",
@@ -26,6 +27,7 @@
     "pdfkit": "^0.20.2",
     "pg": "^8.23.1",
     "pino": "^10.4.0",
+    "qrcode": "1.5.4",
     "zod": "^4.6.7"
   },
   "devDependencies": {
@@ -33,6 +35,7 @@
     "@types/nodemailer": "8.0.2",
     "@types/pdfkit": "^0.17.6",
     "@types/pg": "^8.23.1",
+    "@types/qrcode": "1.5.5",
     "tsx": "^4.23.15",
     "typescript": "^7.0.2",
     "vitest": "^5.0.4"

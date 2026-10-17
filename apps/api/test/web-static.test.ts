@@ -32,6 +32,10 @@ beforeAll(async () => {
     loginLockMinutes: 15,
     smtp: null,
     webDistDir: dir,
+    publicOrigin: null,
+    portalDistDir: null,
+    memberSessionIdleMinutes: 10080,
+    memberSessionAbsoluteHours: 720,
   };
   app = await buildApp({ config, db, rateLimit: false, mailer: null });
 });

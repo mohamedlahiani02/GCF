@@ -6,12 +6,16 @@ export interface SessionUser {
   id: string;
   email: string;
   fullName: string;
-  role: "admin" | "secretariat" | "accountant";
+  role: "admin" | "secretariat" | "accountant" | "editor";
 }
+
+export type Module = "training" | "coworking" | "website";
 
 interface Session {
   user: SessionUser;
   permissions: string[];
+  /** Modules the centre subscribed to; permissions of the other modules are never granted. */
+  modules: Module[];
 }
 
 interface SessionContextValue {

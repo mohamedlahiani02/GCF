@@ -1,8 +1,26 @@
 # GCF : gestion de centre de formation
 
-Back-office interne d'un centre de formation et de cours particuliers : élèves, groupes, présences, encaissements et reçus,
-paie des intervenants, location de salles, planning, caisse et rapports. Usage réservé au personnel du centre
-(Admin, Secrétariat, Comptable), sans compte élève, intervenant ou loueur en Phase 1.
+Back-office d'un centre de formation et de cours particuliers : élèves, groupes, présences, encaissements et reçus,
+paie des intervenants, location de salles, planning, caisse et rapports.
+
+L'application se vend par modules, activés centre par centre :
+
+| Module      | Contenu                                                                                                                   |
+| ----------- | ------------------------------------------------------------------------------------------------------------------------- |
+| `training`  | Le back-office de formation ci-dessus (activé par défaut)                                                                 |
+| `coworking` | Espaces, plan interactif, formules et tarifs, réservations, abonnements, packs, domiciliation, portail client `/espace`   |
+| `website`   | Site public bilingue (français, anglais) : pages en sections, thème, médiathèque, publication programmée, demandes reçues |
+
+Chaque permission appartient à un module : l'API refuse et le menu masque ce qui relève d'un module non activé. Les
+modules sont activés par l'éditeur du logiciel, pas depuis le back-office :
+
+```bash
+pnpm --filter @gcf/api modules                              # liste les centres et leurs modules
+pnpm --filter @gcf/api modules -- --enable coworking        # ou --disable website ; --centre <id> si plusieurs centres
+```
+
+Rôles du personnel : Admin, Secrétariat, Comptable, Éditeur (site web). Les clients du coworking ont leur propre compte,
+distinct des comptes du personnel, dans le portail client.
 
 ## Stack
 
@@ -32,8 +50,10 @@ paie des intervenants, location de salles, planning, caisse et rapports. Usage r
 
 ```
 apps/api            API Fastify (routes, authentification, migrations SQL, PDF et exports)
-apps/web            Interface web (React), servie par l'API en production
-packages/shared     Règles métier pures et testées : argent, présence, paie, dates, échéanciers
+apps/web            Back-office (React), servi par l'API en production
+apps/portal         Portail client du coworking (React, français et anglais), servi sous /espace/ sur PUBLIC_ORIGIN
+packages/shared     Règles métier pures et testées : argent, présence, paie, dates, échéanciers, plan d'étage, sections du site
+packages/floorplan  Affichage du plan d'étage (SVG), partagé par le back-office et le portail
 docs/               Décisions validées avec le client et points encore ouverts
 ```
 
@@ -48,12 +68,24 @@ pnpm --filter @gcf/api migrate
 pnpm --filter @gcf/api bootstrap -- --centre "Nom du centre" --email admin@centre.tn --name "Prénom Nom"
 pnpm --filter @gcf/api dev                  # API sur le port 3000
 pnpm --filter @gcf/web dev                  # interface sur http://localhost:5173 (proxy /api vers l'API)
+pnpm --filter @gcf/portal dev               # portail client sur http://localhost:5174/espace/ (coworking)
 ```
 
-Pour une démonstration, `pnpm --filter @gcf/api seed:demo -- --email admin@centre.tn` remplit un centre vide (sans
-élève) : salles, intervenants, cours particuliers, formations avec plusieurs formules, groupes et séances, inscriptions,
-présences, encaissements, règles de rémunération et éléments de paie à chaque étape. Les données passent par l'API,
-avec ses contrôles et son journal d'audit ; les dates partent du premier jour du mois précédent.
+Pour une démonstration, `pnpm --filter @gcf/api seed:demo -- --email admin@centre.tn` remplit un centre vide, module
+par module (activer les modules avant) :
+
+- formation : salles, intervenants, cours particuliers, formations avec plusieurs formules, groupes et séances,
+  inscriptions, présences, encaissements, règles de rémunération et éléments de paie à chaque étape ; les dates
+  partent du premier jour du mois précédent ;
+- coworking : règles, un étage avec son plan publié, postes, salles de réunion, cabine et bureaux privés, formules de
+  1 h, 2 h, 3 h, demi-journée, journée et durée libre, tarifs visiteur et membre, abonnements, pack, code promo,
+  entreprises, membres et un invité, domiciliation et courrier, réservations dans tous les états des deux dernières
+  semaines et des jours suivants, encaissements du jour ;
+- site web : identité et thème, pages en français et en anglais, deux articles dont un programmé, redirections et,
+  si `PUBLIC_ORIGIN` est renseigné, deux demandes de visiteurs.
+
+Les données passent par l'API, avec ses contrôles et son journal d'audit. Seules les réservations passées du coworking
+sont créées par les fonctions métier avec une heure de référence antérieure, l'API refusant un créneau terminé.
 
 Le mot de passe de l'administrateur est saisi dans le terminal, jamais en argument. En développement avec Vite,
 `WEB_ORIGIN` vaut `http://localhost:5173` et `COOKIE_SECURE=false`.
@@ -63,13 +95,18 @@ Le mot de passe de l'administrateur est saisi dans le terminal, jamais en argume
 ```bash
 pnpm install --frozen-lockfile
 pnpm --filter @gcf/web build                # produit apps/web/dist
+pnpm --filter @gcf/portal build             # produit apps/portal/dist (module coworking)
 pnpm --filter @gcf/api migrate
-pnpm --filter @gcf/api start                # sert l'API et l'interface (WEB_DIST_DIR=../web/dist)
+pnpm --filter @gcf/api start                # sert l'API, le back-office, le site et le portail
 ```
 
-L'API et l'interface partagent la même origine : `WEB_ORIGIN` est l'URL publique (https), `COOKIE_SECURE=true`.
-Placer un reverse proxy TLS (Nginx, Caddy) devant le port de l'API. Les variables sont décrites dans
-`apps/api/.env.example` ; aucun secret n'est versionné.
+L'API et le back-office partagent la même origine : `WEB_ORIGIN` est l'URL publique (https), `COOKIE_SECURE=true`.
+Avec les modules coworking ou site web, `PUBLIC_ORIGIN` est l'adresse publique du site (par exemple
+`https://www.centre.tn`) : une requête arrivant sur cet hôte reçoit le site, le portail sous `/espace/`
+(`PORTAL_DIST_DIR`), le sitemap et les images ; les API `/api/portal` et `/api/public` n'acceptent que cette origine.
+Un seul centre peut exploiter la surface publique d'une installation. Placer un reverse proxy TLS (Nginx, Caddy)
+devant le port de l'API, pour les deux noms d'hôte. Après une nouvelle construction des interfaces, redémarrer l'API.
+Les variables sont décrites dans `apps/api/.env.example` ; aucun secret n'est versionné.
 
 ## Tests
 
@@ -83,14 +120,15 @@ pnpm typecheck                                # API, tests, règles partagées e
 
 ## Avancement
 
-| Lot     | Contenu                                                                                                                | État                                                                               |
-| ------- | ---------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------- |
-| 1       | Socle : centre, utilisateurs et rôles, sessions, journal d'audit, élèves                                               | Livré                                                                              |
-| 2       | Cours particuliers, formations et leurs formules, groupes, inscriptions, échéanciers, changements de groupe, abandons  | Livré                                                                              |
-| 3       | Séances et présences : feuille d'appel, rattrapages, verrouillage, correction motivée, PDF A4                          | Livré                                                                              |
-| 4       | Encaissements, imputation, avances, chèques, remboursements, reçus PDF numérotés, reports, relances, journal financier | Livré                                                                              |
-| 5       | Règles de rémunération, éléments de paie par intervenant et par règle, validation, règlements partiels, justificatifs  | Livré                                                                              |
-| 6       | Salles et tarifs, loueurs, locations, contrats PDF, planning unifié et détection de conflits                           | Livré                                                                              |
-| 7       | Caisse et clôture journalière, rapports exportables, tableau de bord par rôle                                          | Livré                                                                              |
-| 8       | Interface web d'après les maquettes                                                                                    | Livré                                                                              |
-| Phase 2 | Écritures comptables légales (plan comptable), coworking                                                               | Prévu : le journal `financial_events` en ajout seul est la source de ces écritures |
+| Lot   | Contenu                                                                                                                | État                                                                               |
+| ----- | ---------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------- |
+| 1     | Socle : centre, utilisateurs et rôles, sessions, journal d'audit, élèves                                               | Livré                                                                              |
+| 2     | Cours particuliers, formations et leurs formules, groupes, inscriptions, échéanciers, changements de groupe, abandons  | Livré                                                                              |
+| 3     | Séances et présences : feuille d'appel, rattrapages, verrouillage, correction motivée, PDF A4                          | Livré                                                                              |
+| 4     | Encaissements, imputation, avances, chèques, remboursements, reçus PDF numérotés, reports, relances, journal financier | Livré                                                                              |
+| 5     | Règles de rémunération, éléments de paie par intervenant et par règle, validation, règlements partiels, justificatifs  | Livré                                                                              |
+| 6     | Salles et tarifs, loueurs, locations, contrats PDF, planning unifié et détection de conflits                           | Livré                                                                              |
+| 7     | Caisse et clôture journalière, rapports exportables, tableau de bord par rôle                                          | Livré                                                                              |
+| 8     | Interface web d'après les maquettes                                                                                    | Livré                                                                              |
+| 9     | Modules vendables, coworking (back-office, plan interactif, portail client), site web public bilingue                  | Livré                                                                              |
+| Suite | Écritures comptables légales (plan comptable), paiement en ligne, contrôle d'accès physique                            | Prévu : le journal `financial_events` en ajout seul est la source de ces écritures |

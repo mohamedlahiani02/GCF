@@ -71,7 +71,7 @@ export const enrolmentRoutes: FastifyPluginAsync = async (app) => {
     if (!student) throw notFound("student");
     if (student.status !== "active") throw unprocessable("student_archived", "the student is archived");
     const { group, terms, lines, discount: d } = await preview(body, actor.centreId);
-    const canApprove = can(actor.role, "discounts:approve");
+    const canApprove = can(actor, "discounts:approve");
 
     const enrolment = await db.transaction().execute(async (trx) => {
       await lockStudent(trx, body.studentId, actor.centreId);

@@ -175,6 +175,11 @@ a {
   min-height: 40px;
   padding: 0 18px;
 }
+.btn:disabled,
+.btn[aria-disabled="true"] {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
 .btn:focus-visible,
 .input:focus-visible,
 a:focus-visible,
@@ -575,4 +580,142 @@ a:focus-visible,
   .noprint {
     display: none;
   }
+}
+
+/* Coworking floor plan (packages/floorplan): states reuse the badge palette. */
+.fp {
+  display: block;
+  width: 100%;
+  height: auto;
+  background: var(--soft);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+}
+.fp-background {
+  fill: var(--surface);
+}
+.fp-area {
+  fill-opacity: 0.08;
+  stroke-opacity: 0.5;
+  stroke-width: 2;
+  stroke-dasharray: 6 4;
+}
+.fp-label {
+  fill: var(--muted);
+  font-weight: 600;
+  pointer-events: none;
+}
+.fp-shape {
+  stroke-width: 2;
+}
+.fp-code {
+  font-weight: 600;
+  pointer-events: none;
+}
+.fp-state-free .fp-shape {
+  fill: #e3f4e8;
+  stroke: #4f9e6a;
+}
+.fp-state-free .fp-code {
+  fill: #14633a;
+}
+.fp-state-requested .fp-shape {
+  fill: #fdf0d2;
+  stroke: #c9962e;
+}
+.fp-state-requested .fp-code {
+  fill: #7a4a00;
+}
+.fp-state-booked .fp-shape {
+  fill: #e1ecfb;
+  stroke: #5d87cc;
+}
+.fp-state-booked .fp-code {
+  fill: #1d4f9e;
+}
+.fp-state-occupied .fp-shape {
+  fill: #1d4f9e;
+  stroke: #12346b;
+}
+.fp-state-occupied .fp-code {
+  fill: #ffffff;
+}
+.fp-state-blocked .fp-shape {
+  fill: #eceef2;
+  stroke: #8a94a3;
+  stroke-dasharray: 4 3;
+}
+.fp-state-blocked .fp-code {
+  fill: #3f4a5a;
+}
+.fp-state-assigned .fp-shape {
+  fill: #f0e6fa;
+  stroke: #9a6bc9;
+}
+.fp-state-assigned .fp-code {
+  fill: #6b2fa0;
+}
+.fp-heat .fp-shape {
+  fill: #0e5a8a;
+  stroke: #0e5a8a;
+}
+.fp-heat .fp-code {
+  fill: var(--ink);
+}
+.fp-interactive {
+  cursor: pointer;
+}
+.fp-interactive:hover .fp-shape,
+.fp-interactive:focus-visible .fp-shape {
+  stroke-width: 4;
+}
+.fp-interactive:focus-visible {
+  outline: none;
+}
+.fp-selected .fp-shape {
+  stroke: var(--accent);
+  stroke-width: 5;
+}
+.fp-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 14px;
+  font-size: 12px;
+  color: var(--muted);
+}
+.fp-legend span {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.fp-legend i {
+  width: 12px;
+  height: 12px;
+  border-radius: 3px;
+  border: 1px solid;
+}
+.fp-legend .free {
+  background: #e3f4e8;
+  border-color: #4f9e6a;
+}
+.fp-legend .requested {
+  background: #fdf0d2;
+  border-color: #c9962e;
+}
+.fp-legend .booked {
+  background: #e1ecfb;
+  border-color: #5d87cc;
+}
+.fp-legend .occupied {
+  background: #1d4f9e;
+  border-color: #12346b;
+}
+.fp-legend .blocked {
+  background: #eceef2;
+  border-color: #8a94a3;
+  border-style: dashed;
+}
+.fp-legend .assigned {
+  background: #f0e6fa;
+  border-color: #9a6bc9;
 }

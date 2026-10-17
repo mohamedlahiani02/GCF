@@ -1,7 +1,11 @@
 import { ApiError } from "../api/client";
+import { COWORKING_MESSAGES } from "./errors.coworking";
+import { SITE_MESSAGES } from "./errors.site";
 
 /** French wording for the API's stable error codes. Unknown codes fall back to a generic sentence. */
 const MESSAGES: Record<string, string> = {
+  ...COWORKING_MESSAGES,
+  ...SITE_MESSAGES,
   invalid_credentials: "E-mail ou mot de passe incorrect.",
   account_locked: "Trop d'essais : le compte est bloqué pour quelques minutes.",
   unauthenticated: "Votre session a expiré. Reconnectez-vous.",

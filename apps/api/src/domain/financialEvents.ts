@@ -35,6 +35,10 @@ export interface FinancialEvent {
   installmentId?: string | null;
   rentalId?: string | null;
   renterId?: string | null;
+  memberId?: string | null;
+  cwBookingId?: string | null;
+  cwSubscriptionId?: string | null;
+  cwPackId?: string | null;
   payload?: Record<string, unknown>;
 }
 
@@ -58,6 +62,10 @@ export async function recordFinancialEvents(db: Kysely<Database> | Transaction<D
         installment_id: e.installmentId ?? null,
         rental_id: e.rentalId ?? null,
         renter_id: e.renterId ?? null,
+        member_id: e.memberId ?? null,
+        cw_booking_id: e.cwBookingId ?? null,
+        cw_subscription_id: e.cwSubscriptionId ?? null,
+        cw_pack_id: e.cwPackId ?? null,
         payload: e.payload ? JSON.stringify(e.payload) : null,
       })),
     )

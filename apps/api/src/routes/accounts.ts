@@ -228,7 +228,7 @@ export const accountRoutes: FastifyPluginAsync = async (app) => {
       if (row.count >= row.max) throw conflict("too_many_postponements", `an instalment can be postponed at most ${row.max} times`);
       const pending = await trx.selectFrom("postponements").select("id").where("installment_id", "=", id).where("status", "=", "pending").executeTakeFirst();
       if (pending) throw conflict("postponement_pending", "a postponement of this instalment is waiting for approval");
-      const autoApproved = !row.requiresApproval || can(actor.role, "postponements:approve");
+      const autoApproved = !row.requiresApproval || can(actor, "postponements:approve");
       const postponement = await trx
         .insertInto("postponements")
         .values({

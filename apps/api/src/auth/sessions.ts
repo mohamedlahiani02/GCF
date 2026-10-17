@@ -1,6 +1,6 @@
 import { createHash, randomBytes } from "node:crypto";
 import type { Kysely } from "kysely";
-import type { Database, Role } from "../db/types.js";
+import type { Database, Module, Role } from "../db/types.js";
 
 export interface SessionPolicy {
   idleMinutes: number;
@@ -14,6 +14,7 @@ export interface SessionUser {
   email: string;
   fullName: string;
   role: Role;
+  modules: Module[];
 }
 
 function hashToken(token: string): Buffer {
@@ -39,6 +40,7 @@ export async function resolveSession(db: Kysely<Database>, token: string, policy
   const row = await db
     .selectFrom("sessions")
     .innerJoin("users", "users.id", "sessions.user_id")
+    .innerJoin("centres", "centres.id", "users.centre_id")
     .select([
       "sessions.id as sessionId",
       "sessions.last_seen_at as lastSeenAt",
@@ -49,6 +51,7 @@ export async function resolveSession(db: Kysely<Database>, token: string, policy
       "users.full_name as fullName",
       "users.role",
       "users.active",
+      "centres.modules",
     ])
     .where("sessions.token_hash", "=", hashToken(token))
     .executeTakeFirst();
@@ -73,6 +76,7 @@ export async function resolveSession(db: Kysely<Database>, token: string, policy
     email: row.email,
     fullName: row.fullName,
     role: row.role,
+    modules: row.modules,
   };
 }
 

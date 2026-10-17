@@ -29,6 +29,8 @@ export async function issueReceipt(trx: Transaction<Database>, input: IssueRecei
     .selectFrom("payments")
     .leftJoin("students", "students.id", "payments.student_id")
     .leftJoin("renters", "renters.id", "payments.renter_id")
+    .leftJoin("members", "members.id", "payments.member_id")
+    .leftJoin("companies", "companies.id", "members.company_id")
     .innerJoin("centres", "centres.id", "payments.centre_id")
     .select([
       "payments.amount",
@@ -38,6 +40,10 @@ export async function issueReceipt(trx: Transaction<Database>, input: IssueRecei
       "payments.reference",
       "payments.student_id as studentId",
       "payments.renter_id as renterId",
+      "payments.member_id as memberId",
+      "members.first_name as memberFirstName",
+      "members.last_name as memberLastName",
+      "companies.name as memberCompany",
       "renters.name as renterName",
       "renters.company as renterCompany",
       "students.first_name as firstName",
@@ -58,11 +64,17 @@ export async function issueReceipt(trx: Transaction<Database>, input: IssueRecei
   const sequence = await nextNumber(trx, input.centreId, year);
   const number = `${payment.prefix}-${year}-${String(sequence).padStart(6, "0")}`;
   const issuedAt = await sql<{ at: string }>`select to_char(now() at time zone ${payment.timezone}, 'DD/MM/YYYY HH24:MI') as at`.execute(trx);
-  const payer: Payer = payment.studentId ? { kind: "student", id: payment.studentId } : { kind: "renter", id: payment.renterId! };
+  const payer: Payer = payment.studentId
+    ? { kind: "student", id: payment.studentId }
+    : payment.memberId
+      ? { kind: "member", id: payment.memberId }
+      : { kind: "renter", id: payment.renterId! };
   const totals = await payerTotals(trx, input.centreId, payer);
   const payerName = payment.studentId
     ? `${payment.firstName} ${payment.lastName}`
-    : `${payment.renterName}${payment.renterCompany ? ` (${payment.renterCompany})` : ""}`;
+    : payment.memberId
+      ? `${[payment.memberFirstName, payment.memberLastName].filter(Boolean).join(" ")}${payment.memberCompany ? ` (${payment.memberCompany})` : ""}`
+      : `${payment.renterName}${payment.renterCompany ? ` (${payment.renterCompany})` : ""}`;
   const snapshot: ReceiptSnapshot = {
     number,
     kind: input.kind,

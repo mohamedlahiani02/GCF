@@ -5,10 +5,11 @@ import { hashPassword } from "../src/auth/passwords.js";
 import type { Config } from "../src/config.js";
 import { createDb } from "../src/db/client.js";
 import { migrateToLatest } from "../src/db/migrate.js";
-import type { Database, Role } from "../src/db/types.js";
+import type { Database, Module, Role } from "../src/db/types.js";
 import type { Mailer, OutgoingMail } from "../src/mail.js";
 
 export const ORIGIN = "https://gestion.test";
+export const PUBLIC_ORIGIN = "https://www.cowork.test";
 export const PASSWORD = "correct-horse-battery";
 
 const testDatabaseUrl = process.env.TEST_DATABASE_URL;
@@ -20,6 +21,17 @@ export interface Harness {
   createUser(role: Role, email: string): Promise<string>;
   login(email: string, password?: string): Promise<string>;
   call(method: "GET" | "POST" | "PATCH" | "PUT" | "DELETE", url: string, cookie: string, payload?: unknown): Promise<{ status: number; body: any }>;
+  /** Enables exactly these modules for the test centre; staff must log in again to see new permissions. */
+  setModules(modules: Module[]): Promise<void>;
+  /** A JSON call from the public origin (portal and website forms), with an optional member cookie. */
+  callPublic(
+    method: "GET" | "POST" | "PATCH" | "PUT" | "DELETE",
+    url: string,
+    cookie?: string,
+    payload?: unknown,
+  ): Promise<{ status: number; body: any; headers: Record<string, unknown>; cookies: { name: string; value: string }[] }>;
+  /** A raw GET on the public host (website pages, sitemap, media). */
+  getPublic(url: string): Promise<{ status: number; body: string; headers: Record<string, unknown> }>;
   close(): Promise<void>;
 }
 
@@ -57,6 +69,10 @@ export async function createHarness(options: { mailer?: Mailer } = {}): Promise<
     loginLockMinutes: 15,
     smtp: null,
     webDistDir: null,
+    publicOrigin: PUBLIC_ORIGIN,
+    portalDistDir: null,
+    memberSessionIdleMinutes: 10080,
+    memberSessionAbsoluteHours: 720,
   };
   const app = await buildApp({ config, db, rateLimit: false, mailer: options.mailer ?? null });
   const hash = await hashPassword(PASSWORD);
@@ -88,6 +104,25 @@ export async function createHarness(options: { mailer?: Mailer } = {}): Promise<
         ...(payload === undefined ? {} : { payload: payload as Record<string, unknown> }),
       });
       return { status: response.statusCode, body: response.body ? response.json() : undefined };
+    },
+    async setModules(modules) {
+      await db.updateTable("centres").set({ modules }).where("id", "=", centre.id).execute();
+    },
+    async callPublic(method, url, cookie, payload) {
+      const host = new URL(PUBLIC_ORIGIN).host;
+      const headers: Record<string, string> = { host, ...(cookie ? { cookie } : {}), ...(method === "GET" ? {} : { origin: PUBLIC_ORIGIN }) };
+      const response = await app.inject({ method, url, headers, ...(payload === undefined ? {} : { payload: payload as Record<string, unknown> }) });
+      const text = response.body;
+      return {
+        status: response.statusCode,
+        body: text && response.headers["content-type"]?.toString().includes("application/json") ? response.json() : text,
+        headers: response.headers,
+        cookies: response.cookies.map((c) => ({ name: c.name, value: c.value })),
+      };
+    },
+    async getPublic(url) {
+      const response = await app.inject({ method: "GET", url, headers: { host: new URL(PUBLIC_ORIGIN).host } });
+      return { status: response.statusCode, body: response.body, headers: response.headers };
     },
     async close() {
       await app.close();

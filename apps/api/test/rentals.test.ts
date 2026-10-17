@@ -1,3 +1,4 @@
+import { todayIn } from "@gcf/shared";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { createHarness, type Harness } from "./harness.js";
 
@@ -109,7 +110,8 @@ describe("rentals", () => {
     });
     expect(res.status).toBe(201);
     expect(res.body.schedule.map((l: { amount: number; dueDate: string }) => [l.amount, l.dueDate])).toEqual([
-      [18_000, "2026-10-15"],
+      // The deposit is due on the day of booking.
+      [18_000, todayIn("Africa/Tunis")],
       [18_000, "2026-11-05"],
     ]);
     ids.hourly = res.body.id;
