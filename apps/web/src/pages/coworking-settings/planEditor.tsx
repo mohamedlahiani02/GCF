@@ -407,7 +407,8 @@ function Editor({ floor }: { floor: FloorDetail }) {
       const dy = snapped(cy + p.y - drag.start.y) - cy;
       preview(moveItems(drag.before, height, drag.ids, dx, dy));
     } else if (drag.kind === "resize") {
-      preview(resizeItem(drag.before, height, drag.id, drag.corner, { x: snapped(p.x), y: snapped(p.y) }));
+      const inside = { x: Math.min(PLAN_WIDTH, Math.max(0, snapped(p.x))), y: Math.min(height, Math.max(0, snapped(p.y))) };
+      preview(resizeItem(drag.before, height, drag.id, drag.corner, inside));
     } else if (drag.kind === "label") {
       const label = drag.before.labels[drag.index]!;
       const dx = snapped(label.x * PLAN_WIDTH + p.x - drag.start.x) - label.x * PLAN_WIDTH;
