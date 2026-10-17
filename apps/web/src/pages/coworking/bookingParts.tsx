@@ -25,6 +25,7 @@ import {
   type Booking,
   type BookingDetail,
   type BookingInput,
+  type Format,
   type MemberRow,
   type Quote,
   type SlotsResponse,
@@ -127,6 +128,20 @@ function defaultSlot(slots: SlotsResponse["slots"], time: string): string {
   return (covering.at(-1) ?? open.find((s) => s.startTime >= time) ?? open[0])?.startTime ?? "";
 }
 
+/** The first of the formats that still has a slot ahead on the date, so the desk starts from something bookable. */
+export function useBookableFormat(formats: Format[], date: string): string | undefined {
+  const ids = formats.map((f) => f.id);
+  const open = useQuery({
+    queryKey: ["cw-open-formats", ids, date],
+    queryFn: async () => {
+      const all = await Promise.all(ids.map((id) => api.get<SlotsResponse>(`/coworking/formats/${id}/slots`, { date })));
+      return ids.filter((_id, i) => all[i]!.slots.some((s) => new Date(s.endsAt).getTime() > Date.now()));
+    },
+    enabled: ids.length > 1,
+  });
+  return open.data?.[0];
+}
+
 /**
  * Booking form of the desk for one resource: client, format, start, length of a free format, promotion code. The
  * quote follows every change; limits of the portal are shown and must be overridden explicitly.
@@ -153,7 +168,8 @@ export function QuickBooking({
   const formats = useFormats();
   const choices = (formats.data ?? []).filter((f) => f.typeId === resource.typeId && f.prices.length > 0);
   const [formatId, setFormatId] = useState(initial?.formatId ?? "");
-  const format = choices.find((f) => f.id === formatId) ?? choices[0];
+  const bookable = useBookableFormat(choices, date);
+  const format = choices.find((f) => f.id === (formatId || bookable)) ?? choices[0];
   const [duration, setDuration] = useState<number | null>(initial?.durationMinutes ?? null);
   const minutes = format?.nature === "free" ? (duration ?? format.minMinutes ?? undefined) : undefined;
   const [startTime, setStartTime] = useState(initial?.startTime ?? "");

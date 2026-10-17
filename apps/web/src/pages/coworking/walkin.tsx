@@ -19,7 +19,7 @@ import {
   type Quote,
   type SlotsResponse,
 } from "./api";
-import { QuickBooking, isDeskBookable, quarterNow, useMemberCollect } from "./bookingParts";
+import { QuickBooking, isDeskBookable, quarterNow, useBookableFormat, useMemberCollect } from "./bookingParts";
 import { MemberPicker } from "./memberPicker";
 
 type Step = "client" | "seat" | "confirm" | "done";
@@ -46,7 +46,8 @@ function SeatStep({ onPick }: { onPick: (seat: Seat) => void }) {
   const type = bookableTypes.find((t) => t.id === typeId) ?? bookableTypes[0];
   const typeFormats = sellable.filter((f) => f.typeId === type?.id);
   const [formatId, setFormatId] = useState("");
-  const format = typeFormats.find((f) => f.id === formatId) ?? typeFormats[0];
+  const bookable = useBookableFormat(typeFormats, date);
+  const format = typeFormats.find((f) => f.id === (formatId || bookable)) ?? typeFormats[0];
   const durations: number[] = [];
   if (format?.nature === "free" && format.minMinutes && format.maxMinutes && format.startStepMinutes) {
     for (let m = format.minMinutes; m <= format.maxMinutes; m += format.startStepMinutes) durations.push(m);
@@ -98,7 +99,7 @@ function SeatStep({ onPick }: { onPick: (seat: Seat) => void }) {
           <select className="input" value={type?.id ?? ""} onChange={(e) => (setTypeId(e.target.value), setFormatId(""), setStartTime(""), setDuration(null))}>
             {bookableTypes.map((t) => (
               <option key={t.id} value={t.id}>
-                {t.name} ({CATEGORY[t.category]})
+                {t.name === CATEGORY[t.category] ? t.name : `${t.name} (${CATEGORY[t.category]})`}
               </option>
             ))}
           </select>
