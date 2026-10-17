@@ -1,4 +1,4 @@
-import { useEffect, useId, useRef, type ReactNode } from "react";
+import { cloneElement, useEffect, useId, useRef, type ReactElement, type ReactNode } from "react";
 import { errorMessage } from "../lib/errors";
 import { useFormat } from "../lib/format";
 import { useI18n } from "../i18n/i18n";
@@ -119,14 +119,30 @@ export function Spinner() {
   return <span className="spinner" role="status" aria-label={t.common.working} />;
 }
 
-/** A labelled input; the label wraps the control so the association needs no id. */
-export function Field({ label, children, hint }: { label: string; children: ReactNode; hint?: string | undefined }) {
+/** A labelled form control; the hint is announced as its description, not as part of its name. */
+export function Field({
+  label,
+  children,
+  hint,
+}: {
+  label: string;
+  children: ReactElement<{ id?: string; "aria-describedby"?: string }>;
+  hint?: string | undefined;
+}) {
+  const id = useId();
+  const hintId = `${id}-hint`;
   return (
-    <label className="field">
-      <span className="lab">{label}</span>
-      {children}
-      {hint ? <span className="cap">{hint}</span> : null}
-    </label>
+    <div className="field">
+      <label className="lab" htmlFor={id}>
+        {label}
+      </label>
+      {cloneElement(children, { id, ...(hint ? { "aria-describedby": hintId } : {}) })}
+      {hint ? (
+        <span id={hintId} className="cap">
+          {hint}
+        </span>
+      ) : null}
+    </div>
   );
 }
 

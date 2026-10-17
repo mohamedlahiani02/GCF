@@ -40,7 +40,9 @@ function PriceLine({ format, offpeakFrom }: { format: FormatOffer; offpeakFrom: 
   return (
     <span>
       {base}
-      {format.price.offpeakAmount !== null && offpeakFrom ? <span className="cap"> ({t.book.offpeak(f.money(format.price.offpeakAmount), offpeakFrom)})</span> : null}
+      {format.price.offpeakAmount !== null && offpeakFrom ? (
+        <span className="cap"> ({t.book.offpeak(f.money(format.price.offpeakAmount), offpeakFrom)})</span>
+      ) : null}
     </span>
   );
 }
@@ -92,7 +94,14 @@ function SlotPicker({ slots, selected, onSelect }: { slots: Slots; selected: Slo
         {slots.slots.map((slot) => {
           const on = selected?.startTime === slot.startTime && selected.endTime === slot.endTime;
           return (
-            <button key={slot.startTime} type="button" className={on ? "btn btn-p" : "btn"} aria-pressed={on} disabled={slot.free === 0} onClick={() => onSelect(slot)}>
+            <button
+              key={slot.startTime}
+              type="button"
+              className={on ? "btn btn-p" : "btn"}
+              aria-pressed={on}
+              disabled={slot.free === 0}
+              onClick={() => onSelect(slot)}
+            >
               <span className="num">
                 {slot.startTime} - {slot.endTime}
               </span>
@@ -176,9 +185,19 @@ function ResourcePicker({
       {free.length ? (
         <div className="portal-slots" role="group" aria-label={t.book.freeResources}>
           {free.map((r) => (
-            <button key={r.resourceId} type="button" className={selected === r.resourceId ? "btn btn-p" : "btn"} aria-pressed={selected === r.resourceId} onClick={() => onSelect(r.resourceId)}>
+            <button
+              key={r.resourceId}
+              type="button"
+              className={selected === r.resourceId ? "btn btn-p" : "btn"}
+              aria-pressed={selected === r.resourceId}
+              onClick={() => onSelect(r.resourceId)}
+            >
               {r.code}
-              {r.name ? <span className="cap" style={selected === r.resourceId ? { color: "inherit" } : undefined}>{r.name}</span> : null}
+              {r.name ? (
+                <span className="cap" style={selected === r.resourceId ? { color: "inherit" } : undefined}>
+                  {r.name}
+                </span>
+              ) : null}
             </button>
           ))}
         </div>
@@ -231,7 +250,11 @@ function Summary({ input, catalogue, onPromo }: { input: BookingInput; catalogue
                 </tr>
                 <tr>
                   <td>
-                    {t.book.listPrice} <span className="cap">({t.profile[q.profile]}{q.offpeak ? `, ${t.book.offpeakApplied}` : ""})</span>
+                    {t.book.listPrice}{" "}
+                    <span className="cap">
+                      ({t.profile[q.profile]}
+                      {q.offpeak ? `, ${t.book.offpeakApplied}` : ""})
+                    </span>
                   </td>
                   <td className="num">
                     <Money value={q.listPrice} />

@@ -8,7 +8,7 @@ import { ErrorBanner, Field, Notice, Spinner } from "../components/ui";
 import { useI18n } from "../i18n/i18n";
 
 /** Same minimum as the API (apps/api/src/auth/passwords.ts PASSWORD_MIN_LENGTH). */
-const PASSWORD_MIN_LENGTH = 10;
+export const PASSWORD_MIN_LENGTH = 10;
 
 function AuthCard({ title, intro, children }: { title: string; intro?: string; children: ReactNode }) {
   return (

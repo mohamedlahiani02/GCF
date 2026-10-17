@@ -75,7 +75,7 @@ export function BookingDetailPage() {
           </Link>
         }
       />
-      {created ? <Notice tone="green">{created === "confirmed" ? t.book.createdConfirmed : t.book.createdRequested}</Notice> : null}
+      {created && !cancelled ? <Notice tone="green">{created === "confirmed" ? t.book.createdConfirmed : t.book.createdRequested}</Notice> : null}
       {cancelled ? (
         <Notice tone="green">
           {cancelled.free ? t.detail.cancelledFree : cancelled.fee > 0 ? t.detail.cancelledFee(f.money(cancelled.fee)) : t.detail.cancelledLate}

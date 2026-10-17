@@ -10,10 +10,10 @@ import { useI18n, type Language } from "../i18n/i18n";
 const TIME_ZONE = "Africa/Tunis";
 
 /** Money is integer millimes, shown as TND with 3 decimals in the reader's language. */
-export const money = (millimes: number, language: Language) => `${formatTnd(millimes, language)} TND`;
+const money = (millimes: number, language: Language) => `${formatTnd(millimes, language)} TND`;
 
 /** A local calendar date (YYYY-MM-DD) with its weekday, e.g. "mer. 21/10/2026". */
-export function calendarDate(date: string, language: Language, withWeekday = false): string {
+function calendarDate(date: string, language: Language, withWeekday = false): string {
   return new Intl.DateTimeFormat(DICTIONARIES[language].locale, {
     timeZone: "UTC",
     ...(withWeekday ? { weekday: "short" } : {}),
@@ -24,7 +24,7 @@ export function calendarDate(date: string, language: Language, withWeekday = fal
 }
 
 /** An instant as date and time in the centre's time zone. */
-export function dateTime(instant: string, language: Language): string {
+function dateTime(instant: string, language: Language): string {
   return new Intl.DateTimeFormat(DICTIONARIES[language].locale, {
     timeZone: TIME_ZONE,
     day: "2-digit",
@@ -36,7 +36,7 @@ export function dateTime(instant: string, language: Language): string {
 }
 
 /** An instant as a date in the centre's time zone. */
-export function instantDate(instant: string, language: Language): string {
+function instantDate(instant: string, language: Language): string {
   return new Intl.DateTimeFormat(DICTIONARIES[language].locale, { timeZone: TIME_ZONE, day: "2-digit", month: "2-digit", year: "numeric" }).format(
     new Date(instant),
   );
@@ -45,7 +45,7 @@ export function instantDate(instant: string, language: Language): string {
 export const minutesText = (minutes: number, language: Language) => DICTIONARIES[language].duration.hours(Math.floor(minutes / 60), minutes % 60);
 
 /** Basis points as a percentage, e.g. 5000 -> "50 %" (fr) or "50%" (en). */
-export function percent(basisPoints: number, language: Language): string {
+function percent(basisPoints: number, language: Language): string {
   const value = (basisPoints / 100).toFixed(basisPoints % 100 === 0 ? 0 : 1);
   return language === "fr" ? `${value.replace(".", ",")} %` : `${value}%`;
 }

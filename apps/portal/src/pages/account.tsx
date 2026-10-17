@@ -7,10 +7,8 @@ import { useMember, usePortal } from "../auth/session";
 import { BookingStatusBadge } from "../components/badges";
 import { Badge, Card, Empty, ErrorBanner, Field, Loading, Notice, PageHeader, Spinner } from "../components/ui";
 import { useI18n } from "../i18n/i18n";
+import { PASSWORD_MIN_LENGTH } from "./auth";
 import { useFormat } from "../lib/format";
-
-/** Same minimum as the API (apps/api/src/auth/passwords.ts PASSWORD_MIN_LENGTH). */
-const PASSWORD_MIN_LENGTH = 10;
 
 function ProfileForm() {
   const member = useMember();
@@ -44,13 +42,35 @@ function ProfileForm() {
           <ErrorBanner error={save.error} />
           <div className="grid2 portal-grid">
             <Field label={t.auth.firstName}>
-              <input className="input" autoComplete="given-name" required maxLength={100} value={form.firstName} onChange={(e) => setForm({ ...form, firstName: e.target.value })} />
+              <input
+                className="input"
+                autoComplete="given-name"
+                required
+                maxLength={100}
+                value={form.firstName}
+                onChange={(e) => setForm({ ...form, firstName: e.target.value })}
+              />
             </Field>
             <Field label={t.auth.lastName}>
-              <input className="input" autoComplete="family-name" required maxLength={100} value={form.lastName} onChange={(e) => setForm({ ...form, lastName: e.target.value })} />
+              <input
+                className="input"
+                autoComplete="family-name"
+                required
+                maxLength={100}
+                value={form.lastName}
+                onChange={(e) => setForm({ ...form, lastName: e.target.value })}
+              />
             </Field>
             <Field label={t.auth.phone}>
-              <input className="input" type="tel" autoComplete="tel" required maxLength={40} value={form.phone} onChange={(e) => setForm({ ...form, phone: e.target.value })} />
+              <input
+                className="input"
+                type="tel"
+                autoComplete="tel"
+                required
+                maxLength={40}
+                value={form.phone}
+                onChange={(e) => setForm({ ...form, phone: e.target.value })}
+              />
             </Field>
             <Field label={t.auth.email} hint={t.account.emailHint}>
               <input className="input" type="email" value={member.email ?? ""} readOnly />
@@ -102,7 +122,14 @@ function PasswordForm() {
           <ErrorBanner error={change.error} />
           <div className="grid2 portal-grid">
             <Field label={t.account.currentPassword}>
-              <input className="input" type="password" autoComplete="current-password" required value={currentPassword} onChange={(e) => setCurrent(e.target.value)} />
+              <input
+                className="input"
+                type="password"
+                autoComplete="current-password"
+                required
+                value={currentPassword}
+                onChange={(e) => setCurrent(e.target.value)}
+              />
             </Field>
             <Field label={t.account.newPassword} hint={t.auth.passwordHint(PASSWORD_MIN_LENGTH)}>
               <input
@@ -140,7 +167,7 @@ export function TeamPage() {
   const bookings = useQuery({ queryKey: ["team-bookings"], queryFn: () => api.get<{ items: TeamBooking[] }>("/team/bookings") });
   return (
     <>
-      <PageHeader title={team.data ? `${t.team.title} : ${team.data.company.name}`.replace(" : ", language === "fr" ? " : " : ": ") : t.team.title} />
+      <PageHeader title={team.data ? t.common.pair(t.team.title, team.data.company.name) : t.team.title} />
       <ErrorBanner error={team.error ?? bookings.error} />
       <Card title={t.team.members}>
         {team.isPending ? (

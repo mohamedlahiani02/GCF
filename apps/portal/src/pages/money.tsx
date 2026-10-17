@@ -117,7 +117,12 @@ export function PaymentsPage() {
 }
 
 const MAIL_PAGE_SIZE = 50;
-const MAIL_TONE: Record<MailItem["status"], "amber" | "blue" | "green" | "gray"> = { received: "amber", notified: "blue", collected: "green", returned: "gray" };
+const MAIL_TONE: Record<MailItem["status"], "amber" | "blue" | "green" | "gray"> = {
+  received: "amber",
+  notified: "blue",
+  collected: "green",
+  returned: "gray",
+};
 
 export function MailPage() {
   const { t } = useI18n();

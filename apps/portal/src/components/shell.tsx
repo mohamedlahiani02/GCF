@@ -35,7 +35,15 @@ export function LanguageSwitch() {
   return (
     <div className="seg" role="group" aria-label={t.common.language}>
       {SITE_LANGUAGES.map((l) => (
-        <button key={l} type="button" className="btn" lang={l} aria-label={t.common.languageNames[l]} aria-pressed={l === language} onClick={() => setLanguage(l)}>
+        <button
+          key={l}
+          type="button"
+          className="btn"
+          lang={l}
+          aria-label={t.common.languageNames[l]}
+          aria-pressed={l === language}
+          onClick={() => setLanguage(l)}
+        >
           {l.toUpperCase()}
         </button>
       ))}

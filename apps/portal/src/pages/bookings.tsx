@@ -81,11 +81,7 @@ export function BookingsPage() {
           </Link>
         }
       />
-      <Card
-        footer={
-          query.data && (page > 1 || query.data.hasMore) ? <Pagination page={page} hasMore={query.data.hasMore} onPage={setPage} /> : undefined
-        }
-      >
+      <Card footer={query.data && (page > 1 || query.data.hasMore) ? <Pagination page={page} hasMore={query.data.hasMore} onPage={setPage} /> : undefined}>
         <Tabs
           value={scope}
           tabs={[
