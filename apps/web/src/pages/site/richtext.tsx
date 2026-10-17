@@ -158,10 +158,12 @@ function BlockEditable({
 }) {
   const ref = useRef<HTMLDivElement>(null);
   const initial = useRef(block);
+  // The DOM is built once from the value at mount; afterwards the editable area is the source of truth.
   useLayoutEffect(() => {
-    if (!ref.current) return;
-    renderBlock(ref.current, initial.current);
-    if (autoFocus) ref.current.focus();
+    if (ref.current) renderBlock(ref.current, initial.current);
+  }, []);
+  useLayoutEffect(() => {
+    if (autoFocus) ref.current?.focus();
   }, [autoFocus]);
   const kind = kindOf(block);
   return (

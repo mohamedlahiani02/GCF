@@ -1033,3 +1033,12 @@ button.nav-title:focus-visible,
 .cw-heat-closed {
   background: var(--soft);
 }
+.site-media-actions {
+  gap: 4px;
+  flex-wrap: nowrap;
+  margin-inline-start: -6px;
+}
+.site-media-actions .btn {
+  min-height: 28px;
+  padding: 0 6px;
+}

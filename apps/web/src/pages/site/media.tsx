@@ -258,7 +258,7 @@ export function MediaPage() {
                   </span>
                   <span className="cap">Ajoutée le {frDate(m.createdAt)}</span>
                   {m.status === "active" ? (
-                    <div className="row" style={{ gap: 4 }}>
+                    <div className="row site-media-actions">
                       <button type="button" className="btn btn-g" aria-label={`Modifier l'image ${m.alt ?? ""}`.trim()} onClick={() => setEditing(m)}>
                         Modifier
                       </button>
