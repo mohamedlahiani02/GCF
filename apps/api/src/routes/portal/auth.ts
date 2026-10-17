@@ -67,6 +67,7 @@ export const portalAuthRoutes: FastifyPluginAsync = async (app) => {
       languages: SITE_LANGUAGES,
       colors: site ? { primary: site.primary_color, secondary: site.secondary_color } : null,
       openingHours: { from: calendar.openFrom, to: calendar.openTo, weekdays: calendar.openWeekdays },
+      timezone: calendar.timezone,
     };
   });
 

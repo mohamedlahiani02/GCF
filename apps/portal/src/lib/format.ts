@@ -3,11 +3,13 @@ import { DICTIONARIES } from "../i18n/dictionary";
 import { useI18n, type Language } from "../i18n/i18n";
 
 /**
- * Time zone used for instants (payments, mail, cancellation deadlines). The portal API gives local dates and
- * times of bookings already computed in the centre's zone but does not expose the zone itself, so instants are
- * shown in the default zone of every centre (centres.timezone defaults to Africa/Tunis).
+ * Time zone used for instants (payments, mail, cancellation deadlines): the centre's, from GET /info, whatever the
+ * browser's zone. Booking dates and times already arrive local to the centre.
  */
-const TIME_ZONE = "Africa/Tunis";
+let timeZone = "Africa/Tunis";
+export function setTimeZone(zone: string): void {
+  timeZone = zone;
+}
 
 /** Money is integer millimes, shown as TND with 3 decimals in the reader's language. */
 const money = (millimes: number, language: Language) => `${formatTnd(millimes, language)} TND`;
@@ -26,7 +28,7 @@ function calendarDate(date: string, language: Language, withWeekday = false): st
 /** An instant as date and time in the centre's time zone. */
 function dateTime(instant: string, language: Language): string {
   return new Intl.DateTimeFormat(DICTIONARIES[language].locale, {
-    timeZone: TIME_ZONE,
+    timeZone,
     day: "2-digit",
     month: "2-digit",
     year: "numeric",
@@ -37,9 +39,7 @@ function dateTime(instant: string, language: Language): string {
 
 /** An instant as a date in the centre's time zone. */
 function instantDate(instant: string, language: Language): string {
-  return new Intl.DateTimeFormat(DICTIONARIES[language].locale, { timeZone: TIME_ZONE, day: "2-digit", month: "2-digit", year: "numeric" }).format(
-    new Date(instant),
-  );
+  return new Intl.DateTimeFormat(DICTIONARIES[language].locale, { timeZone, day: "2-digit", month: "2-digit", year: "numeric" }).format(new Date(instant));
 }
 
 export const minutesText = (minutes: number, language: Language) => DICTIONARIES[language].duration.hours(Math.floor(minutes / 60), minutes % 60);

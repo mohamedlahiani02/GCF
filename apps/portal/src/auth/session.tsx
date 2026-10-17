@@ -2,6 +2,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { createContext, useContext, useEffect, type ReactNode } from "react";
 import { api, ApiError } from "../api/client";
 import type { Member, MemberProfile, PortalInfo } from "../api/types";
+import { setTimeZone } from "../lib/format";
 
 interface PortalValue {
   /** Null when the centre does not run the portal at all (404 portal_unavailable). */
@@ -33,6 +34,7 @@ export function PortalProvider({ children }: { children: ReactNode }) {
     },
     staleTime: 5 * 60_000,
   });
+  if (info.data) setTimeZone(info.data.timezone);
   const open = info.data?.portalEnabled === true;
   const session = useQuery({
     queryKey: SESSION_KEY,

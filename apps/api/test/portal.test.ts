@@ -181,6 +181,7 @@ describe("client portal", () => {
       languages: ["fr", "en"],
       colors: null,
       openingHours: { from: "08:00", to: "20:00", weekdays: [1, 2, 3, 4, 5, 6, 7] },
+      timezone: "Africa/Tunis",
     });
   });
 

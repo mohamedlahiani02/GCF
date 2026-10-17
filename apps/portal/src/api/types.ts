@@ -14,6 +14,8 @@ export interface PortalInfo {
   languages: SiteLanguage[];
   colors: { primary: string; secondary: string } | null;
   openingHours: { from: string; to: string; weekdays: number[] };
+  /** IANA time zone of the centre; every instant is shown in it. */
+  timezone: string;
 }
 
 export interface Member {
