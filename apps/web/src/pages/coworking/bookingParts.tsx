@@ -215,7 +215,8 @@ export function QuickBooking({
   const create = useMutation({
     mutationFn: () => api.post<Booking & { quote: Quote }>("/coworking/bookings", { ...input, ...(notes.trim() ? { notes: notes.trim() } : {}), override }),
     onSuccess: async (created) => {
-      await client.invalidateQueries();
+      // The quote of the slot just taken would now answer slot_taken: it is not refreshed.
+      await client.invalidateQueries({ predicate: (q) => q.queryKey[0] !== "cw-quote" });
       toast(`Réservation ${created.resourceCode} enregistrée.`);
       onCreated(created);
     },
@@ -317,7 +318,7 @@ export function QuickBooking({
 /** Key facts of a booking, shared by the drawer and the booking page. */
 export function BookingFacts({ booking, paid, due }: { booking: Booking; paid?: number | undefined; due?: number | undefined }) {
   const rows: [string, ReactNode][] = [
-    ["Ressource", `${CATEGORY[booking.category]} ${booking.resourceCode} · ${booking.typeName}`],
+    ["Ressource", `${CATEGORY[booking.category]} ${booking.resourceCode}${booking.typeName !== CATEGORY[booking.category] ? ` · ${booking.typeName}` : ""}`],
     [
       "Créneau",
       booking.localDate === localParts(booking.endsAt).date

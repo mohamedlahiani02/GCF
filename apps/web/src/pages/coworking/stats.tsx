@@ -187,14 +187,14 @@ export function StatsPage() {
                   <tr key={r.resourceId}>
                     <td>
                       {r.code}
-                      <div className="cap">
-                        {r.typeName} · {CATEGORY[r.category]}
-                      </div>
+                      <div className="cap">{r.typeName === CATEGORY[r.category] ? r.typeName : `${r.typeName} · ${CATEGORY[r.category]}`}</div>
                     </td>
                     <td className="num">{durationLabel(r.bookedMinutes)}</td>
                     <td>
                       <div className="row center" style={{ gap: 8 }}>
-                        <Bar value={r.bookedRate / 100} tone={rateTone(r.bookedRate)} />
+                        <div style={{ flex: 1 }}>
+                          <Bar value={r.bookedRate / 100} tone={rateTone(r.bookedRate)} />
+                        </div>
                         <span className="num">{percent(r.bookedRate)}</span>
                       </div>
                     </td>

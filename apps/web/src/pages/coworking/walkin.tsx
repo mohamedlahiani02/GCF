@@ -244,7 +244,7 @@ export function WalkInButton() {
               }}
             />
           ) : null}
-          {member && step !== "client" ? (
+          {member && step === "seat" ? (
             <div>
               <span className="lab">Client </span>
               <strong>{memberName(member)}</strong>
