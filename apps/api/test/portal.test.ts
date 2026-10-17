@@ -121,7 +121,11 @@ beforeAll(async () => {
       .values({ centre_id: h.centreId, type_id: typeId, label, nature: "fixed", duration_minutes: durationMinutes, start_step_minutes: 60 })
       .returning("id")
       .executeTakeFirstOrThrow();
-    if (prices.length) await h.db.insertInto("cw_prices").values(prices.map((p) => ({ format_id: row.id, profile: p.profile, amount: p.amount }))).execute();
+    if (prices.length)
+      await h.db
+        .insertInto("cw_prices")
+        .values(prices.map((p) => ({ format_id: row.id, profile: p.profile, amount: p.amount })))
+        .execute();
     return row.id;
   };
   ids.hot = await type("Open space", "hot_desk");
@@ -193,7 +197,14 @@ describe("client portal", () => {
 
   it("signs up in the three modes and creates a company only for a new name", async () => {
     const signup = (email: string, extra: Record<string, unknown> = {}) =>
-      h.callPublic("POST", "/api/portal/auth/signup", undefined, { email, password: PASSWORD, firstName: "Sami", lastName: "Ben Ali", phone: "22 111 222", ...extra });
+      h.callPublic("POST", "/api/portal/auth/signup", undefined, {
+        email,
+        password: PASSWORD,
+        firstName: "Sami",
+        lastName: "Ben Ali",
+        phone: "22 111 222",
+        ...extra,
+      });
 
     const open = await signup("Sami@Portal.test", { companyName: "Acme SARL" });
     expect(open.status).toBe(201);
@@ -294,7 +305,12 @@ describe("client portal", () => {
   });
 
   it("activates an invited account from the staff invitation", async () => {
-    const created = await h.call("POST", "/api/coworking/members", secretariat, { kind: "member", firstName: "Invite", lastName: "Test", email: "invite@portal.test" });
+    const created = await h.call("POST", "/api/coworking/members", secretariat, {
+      kind: "member",
+      firstName: "Invite",
+      lastName: "Test",
+      email: "invite@portal.test",
+    });
     expect(created.status).toBe(201);
     const invite = await h.call("POST", `/api/coworking/members/${created.body.id}/invite`, secretariat);
     expect(invite.status).toBe(200);
@@ -374,13 +390,26 @@ describe("client portal", () => {
 
   it("books as the signed-in member: requested or confirmed by approval mode, limits enforced", async () => {
     const date = addDays(today, 3);
-    const quote = await h.callPublic("POST", "/api/portal/bookings/quote", ids.visitorCookie, { resourceId: ids.m1, formatId: ids.hour, date, startTime: "10:00" });
+    const quote = await h.callPublic("POST", "/api/portal/bookings/quote", ids.visitorCookie, {
+      resourceId: ids.m1,
+      formatId: ids.hour,
+      date,
+      startTime: "10:00",
+    });
     expect(quote.status).toBe(200);
     expect(quote.body).toMatchObject({ memberId: ids.visitor, profile: "visitor", charge: 30_000, status: "requested" });
 
     const requested = await book(ids.visitorCookie, ids.m1, ids.hour, date, "10:00");
     expect(requested.status).toBe(201);
-    expect(requested.body).toMatchObject({ status: "requested", resourceCode: "M-1", floorName: "RDC", charge: 30_000, due: 0, cancellable: true, qrAvailable: false });
+    expect(requested.body).toMatchObject({
+      status: "requested",
+      resourceCode: "M-1",
+      floorName: "RDC",
+      charge: 30_000,
+      due: 0,
+      cancellable: true,
+      qrAvailable: false,
+    });
     expect(await chargesOf(requested.body.id)).toEqual([]);
     ids.requested = requested.body.id;
 
@@ -418,7 +447,11 @@ describe("client portal", () => {
     const detail = await h.callPublic("GET", `/api/portal/bookings/${ids.confirmed}`, ids.subscriberCookie);
     expect(detail.body.charges).toEqual([expect.objectContaining({ amount: 30_000, paid: 0, remaining: 30_000 })]);
 
-    for (const url of [`/api/portal/bookings/${ids.confirmed}`, `/api/portal/bookings/${ids.confirmed}/qr.svg`, `/api/portal/bookings/${ids.confirmed}/calendar.ics`]) {
+    for (const url of [
+      `/api/portal/bookings/${ids.confirmed}`,
+      `/api/portal/bookings/${ids.confirmed}/qr.svg`,
+      `/api/portal/bookings/${ids.confirmed}/calendar.ics`,
+    ]) {
       expect((await h.callPublic("GET", url, ids.visitorCookie)).status).toBe(404);
     }
     const cancel = await h.callPublic("POST", `/api/portal/bookings/${ids.confirmed}/cancel`, ids.visitorCookie, { reason: "Pas à moi" });
@@ -445,7 +478,11 @@ describe("client portal", () => {
     expect(unfolded).toContain(`UID:cw-booking-${ids.confirmed}\r\n`);
     expect(unfolded).toMatch(/DTSTAMP:\d{8}T\d{6}Z\r\n/);
     const booking = await h.db.selectFrom("cw_bookings").select(["starts_at", "ends_at"]).where("id", "=", ids.confirmed).executeTakeFirstOrThrow();
-    const stamp = (d: Date) => d.toISOString().replace(/\.\d{3}Z$/, "Z").replace(/[-:]/g, "");
+    const stamp = (d: Date) =>
+      d
+        .toISOString()
+        .replace(/\.\d{3}Z$/, "Z")
+        .replace(/[-:]/g, "");
     expect(unfolded).toContain(`DTSTART:${stamp(booking.starts_at)}\r\n`);
     expect(unfolded).toContain(`DTEND:${stamp(booking.ends_at)}\r\n`);
     expect(unfolded).toContain("SUMMARY:Salle de réunion M-2\\, Centre de test\r\n");
@@ -459,7 +496,7 @@ describe("client portal", () => {
     expect(free.body).toMatchObject({ status: "cancelled", free: true, fee: 0, cancellable: false, cancelReason: "Réunion déplacée" });
     expect(await chargesOf(ids.confirmed)).toEqual([expect.objectContaining({ amount: 30_000, status: "cancelled" })]);
 
-    const late = await insertMember("Late");
+    await insertMember("Late");
     const cookie = await login("late@portal.test");
     await settings({ approval_mode: "none" });
     const first: Slot[] = (await h.callPublic("GET", `/api/portal/formats/${ids.hour}/slots?date=${today}`, cookie)).body.slots;
@@ -484,7 +521,6 @@ describe("client portal", () => {
       .executeTakeFirstOrThrow();
     expect(audit.user_id).toBeNull();
     expect(audit.after).toMatchObject({ by: "portal", fee: 15_000 });
-    expect(late).toBeTruthy();
   });
 
   it("shows the subscription quota left after a covered booking, and packs", async () => {
@@ -540,7 +576,10 @@ describe("client portal", () => {
     expect((await h.callPublic("GET", `/api/portal/receipts/${receiptId}/pdf`, ids.subscriberCookie)).status).toBe(404);
     expect(await h.db.selectFrom("receipt_prints").select("id").execute()).toEqual([]);
 
-    await h.db.insertInto("cw_mail_items").values({ centre_id: h.centreId, member_id: ids.subscriber, kind: "letter", sender: "CNSS", notes: "Rangé casier 4" }).execute();
+    await h.db
+      .insertInto("cw_mail_items")
+      .values({ centre_id: h.centreId, member_id: ids.subscriber, kind: "letter", sender: "CNSS", notes: "Rangé casier 4" })
+      .execute();
     const mail = await h.callPublic("GET", "/api/portal/mail", ids.subscriberCookie);
     expect(mail.body.items).toEqual([expect.objectContaining({ kind: "letter", sender: "CNSS", status: "received" })]);
     expect(mail.body.items[0]).not.toHaveProperty("notes");
@@ -570,7 +609,14 @@ describe("client portal", () => {
     ]);
     const bookings = await h.callPublic("GET", "/api/portal/team/bookings", boss);
     expect(bookings.body.items).toEqual([
-      expect.objectContaining({ memberId: colleague, memberName: "Colleague Test", date: addDays(today, 6), startTime: "12:00", endTime: "16:00", resourceCode: "H-2" }),
+      expect.objectContaining({
+        memberId: colleague,
+        memberName: "Colleague Test",
+        date: addDays(today, 6),
+        startTime: "12:00",
+        endTime: "16:00",
+        resourceCode: "H-2",
+      }),
     ]);
     expect(bookings.body.items[0]).not.toHaveProperty("charge");
     expect((await h.callPublic("GET", "/api/portal/team", mate)).status).toBe(403);

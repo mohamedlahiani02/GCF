@@ -3,7 +3,7 @@ import { useState } from "react";
 import { useSearchParams } from "react-router";
 import { api } from "../../api/client";
 import { usePage } from "../../components/shell";
-import { Badge, Card, Drawer, Empty, ErrorBanner, Loading, PageHeader } from "../../components/ui";
+import { Card, Drawer, Empty, ErrorBanner, Loading, PageHeader } from "../../components/ui";
 import { addDaysIso, frDate, frTime, localParts, todayIso, weekdayLabel } from "../../lib/format";
 import { BOOKING_STATUS, toMinutes, type PlanningBooking, type PlanningDay } from "./api";
 import { BookingPanel, useMemberCollect } from "./bookingParts";
@@ -160,11 +160,6 @@ export function CoworkingPlanningPage() {
         </Drawer>
       ) : null}
       {collect.element}
-      {day.data ? (
-        <span className="cap">
-          <Badge tone="neutral">{floors.reduce((s, f) => s + f.resources.reduce((n, r) => n + r.bookings.length, 0), 0)}</Badge> réservation(s) et blocage(s) ce jour
-        </span>
-      ) : null}
     </>
   );
 }
