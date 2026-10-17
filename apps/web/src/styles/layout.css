@@ -216,15 +216,36 @@ textarea.input {
   clip: rect(0 0 0 0);
   white-space: nowrap;
 }
+.nav-toggle {
+  display: none;
+}
 @media (max-width: 900px) {
-  .side {
+  .side,
+  .side.collapsed {
     position: static;
     height: auto;
     width: 100%;
     flex-basis: auto;
   }
+  .side:not(.menu-open) > :not(.side-brand) {
+    display: none;
+  }
+  .side:not(.menu-open) .side-brand {
+    padding-bottom: 2px;
+    border-bottom: 0;
+  }
+  .nav-toggle {
+    display: inline-flex;
+    margin-inline-start: auto;
+  }
+  .side-foot .btn-g {
+    display: none;
+  }
   .top {
     padding: 8px 16px;
+  }
+  .top > .row {
+    flex-wrap: wrap;
   }
 }
 @media print {

@@ -247,10 +247,12 @@ export function Shell() {
   const [collect, setCollect] = useState<Payer | null>(null);
   const [changingPassword, setChangingPassword] = useState(false);
   const [openSections, setOpenSections] = useState<string[]>([]);
+  const [menuOpen, setMenuOpen] = useState(false);
   const allowed = (n: NavItem) => (Array.isArray(n.permission) ? n.permission.some(can) : can(n.permission));
   const location = useLocation();
   const client = useQueryClient();
   const navigate = useNavigate();
+  useEffect(() => setMenuOpen(false), [location.pathname]);
   const centre = useQuery({
     queryKey: ["centre"],
     queryFn: () => api.get<{ name: string; timezone: string; logoVersion: number | null }>("/centre"),
@@ -277,7 +279,7 @@ export function Shell() {
     <CrumbContext.Provider value={setCrumbs}>
       <CollectContext.Provider value={(payer) => setCollect(payer ?? {})}>
         <div className="app">
-          <aside className={`side${collapsed ? " collapsed" : ""}`} aria-label="Navigation principale">
+          <aside className={`side${collapsed ? " collapsed" : ""}${menuOpen ? " menu-open" : ""}`} aria-label="Navigation principale">
             <div className={`side-brand${centre.data?.logoVersion ? " has-logo" : ""}`}>
               {centre.data?.logoVersion ? (
                 <span className="brand-logo">
@@ -292,6 +294,17 @@ export function Shell() {
                 <strong>{centre.data?.name ?? "Gestion du centre"}</strong>
                 <span className="cap">Back-office</span>
               </span>
+              <button
+                type="button"
+                className="btn nav-toggle"
+                aria-expanded={menuOpen}
+                onClick={() => {
+                  setCollapsed(false);
+                  setMenuOpen((o) => !o);
+                }}
+              >
+                {menuOpen ? "Fermer" : "Menu"}
+              </button>
             </div>
             <GlobalSearch />
             <nav className="side-nav">

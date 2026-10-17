@@ -175,6 +175,11 @@ a {
   min-height: 40px;
   padding: 0 18px;
 }
+.btn:disabled,
+.btn[aria-disabled="true"] {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
 .btn:focus-visible,
 .input:focus-visible,
 a:focus-visible,
