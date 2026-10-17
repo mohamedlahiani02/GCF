@@ -19,6 +19,8 @@ interface PaymentListRow {
   firstName: string | null;
   lastName: string | null;
   renterName: string | null;
+  memberId: string | null;
+  memberName: string | null;
   amount: number;
   method: string;
   chequeStatus: string | null;
@@ -104,7 +106,15 @@ function Journal() {
               {list.data?.items.map((p) => (
                 <tr key={p.id}>
                   <td>{frDateTime(p.receivedAt)}</td>
-                  <td>{p.studentId ? <Link to={`/eleves/${p.studentId}`}>{`${p.lastName} ${p.firstName}`}</Link> : p.renterName}</td>
+                  <td>
+                    {p.studentId ? (
+                      <Link to={`/eleves/${p.studentId}`}>{`${p.lastName} ${p.firstName}`}</Link>
+                    ) : p.memberId ? (
+                      <Link to={`/coworking/membres/${p.memberId}`}>{p.memberName}</Link>
+                    ) : (
+                      p.renterName
+                    )}
+                  </td>
                   <td>{p.receiptId ? <Link to={`/recus/${p.receiptId}`}>{p.receiptNumber}</Link> : ""}</td>
                   <td>
                     {METHOD[p.method] ?? p.method}

@@ -177,6 +177,7 @@ interface SearchResults {
   students: { id: string; firstName: string; lastName: string; phone: string | null }[];
   instructors: { id: string; firstName: string; lastName: string }[];
   receipts: { id: string; number: string }[];
+  members: { id: string; firstName: string; lastName: string | null; email: string | null; phone: string | null }[];
 }
 
 function GlobalSearch() {
@@ -196,7 +197,7 @@ function GlobalSearch() {
     setText("");
     navigate(to);
   };
-  const empty = data && !data.students.length && !data.instructors.length && !data.receipts.length;
+  const empty = data && !data.students.length && !data.instructors.length && !data.receipts.length && !data.members.length;
   return (
     <div className="gsearch" style={{ position: "relative" }}>
       <span className="gsearch-icon">
@@ -221,6 +222,11 @@ function GlobalSearch() {
           {data.receipts.map((r) => (
             <a key={r.id} href={`/recus/${r.id}`} onClick={(e) => (e.preventDefault(), go(`/recus/${r.id}`))}>
               {r.number} <span className="cap">reçu</span>
+            </a>
+          ))}
+          {data.members.map((m) => (
+            <a key={m.id} href={`/coworking/membres/${m.id}`} onClick={(e) => (e.preventDefault(), go(`/coworking/membres/${m.id}`))}>
+              {[m.firstName, m.lastName].filter(Boolean).join(" ")} <span className="cap">membre coworking{m.phone ? ` · ${m.phone}` : ""}</span>
             </a>
           ))}
           {empty ? (

@@ -2,15 +2,18 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useMemo, useState } from "react";
 import { api } from "../api/client";
 import type { Installment, Totals } from "../api/types";
+import { useSession } from "../auth/session";
 import { useToast } from "../components/toasts";
 import { Drawer, ErrorBanner, Field, Segmented, StateBadge } from "../components/ui";
 import { errorMessage } from "../lib/errors";
 import { frDate, tnd, tryParseTnd } from "../lib/format";
 
 type Method = "cash" | "transfer" | "cheque" | "card";
-interface Payer {
+/** Who pays: a student, a room renter or a coworking member (exactly one). */
+export interface Payer {
   studentId?: string;
   renterId?: string;
+  memberId?: string;
 }
 interface Preview {
   before: Totals;
@@ -18,26 +21,54 @@ interface Preview {
   advance: number;
   after: { due: number; credit: number };
 }
-interface Created {
+export interface Created {
   paymentId: string;
   receipt: { id: string; number: string };
   advance: number;
   after: Totals;
 }
 
+interface PickRow {
+  key: string;
+  name: string;
+  due?: number;
+  payer: Payer;
+}
+
 function PayerPicker({ onPick }: { onPick: (payer: Payer, name: string) => void }) {
+  const { can } = useSession();
   const [text, setText] = useState("");
-  const [kind, setKind] = useState<"student" | "renter">("student");
+  const [kind, setKind] = useState<"student" | "renter" | "member">("student");
+  const searching = text.trim().length >= 2;
   const students = useQuery({
     queryKey: ["students-pick", text],
     queryFn: () => api.get<{ items: { id: string; firstName: string; lastName: string; due: number }[] }>("/students", { q: text, pageSize: 8 }),
-    enabled: kind === "student" && text.trim().length >= 2,
+    enabled: kind === "student" && searching,
   });
   const renters = useQuery({
     queryKey: ["renters"],
     queryFn: () => api.get<{ id: string; name: string; company: string | null }[]>("/renters"),
     enabled: kind === "renter",
   });
+  const members = useQuery({
+    queryKey: ["members-pick", text],
+    queryFn: () =>
+      api.get<{ items: { id: string; firstName: string; lastName: string | null; companyName: string | null; phone: string | null }[] }>(
+        "/coworking/members",
+        { q: text, pageSize: 8 },
+      ),
+    enabled: kind === "member" && searching,
+  });
+  const rows: PickRow[] =
+    kind === "student"
+      ? (students.data?.items ?? []).map((p) => ({ key: p.id, name: `${p.lastName} ${p.firstName}`, due: p.due, payer: { studentId: p.id } }))
+      : kind === "renter"
+        ? (renters.data ?? []).map((p) => ({ key: p.id, name: `${p.name}${p.company ? ` (${p.company})` : ""}`, payer: { renterId: p.id } }))
+        : (members.data?.items ?? []).map((p) => ({
+            key: p.id,
+            name: `${[p.firstName, p.lastName].filter(Boolean).join(" ")}${p.companyName ? ` (${p.companyName})` : ""}`,
+            payer: { memberId: p.id },
+          }));
   return (
     <div className="stack">
       <Segmented
@@ -47,6 +78,7 @@ function PayerPicker({ onPick }: { onPick: (payer: Payer, name: string) => void 
         options={[
           { value: "student", label: "Élève" },
           { value: "renter", label: "Loueur" },
+          ...(can("coworking:read") ? [{ value: "member" as const, label: "Client coworking" }] : []),
         ]}
       />
       {kind === "student" ? (
@@ -54,28 +86,37 @@ function PayerPicker({ onPick }: { onPick: (payer: Payer, name: string) => void 
           <input className="input" autoFocus placeholder="Nom ou téléphone" value={text} onChange={(e) => setText(e.target.value)} />
         </Field>
       ) : null}
+      {kind === "member" ? (
+        <Field label="1. Client coworking">
+          <input className="input" autoFocus placeholder="Nom, téléphone, e-mail ou société" value={text} onChange={(e) => setText(e.target.value)} />
+        </Field>
+      ) : null}
       <div className="card">
-        {(kind === "student" ? (students.data?.items ?? []) : (renters.data ?? [])).map((p) => {
-          const name = "name" in p ? `${p.name}${p.company ? ` (${p.company})` : ""}` : `${p.lastName} ${p.firstName}`;
-          return (
-            <button
-              key={p.id}
-              type="button"
-              className="btn btn-g"
-              style={{ width: "100%", justifyContent: "space-between", borderRadius: 0 }}
-              onClick={() => onPick(kind === "student" ? { studentId: p.id } : { renterId: p.id }, name)}
-            >
-              <span>{name}</span>
-              {"due" in p ? <span className="cap">reste {tnd(p.due)} TND</span> : null}
-            </button>
-          );
-        })}
+        {rows.map((p) => (
+          <button
+            key={p.key}
+            type="button"
+            className="btn btn-g"
+            style={{ width: "100%", justifyContent: "space-between", borderRadius: 0 }}
+            onClick={() => onPick(p.payer, p.name)}
+          >
+            <span>{p.name}</span>
+            {p.due !== undefined ? <span className="cap">reste {tnd(p.due)} TND</span> : null}
+          </button>
+        ))}
       </div>
     </div>
   );
 }
 
-export function CollectDrawer({ payer: initial, onClose }: { payer: Payer; onClose: () => void }) {
+function accountPathOf(payer: Payer): string {
+  if (payer.studentId) return `/students/${payer.studentId}/account`;
+  if (payer.memberId) return `/coworking/members/${payer.memberId}/account`;
+  return `/renters/${payer.renterId}/account`;
+}
+
+/** Records a payment for a payer; `onPaid` runs once the payment and its receipt are saved. */
+export function CollectDrawer({ payer: initial, onClose, onPaid }: { payer: Payer; onClose: () => void; onPaid?: ((created: Created) => void) | undefined }) {
   const [payer, setPayer] = useState<Payer>(initial);
   const [payerName, setPayerName] = useState("");
   const [selected, setSelected] = useState<string[]>([]);
@@ -87,17 +128,24 @@ export function CollectDrawer({ payer: initial, onClose }: { payer: Payer; onClo
   const [done, setDone] = useState<Created | null>(null);
   const toast = useToast();
   const client = useQueryClient();
-  const hasPayer = !!(payer.studentId || payer.renterId);
-  const accountPath = payer.studentId ? `/students/${payer.studentId}/account` : `/renters/${payer.renterId}/account`;
+  const hasPayer = !!(payer.studentId || payer.renterId || payer.memberId);
+  const accountPath = accountPathOf(payer);
   const account = useQuery({
     queryKey: ["account", accountPath],
     queryFn: () =>
-      api.get<{ totals: Totals; installments: Installment[]; student?: { firstName: string; lastName: string }; renter?: { name: string } }>(accountPath),
+      api.get<{
+        totals: Totals;
+        installments: Installment[];
+        student?: { firstName: string; lastName: string };
+        renter?: { name: string };
+        member?: { firstName: string; lastName: string | null };
+      }>(accountPath),
     enabled: hasPayer,
   });
   useEffect(() => {
     if (account.data?.student) setPayerName(`${account.data.student.firstName} ${account.data.student.lastName}`);
     if (account.data?.renter) setPayerName(account.data.renter.name);
+    if (account.data?.member) setPayerName([account.data.member.firstName, account.data.member.lastName].filter(Boolean).join(" "));
   }, [account.data]);
   const open = useMemo(() => (account.data?.installments ?? []).filter((i) => i.kind === "charge" && i.status === "open" && i.remaining > 0), [account.data]);
   const amount = tryParseTnd(amountText);
@@ -139,6 +187,7 @@ export function CollectDrawer({ payer: initial, onClose }: { payer: Payer; onClo
     setDone(created);
     await client.invalidateQueries();
     toast(`Paiement enregistré. Reçu ${created.receipt.number} créé.`);
+    onPaid?.(created);
     if (printWindow) printWindow.location.href = api.fileUrl(`/receipts/${created.receipt.id}/pdf`);
     if (then === "mail") {
       try {
@@ -224,7 +273,7 @@ export function CollectDrawer({ payer: initial, onClose }: { payer: Payer; onClo
               <div className="lab">1. Payeur</div>
               <strong>{payerName || "…"}</strong>
             </div>
-            {!initial.studentId && !initial.renterId ? (
+            {!initial.studentId && !initial.renterId && !initial.memberId ? (
               <button type="button" className="btn btn-g" onClick={() => (setPayer({}), setSelected([]))}>
                 Changer
               </button>
