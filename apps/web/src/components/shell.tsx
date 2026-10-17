@@ -6,7 +6,7 @@ import { useSession } from "../auth/session";
 import { setTimeZone } from "../lib/format";
 import { ROLE } from "../lib/labels";
 import { PasswordModal } from "../pages/admin";
-import { CollectDrawer } from "../pages/collect";
+import { CollectDrawer, type Payer } from "../pages/collect";
 import { WalkInButton } from "../pages/coworking/walkin";
 
 interface NavItem {
@@ -170,7 +170,7 @@ export function usePage(crumbs: string[]) {
 
 /* Collect drawer opened from anywhere */
 
-const CollectContext = createContext<(payer?: { studentId?: string; renterId?: string }) => void>(() => undefined);
+const CollectContext = createContext<(payer?: Payer) => void>(() => undefined);
 export const useCollect = () => useContext(CollectContext);
 
 interface SearchResults {
@@ -244,7 +244,7 @@ export function Shell() {
   const { session, loading, can } = useSession();
   const [crumbs, setCrumbs] = useState<string[]>([]);
   const [collapsed, setCollapsed] = useState(false);
-  const [collect, setCollect] = useState<{ studentId?: string; renterId?: string } | null>(null);
+  const [collect, setCollect] = useState<Payer | null>(null);
   const [changingPassword, setChangingPassword] = useState(false);
   const [openSections, setOpenSections] = useState<string[]>([]);
   const allowed = (n: NavItem) => (Array.isArray(n.permission) ? n.permission.some(can) : can(n.permission));

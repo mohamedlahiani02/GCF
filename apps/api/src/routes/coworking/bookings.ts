@@ -372,6 +372,21 @@ export const coworkingBookingRoutes: FastifyPluginAsync = async (app) => {
     return checkIn(db, actor.centreId, { bookingId: id }, { source: "staff", userId: actor.userId });
   });
 
+  /** The booking behind a QR code, so the desk sees who arrives before recording the arrival. */
+  app.get("/check-in/:code", { preHandler: write }, async (request) => {
+    const actor = request.user!;
+    const { code } = codeBody.parse(request.params);
+    const found = await db
+      .selectFrom("cw_bookings")
+      .select("id")
+      .where("check_in_code", "=", code)
+      .where("centre_id", "=", actor.centreId)
+      .where("kind", "=", "booking")
+      .executeTakeFirst();
+    if (!found) throw notFound("booking");
+    return loadBooking(db, actor.centreId, found.id);
+  });
+
   /** Check-in by the code of the booking's QR, scanned at the desk. */
   app.post("/check-in", { preHandler: write }, async (request) => {
     const actor = request.user!;

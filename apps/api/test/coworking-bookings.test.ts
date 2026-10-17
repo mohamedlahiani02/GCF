@@ -596,6 +596,8 @@ describe("check-in and release", () => {
   it("checks in within the window by code and releases a running booking", async () => {
     const booking = await book(ids.W, ids.A4, ids.fHour, "2027-03-22", "09:00");
     const code = booking.body.checkInCode as string;
+    expect((await h.call("GET", `/api/coworking/check-in/${code}`, secretariat)).body).toMatchObject({ id: booking.body.id, status: "confirmed" });
+    expect((await h.call("GET", "/api/coworking/check-in/unknowncode", secretariat)).status).toBe(404);
     await expect(checkIn(h.db, h.centreId, { code }, { source: "qr", userId: null }, at("2027-03-22T07:29:00Z"))).rejects.toMatchObject({
       code: "check_in_closed",
     });

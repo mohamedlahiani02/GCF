@@ -1,4 +1,4 @@
-import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link, useParams } from "react-router";
 import { api } from "../../api/client";
 import { usePage } from "../../components/shell";
@@ -8,18 +8,20 @@ import { frDate } from "../../lib/format";
 import { CATEGORY, type Booking } from "./api";
 
 /**
- * Page opened by scanning the QR code of a client's booking with the desk phone: one large button records the
- * arrival. The booking is identified by its code only, so its details appear once the arrival is recorded.
+ * Page opened by scanning the QR code of a client's booking with the desk phone: the booking is shown, and one
+ * large button records the arrival.
  */
 export function CheckInPage() {
   usePage(["Coworking", "Arrivée"]);
   const { code = "" } = useParams();
   const client = useQueryClient();
+  const scanned = useQuery({ queryKey: ["cw-check-in", code], queryFn: () => api.get<Booking>(`/coworking/check-in/${encodeURIComponent(code)}`) });
   const checkIn = useMutation({
     mutationFn: () => api.post<Booking>("/coworking/check-in", { code }),
     onSuccess: () => client.invalidateQueries(),
   });
   const b = checkIn.data;
+  const pending = scanned.data;
   return (
     <>
       <PageHeader title="Arrivée d'un client" subtitle="Réservation scannée depuis son QR code." />
@@ -35,7 +37,18 @@ export function CheckInPage() {
           ) : (
             <>
               <span className="cap">Code de réservation {code}</span>
-              <button type="button" className="btn btn-p btn-l cw-checkin-button" disabled={checkIn.isPending} onClick={() => checkIn.mutate()}>
+              {pending ? (
+                <span>
+                  {pending.memberName} · {CATEGORY[pending.category]} {pending.resourceCode}, {frDate(pending.localDate)} {pending.startTime}-{pending.endTime}
+                </span>
+              ) : null}
+              {scanned.error ? (
+                <div className="ban ban-red" role="alert">
+                  <strong>Réservation introuvable</strong>
+                  <span>{errorMessage(scanned.error)}</span>
+                </div>
+              ) : null}
+              <button type="button" className="btn btn-p btn-l cw-checkin-button" disabled={checkIn.isPending || !pending} onClick={() => checkIn.mutate()}>
                 {checkIn.isPending ? <span className="spinner" aria-label="En cours" /> : "Enregistrer l'arrivée"}
               </button>
             </>
