@@ -1,5 +1,5 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { createContext, useContext, useEffect, type ReactNode } from "react";
+import { createContext, useContext, useEffect, useRef, type ReactNode } from "react";
 import { api, ApiError } from "../api/client";
 import type { Member, MemberProfile, PortalInfo } from "../api/types";
 import { setTimeZone } from "../lib/format";
@@ -50,8 +50,14 @@ export function PortalProvider({ children }: { children: ReactNode }) {
     refetchOnWindowFocus: true,
   });
 
+  // Signing out (or a session that expires) drops the member's cached data; a visitor who never signed in keeps the
+  // public queries (catalogue, slots, plan) the booking page runs before the account is asked for.
+  const previousMember = useRef<string | null>(null);
   useEffect(() => {
-    if (session.data === null) client.removeQueries({ predicate: (q) => q.queryKey[0] !== "session" && q.queryKey[0] !== "info" });
+    const current = session.data?.id ?? null;
+    if (previousMember.current !== null && current === null)
+      client.removeQueries({ predicate: (q) => q.queryKey[0] !== "session" && q.queryKey[0] !== "info" });
+    previousMember.current = current;
   }, [session.data, client]);
 
   const primary = info.data?.colors?.primary;

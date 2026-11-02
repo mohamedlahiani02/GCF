@@ -137,3 +137,8 @@ Administration, sans intervention technique.
     n'est pas annulé (message « échéance déjà payée »), comme pour la formation. Un abonnement payé ne s'annule pas
     non plus : il se résilie à une date, et les échéances dues après cette date sont annulées.
 21. **Surface publique** : une installation sert le site et le portail d'un seul centre, à l'adresse `PUBLIC_ORIGIN`.
+23. **Réservation sans compte au départ** : sur l'espace client, un visiteur voit les espaces, les créneaux libres et le
+    plan sans se connecter, avec un prix indicatif au tarif visiteur. Le compte n'est demandé qu'à la confirmation
+    (inscription ou connexion sur la même page) ; le prix exact, qui tient compte d'un abonnement ou d'un carnet, et
+    la réservation elle-même restent réservés aux clients connectés. Le choix est gardé dans l'onglet du navigateur,
+    y compris quand l'accueil doit d'abord valider le compte.

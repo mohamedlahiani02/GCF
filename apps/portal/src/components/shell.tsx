@@ -1,5 +1,5 @@
 import { SITE_LANGUAGES } from "@gcf/shared";
-import { NavLink, Outlet, useNavigate } from "react-router";
+import { NavLink, Outlet, useLocation, useNavigate } from "react-router";
 import { usePortal } from "../auth/session";
 import { useI18n } from "../i18n/i18n";
 
@@ -56,6 +56,7 @@ export function Shell() {
   const { member, signOut } = usePortal();
   const { t } = useI18n();
   const navigate = useNavigate();
+  const { pathname } = useLocation();
   const links: [string, string][] = [
     ["/", t.nav.dashboard],
     ["/reserver", t.nav.book],
@@ -84,7 +85,11 @@ export function Shell() {
             >
               {t.common.signOut}
             </button>
-          ) : null}
+          ) : pathname === "/connexion" ? null : (
+            <NavLink to="/connexion" state={{ from: pathname }} className="btn btn-g">
+              {t.auth.signIn}
+            </NavLink>
+          )}
         </div>
       </header>
       {member ? (

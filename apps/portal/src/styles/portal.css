@@ -271,3 +271,62 @@ select.input {
     width: 100%;
   }
 }
+
+/* Booking progress: four numbered steps, the current one highlighted */
+.portal-progress {
+  display: flex;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  counter-reset: none;
+}
+.portal-progress li {
+  flex: 1 1 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  color: var(--muted);
+  font-weight: 600;
+}
+.portal-progress li.on {
+  border-color: var(--accent);
+  color: var(--ink);
+}
+.portal-progress li.done {
+  color: var(--ink);
+}
+.portal-progress-n {
+  flex: 0 0 auto;
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--soft);
+  color: var(--muted);
+  font-size: 13px;
+}
+.portal-progress li.on .portal-progress-n,
+.portal-progress li.done .portal-progress-n {
+  background: var(--accent);
+  color: #fff;
+}
+.portal-step {
+  scroll-margin-top: 16px;
+}
+@media (max-width: 640px) {
+  .portal-progress li {
+    flex-direction: column;
+    gap: 4px;
+    padding: 8px 4px;
+    font-size: 12px;
+    text-align: center;
+  }
+}

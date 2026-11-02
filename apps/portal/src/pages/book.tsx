@@ -2,12 +2,14 @@ import { FloorPlanView } from "@gcf/floorplan";
 import { CW_CATEGORY_LABELS, PLAN_STATES } from "@gcf/shared";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useState } from "react";
-import { useNavigate } from "react-router";
+import { Link, useNavigate, useSearchParams } from "react-router";
 import { api } from "../api/client";
+import { usePortal } from "../auth/session";
 import type { Booking, BookingInput, Catalogue, CatalogueType, FloorStateResponse, FormatOffer, Quote, Slot, Slots } from "../api/types";
 import { Badge, Card, Empty, ErrorBanner, Field, Loading, Money, Notice, PageHeader, Spinner } from "../components/ui";
 import { useI18n } from "../i18n/i18n";
 import { useFormat } from "../lib/format";
+import { LoginForm, SignupForm } from "./auth";
 
 /** Lengths a free format can be booked for: multiples of its step between its minimum and maximum. */
 function durations(format: FormatOffer): number[] {
@@ -210,7 +212,17 @@ function ResourcePicker({
   );
 }
 
-function Summary({ input, catalogue, onPromo }: { input: BookingInput; catalogue: Catalogue; onPromo: (code: string | null) => void }) {
+function Summary({
+  input,
+  catalogue,
+  onPromo,
+  onBooked,
+}: {
+  input: BookingInput;
+  catalogue: Catalogue;
+  onPromo: (code: string | null) => void;
+  onBooked: () => void;
+}) {
   const { t, language } = useI18n();
   const f = useFormat();
   const navigate = useNavigate();
@@ -221,6 +233,7 @@ function Summary({ input, catalogue, onPromo }: { input: BookingInput; catalogue
   const create = useMutation({
     mutationFn: () => api.post<Booking>("/bookings", notes.trim() ? { ...input, notes: notes.trim() } : input),
     onSuccess: async (booking) => {
+      onBooked();
       await client.invalidateQueries({ queryKey: ["bookings"] });
       await client.invalidateQueries({ queryKey: ["account"] });
       await client.invalidateQueries({ queryKey: ["subscription"] });
@@ -335,26 +348,185 @@ function Summary({ input, catalogue, onPromo }: { input: BookingInput; catalogue
   );
 }
 
+const SELECTION_KEY = "gcf.portal.booking";
+
+/** What the visitor picked, kept in this tab so signing in, or coming back after the account is validated, resumes it. */
+interface Selection {
+  typeId: string | null;
+  formatId: string | null;
+  date: string | null;
+  duration: number | null;
+  slot: Slot | null;
+  floorId: string | null;
+  resourceId: string | null;
+}
+
+const EMPTY: Selection = { typeId: null, formatId: null, date: null, duration: null, slot: null, floorId: null, resourceId: null };
+
+function readSelection(): Selection {
+  try {
+    const raw = window.sessionStorage.getItem(SELECTION_KEY);
+    return raw ? { ...EMPTY, ...(JSON.parse(raw) as Partial<Selection>) } : EMPTY;
+  } catch {
+    return EMPTY;
+  }
+}
+
+function writeSelection(selection: Selection | null): void {
+  try {
+    if (selection) window.sessionStorage.setItem(SELECTION_KEY, JSON.stringify(selection));
+    else window.sessionStorage.removeItem(SELECTION_KEY);
+  } catch {
+    // Storage refused (private window): the choice simply lasts as long as the page.
+  }
+}
+
+/** Brings the next step into view once it is rendered. */
+const reveal = (id: string) => window.setTimeout(() => document.getElementById(id)?.scrollIntoView({ behavior: "smooth", block: "start" }), 60);
+
+function Progress({ step }: { step: number }) {
+  const { t } = useI18n();
+  return (
+    <ol className="portal-progress" aria-label={t.book.progressLabel}>
+      {t.book.progress.map((label, index) => (
+        <li key={label} className={index < step ? "done" : index === step ? "on" : undefined} aria-current={index === step ? "step" : undefined}>
+          <span className="portal-progress-n" aria-hidden="true">
+            {index + 1}
+          </span>
+          {label}
+        </li>
+      ))}
+    </ol>
+  );
+}
+
+/** The price a new account would pay, from the catalogue: the exact quote needs the account (subscriptions, packs). */
+function estimate(format: FormatOffer, slot: Slot, offpeakFrom: string | null): number {
+  const offpeak = format.price.offpeakAmount !== null && offpeakFrom !== null && slot.startTime >= offpeakFrom;
+  const rate = offpeak ? format.price.offpeakAmount! : format.price.amount;
+  return format.price.perHour ? Math.round((rate * slot.minutes) / 60) : rate;
+}
+
+/** Last step for a visitor not signed in: what was chosen, an indicative price, then sign up or sign in on the spot. */
+function GuestConfirm({
+  type,
+  format,
+  date,
+  slot,
+  resourceCode,
+  offpeakFrom,
+}: {
+  type: CatalogueType;
+  format: FormatOffer;
+  date: string;
+  slot: Slot;
+  resourceCode: string;
+  offpeakFrom: string | null;
+}) {
+  const { t } = useI18n();
+  const f = useFormat();
+  const { info } = usePortal();
+  const signupOpen = info?.selfSignup !== "closed";
+  const [mode, setMode] = useState<"signup" | "login">(signupOpen ? "signup" : "login");
+  const [pending, setPending] = useState(false);
+  return (
+    <Card title={t.book.stepSummary}>
+      <div className="card-b stack">
+        <table className="tbl">
+          <tbody>
+            <tr>
+              <td>{t.book.space}</td>
+              <td className="num">
+                {type.name} {resourceCode}
+              </td>
+            </tr>
+            <tr>
+              <td>{t.book.when}</td>
+              <td className="num">
+                {f.date(date, true)}, {slot.startTime} - {slot.endTime}
+              </td>
+            </tr>
+            <tr>
+              <td>
+                {t.book.estimate} <span className="cap">({format.label})</span>
+              </td>
+              <td className="num">
+                <Money value={estimate(format, slot, offpeakFrom)} strong />
+              </td>
+            </tr>
+          </tbody>
+        </table>
+        <p className="cap">{t.book.estimateHint}</p>
+        <h3 className="h3">{t.book.guestTitle}</h3>
+        <p className="cap">{t.book.guestIntro}</p>
+        {pending ? (
+          <Notice tone="green">{t.book.pendingKept}</Notice>
+        ) : (
+          <>
+            {signupOpen ? (
+              <div className="seg" role="group" aria-label={t.book.guestTitle}>
+                <button type="button" className="btn" aria-pressed={mode === "signup"} onClick={() => setMode("signup")}>
+                  {t.book.newClient}
+                </button>
+                <button type="button" className="btn" aria-pressed={mode === "login"} onClick={() => setMode("login")}>
+                  {t.book.existingClient}
+                </button>
+              </div>
+            ) : (
+              <Notice tone="blue">{t.book.signupClosedHere}</Notice>
+            )}
+            {mode === "signup" && signupOpen ? (
+              <SignupForm onActive={() => reveal("step-confirm")} onPending={() => setPending(true)} />
+            ) : (
+              <>
+                <LoginForm onDone={() => reveal("step-confirm")} />
+                <Link to="/mot-de-passe-oublie" className="cap">
+                  {t.auth.forgotLink}
+                </Link>
+              </>
+            )}
+          </>
+        )}
+      </div>
+    </Card>
+  );
+}
+
 export function BookPage() {
   const { t } = useI18n();
   const f = useFormat();
-  const catalogue = useQuery({ queryKey: ["catalogue"], queryFn: () => api.get<Catalogue>("/catalogue") });
-  const [typeId, setTypeId] = useState<string | null>(null);
-  const [formatId, setFormatId] = useState<string | null>(null);
-  const [date, setDate] = useState<string | null>(null);
-  const [duration, setDuration] = useState<number | null>(null);
-  const [slot, setSlot] = useState<Slot | null>(null);
-  const [floorId, setFloorId] = useState<string | null>(null);
-  const [resourceId, setResourceId] = useState<string | null>(null);
+  const { member } = usePortal();
+  const [params] = useSearchParams();
+  const catalogue = useQuery({ queryKey: ["catalogue", member?.id ?? null], queryFn: () => api.get<Catalogue>("/catalogue") });
+  const [sel, setSel] = useState<Selection>(readSelection);
   const [promoCode, setPromoCode] = useState<string | null>(null);
+  const update = (next: Partial<Selection>) => setSel((current) => ({ ...current, ...next }));
+  useEffect(() => writeSelection(sel), [sel]);
 
   const data = catalogue.data;
-  const type = data?.types.find((x) => x.id === typeId) ?? null;
-  const format = type?.formats.find((x) => x.id === formatId) ?? null;
-  const day = date ?? data?.date ?? null;
-  const floor = type?.floors.find((x) => x.id === floorId) ?? type?.floors[0] ?? null;
+  const pickType = (x: CatalogueType) => {
+    update({ typeId: x.id, formatId: x.formats[0]?.id ?? null, floorId: x.floors[0]?.id ?? null, duration: null, slot: null, resourceId: null });
+    setPromoCode(null);
+  };
+  // A link from the site names the type (?type=); a centre offering a single type needs no first choice.
+  const requested = params.get("type");
+  useEffect(() => {
+    if (!data) return;
+    const wanted = data.types.find((x) => x.id === requested) ?? (data.types.length === 1 ? data.types[0] : undefined);
+    if (wanted && sel.typeId !== wanted.id && (requested !== null || sel.typeId === null)) {
+      pickType(wanted);
+      reveal("step-when");
+    }
+    // Only a new catalogue or a new link applies the default; later choices stay the visitor's.
+  }, [data, requested]);
+
+  const type = data?.types.find((x) => x.id === sel.typeId) ?? null;
+  const format = type?.formats.find((x) => x.id === sel.formatId) ?? type?.formats[0] ?? null;
+  const day = sel.date ?? data?.date ?? null;
+  const floor = type?.floors.find((x) => x.id === sel.floorId) ?? type?.floors[0] ?? null;
   const lengths = format ? durations(format) : [];
-  const length = format?.nature === "free" ? (duration ?? lengths[0] ?? null) : null;
+  const length = format?.nature === "free" ? (sel.duration ?? lengths[0] ?? null) : null;
+  const slot = sel.slot;
 
   const slots = useQuery({
     queryKey: ["slots", format?.id, day, length],
@@ -367,20 +539,18 @@ export function BookPage() {
     enabled: !!floor && !!day && !!slot,
   });
 
-  /** A change earlier in the flow invalidates what was picked after it. */
-  const resetSelection = (includingSlot: boolean) => {
-    if (includingSlot) setSlot(null);
-    setResourceId(null);
-    setPromoCode(null);
-  };
-
   if (catalogue.isPending) return <Loading />;
   if (!data) return <ErrorBanner error={catalogue.error} retry={() => catalogue.refetch()} />;
 
+  // A kept choice may no longer hold (slot taken, past): it is shown only while the live data still offers it.
+  const slotStillFree = slot !== null && (slots.data?.slots.some((x) => x.startTime === slot.startTime && x.endTime === slot.endTime && x.free > 0) ?? false);
+  const resource = floorState.data?.resources.find((r) => r.resourceId === sel.resourceId && r.state === "free" && r.typeId === type?.id) ?? null;
+  const step = !type ? 0 : !slotStillFree ? 1 : !resource ? 2 : 3;
+
   const input: BookingInput | null =
-    format && day && slot && resourceId
+    format && day && slot && slotStillFree && resource
       ? {
-          resourceId,
+          resourceId: resource.resourceId,
           formatId: format.id,
           date: day,
           startTime: slot.startTime,
@@ -392,6 +562,7 @@ export function BookPage() {
   return (
     <>
       <PageHeader title={t.book.title} />
+      <Progress step={step} />
       <Card title={t.book.stepSpace}>
         <div className="card-b">
           {data.types.length ? (
@@ -401,13 +572,10 @@ export function BookPage() {
                   key={x.id}
                   type={x}
                   offpeakFrom={data.offpeakFrom}
-                  selected={x.id === typeId}
+                  selected={x.id === sel.typeId}
                   onSelect={() => {
-                    setTypeId(x.id);
-                    setFormatId(x.formats[0]?.id ?? null);
-                    setFloorId(x.floors[0]?.id ?? null);
-                    setDuration(null);
-                    resetSelection(true);
+                    pickType(x);
+                    reveal("step-when");
                   }}
                 />
               ))}
@@ -419,135 +587,141 @@ export function BookPage() {
       </Card>
 
       {type && format ? (
-        <Card title={t.book.stepFormat}>
-          <div className="card-b stack">
-            <div className="grid3 portal-grid">
-              <Field label={t.book.format}>
-                <select
-                  className="input"
-                  value={format.id}
-                  onChange={(e) => {
-                    setFormatId(e.target.value);
-                    setDuration(null);
-                    resetSelection(true);
-                  }}
-                >
-                  {type.formats.map((x) => (
-                    <option key={x.id} value={x.id}>
-                      {x.label}
-                    </option>
-                  ))}
-                </select>
-              </Field>
-              <Field label={t.book.date} hint={t.book.horizon(f.date(data.rules.horizonEnd))}>
-                <input
-                  className="input"
-                  type="date"
-                  required
-                  min={data.date}
-                  max={data.rules.horizonEnd}
-                  value={day ?? ""}
-                  onChange={(e) => {
-                    if (!e.target.value) return;
-                    setDate(e.target.value);
-                    resetSelection(true);
+        <section id="step-when" className="portal-step">
+          <Card title={t.book.stepWhen}>
+            <div className="card-b stack">
+              <div className="grid3 portal-grid">
+                {type.formats.length > 1 ? (
+                  <Field label={t.book.format}>
+                    <select
+                      className="input"
+                      value={format.id}
+                      onChange={(e) => {
+                        update({ formatId: e.target.value, duration: null, slot: null, resourceId: null });
+                        setPromoCode(null);
+                      }}
+                    >
+                      {type.formats.map((x) => (
+                        <option key={x.id} value={x.id}>
+                          {x.label}
+                        </option>
+                      ))}
+                    </select>
+                  </Field>
+                ) : null}
+                <Field label={t.book.date} hint={t.book.horizon(f.date(data.rules.horizonEnd))}>
+                  <input
+                    className="input"
+                    type="date"
+                    required
+                    min={data.date}
+                    max={data.rules.horizonEnd}
+                    value={day ?? ""}
+                    onChange={(e) => {
+                      if (!e.target.value) return;
+                      update({ date: e.target.value, slot: null, resourceId: null });
+                      setPromoCode(null);
+                    }}
+                  />
+                </Field>
+                {lengths.length ? (
+                  <Field label={t.book.duration}>
+                    <select
+                      className="input"
+                      value={length ?? ""}
+                      onChange={(e) => {
+                        update({ duration: Number(e.target.value), slot: null, resourceId: null });
+                        setPromoCode(null);
+                      }}
+                    >
+                      {lengths.map((m) => (
+                        <option key={m} value={m}>
+                          {f.minutes(m)}
+                        </option>
+                      ))}
+                    </select>
+                  </Field>
+                ) : null}
+              </div>
+              <span>
+                {format.label} : <PriceLine format={format} offpeakFrom={data.offpeakFrom} />
+              </span>
+              <ErrorBanner error={slots.error} />
+              {slots.isPending ? (
+                <Loading />
+              ) : slots.data ? (
+                <SlotPicker
+                  slots={slots.data}
+                  selected={slotStillFree ? slot : null}
+                  onSelect={(next) => {
+                    update({ slot: next, resourceId: null });
+                    setPromoCode(null);
+                    reveal("step-place");
                   }}
                 />
-              </Field>
-              {lengths.length ? (
-                <Field label={t.book.duration}>
-                  <select
-                    className="input"
-                    value={length ?? ""}
-                    onChange={(e) => {
-                      setDuration(Number(e.target.value));
-                      resetSelection(true);
-                    }}
-                  >
-                    {lengths.map((m) => (
-                      <option key={m} value={m}>
-                        {f.minutes(m)}
+              ) : null}
+            </div>
+          </Card>
+        </section>
+      ) : null}
+
+      {type && slot && slotStillFree && floor ? (
+        <section id="step-place" className="portal-step">
+          <Card
+            title={t.book.stepPlace}
+            actions={
+              type.floors.length > 1 ? (
+                <label className="row center" style={{ gap: 8 }}>
+                  <span className="lab">{t.book.floor}</span>
+                  <select className="input" style={{ width: "auto" }} value={floor.id} onChange={(e) => update({ floorId: e.target.value, resourceId: null })}>
+                    {type.floors.map((x) => (
+                      <option key={x.id} value={x.id}>
+                        {x.name}
                       </option>
                     ))}
                   </select>
-                </Field>
+                </label>
+              ) : (
+                <span className="cap">{floor.name}</span>
+              )
+            }
+          >
+            <div className="card-b">
+              <ErrorBanner error={floorState.error} />
+              {floorState.isPending ? (
+                <Loading />
+              ) : floorState.data ? (
+                <ResourcePicker
+                  state={floorState.data}
+                  typeId={type.id}
+                  selected={resource?.resourceId ?? null}
+                  onSelect={(id) => {
+                    update({ resourceId: id });
+                    setPromoCode(null);
+                    reveal("step-confirm");
+                  }}
+                />
               ) : null}
             </div>
-            <span>
-              <PriceLine format={format} offpeakFrom={data.offpeakFrom} />
-            </span>
-          </div>
-        </Card>
+          </Card>
+        </section>
       ) : null}
 
-      {type && format ? (
-        <Card title={t.book.stepSlot}>
-          <div className="card-b stack">
-            <ErrorBanner error={slots.error} />
-            {slots.isPending ? (
-              <Loading />
-            ) : slots.data ? (
-              <SlotPicker
-                slots={slots.data}
-                selected={slot}
-                onSelect={(next) => {
-                  setSlot(next);
-                  resetSelection(false);
-                }}
-              />
-            ) : null}
-          </div>
-        </Card>
+      {input && format && slot && type && resource ? (
+        <section id="step-confirm" className="portal-step">
+          {member ? (
+            <Summary
+              key={`${input.resourceId}-${input.startTime}-${input.date}`}
+              input={input}
+              catalogue={data}
+              onPromo={setPromoCode}
+              onBooked={() => writeSelection(null)}
+            />
+          ) : (
+            <GuestConfirm type={type} format={format} date={input.date} slot={slot} resourceCode={resource.code} offpeakFrom={data.offpeakFrom} />
+          )}
+        </section>
       ) : null}
-
-      {type && slot && floor ? (
-        <Card
-          title={t.book.stepPlace}
-          actions={
-            type.floors.length > 1 ? (
-              <label className="row center" style={{ gap: 8 }}>
-                <span className="lab">{t.book.floor}</span>
-                <select
-                  className="input"
-                  style={{ width: "auto" }}
-                  value={floor.id}
-                  onChange={(e) => {
-                    setFloorId(e.target.value);
-                    resetSelection(false);
-                  }}
-                >
-                  {type.floors.map((x) => (
-                    <option key={x.id} value={x.id}>
-                      {x.name}
-                    </option>
-                  ))}
-                </select>
-              </label>
-            ) : (
-              <span className="cap">{floor.name}</span>
-            )
-          }
-        >
-          <div className="card-b">
-            <ErrorBanner error={floorState.error} />
-            {floorState.isPending ? (
-              <Loading />
-            ) : floorState.data ? (
-              <ResourcePicker
-                state={floorState.data}
-                typeId={type.id}
-                selected={resourceId}
-                onSelect={(id) => {
-                  setResourceId(id);
-                  setPromoCode(null);
-                }}
-              />
-            ) : null}
-          </div>
-        </Card>
-      ) : null}
-
-      {input ? <Summary key={`${input.resourceId}-${input.startTime}-${input.date}`} input={input} catalogue={data} onPromo={setPromoCode} /> : null}
     </>
   );
 }
