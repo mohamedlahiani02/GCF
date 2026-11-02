@@ -13,7 +13,7 @@ import { installmentBalances } from "../../domain/ledger.js";
 import { conflict, HttpError, notFound, unprocessable } from "../../errors.js";
 import { clockTime, idParam, isoDate, optionalText, reason, toClock, uuid } from "../../validation.js";
 import { calendarFile } from "./calendar.js";
-import { signedIn } from "./context.js";
+import { maybeSignedIn, signedIn } from "./context.js";
 
 const occupying = [...OCCUPYING_STATUSES];
 
@@ -123,13 +123,14 @@ export const portalBookingRoutes: FastifyPluginAsync = async (app) => {
   /**
    * Bookable types open to the public, with the price of each format for the member's profile today (the hourly
    * rate for a free format), the capacity range of their resources and the floors holding them. Formats without
-   * a price are not for sale and types without an active resource or a format for sale are left out.
+   * a price are not for sale and types without an active resource or a format for sale are left out. A visitor who
+   * has not signed in sees the prices of a new account, which has no subscription: the visitor profile.
    */
   app.get("/catalogue", async (request) => {
-    const { centre, settings, member } = await signedIn(db, request);
+    const { centre, settings, member } = await maybeSignedIn(db, request);
     const { timezone } = await centreCalendar(db, centre.id);
     const today = todayIn(timezone);
-    const profile = profileOf(member.kind, await activeSubscriptions(db, member.memberId, today));
+    const profile = member ? profileOf(member.kind, await activeSubscriptions(db, member.memberId, today)) : profileOf("member", []);
     const types = (
       await db
         .selectFrom("cw_resource_types")
@@ -241,10 +242,11 @@ export const portalBookingRoutes: FastifyPluginAsync = async (app) => {
 
   /**
    * Start slots of a format on a date with the number of free resources on each. Slots the portal cannot book
-   * any more (past, or inside the minimum notice) are left out; a date beyond the booking horizon is refused.
+   * any more (past, or inside the minimum notice) are left out; a date beyond the booking horizon is refused. Open
+   * to visitors who have not signed in yet.
    */
   app.get("/formats/:id/slots", async (request) => {
-    const { centre, settings } = await signedIn(db, request);
+    const { centre, settings } = await maybeSignedIn(db, request);
     const { id } = idParam.parse(request.params);
     const query = slotsQuery.parse(request.query);
     const format = await db
@@ -283,9 +285,9 @@ export const portalBookingRoutes: FastifyPluginAsync = async (app) => {
     };
   });
 
-  /** State of every resource of a floor over a local slot, without any personal data. */
+  /** State of every resource of a floor over a local slot, without any personal data; open to visitors not signed in. */
   app.get("/floors/:id/state", async (request) => {
-    const { centre } = await signedIn(db, request);
+    const { centre } = await maybeSignedIn(db, request);
     const { id } = idParam.parse(request.params);
     const query = stateQuery.parse(request.query);
     const { timezone } = await centreCalendar(db, centre.id);

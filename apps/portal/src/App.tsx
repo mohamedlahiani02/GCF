@@ -28,6 +28,12 @@ function Gate() {
   return <Outlet />;
 }
 
+/** The dashboard for a member; a visitor starts with the booking, where the account is asked for at the end. */
+function Home() {
+  const { member } = usePortal();
+  return member ? <DashboardPage /> : <Navigate to="/reserver" replace />;
+}
+
 function RequireMember() {
   const { member } = usePortal();
   const location = useLocation();
@@ -82,11 +88,11 @@ export const router = createBrowserRouter(
             },
             { path: "activation", element: <TokenPasswordPage key="activate" purpose="activate" /> },
             { path: "mot-de-passe", element: <TokenPasswordPage key="reset" purpose="reset" /> },
+            { index: true, element: <Home /> },
+            { path: "reserver", element: <BookPage /> },
             {
               element: <RequireMember />,
               children: [
-                { index: true, element: <DashboardPage /> },
-                { path: "reserver", element: <BookPage /> },
                 { path: "reservations", element: <BookingsPage /> },
                 { path: "reservations/:id", element: <BookingDetailPage /> },
                 { path: "abonnement", element: <SubscriptionPage /> },

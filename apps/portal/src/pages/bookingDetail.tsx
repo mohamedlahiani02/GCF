@@ -70,9 +70,14 @@ export function BookingDetailPage() {
         title={t.detail.title(b.resourceCode)}
         subtitle={`${CW_CATEGORY_LABELS[language][b.category]}, ${b.typeName}`}
         actions={
-          <Link to="/reservations" className="btn">
-            {t.common.back}
-          </Link>
+          <>
+            <Link to={`/reserver?type=${encodeURIComponent(b.typeId)}`} className="btn btn-p">
+              {t.detail.bookAgain}
+            </Link>
+            <Link to="/reservations" className="btn">
+              {t.common.back}
+            </Link>
+          </>
         }
       />
       {created && !cancelled ? <Notice tone="green">{created === "confirmed" ? t.book.createdConfirmed : t.book.createdRequested}</Notice> : null}
