@@ -141,3 +141,8 @@ Administration, sans intervention technique.
     un clic ouvre la photo en plein écran (flèches, Échap, balayage sur téléphone). Un album est une galerie : une
     page « Galerie » en réunit plusieurs. Le bandeau d'accueil met son image en fond sur toute la largeur, sauf si
     l'éditeur choisit « À côté du texte ».
+23. **Réservation sans compte au départ** : sur l'espace client, un visiteur voit les espaces, les créneaux libres et le
+    plan sans se connecter, avec un prix indicatif au tarif visiteur. Le compte n'est demandé qu'à la confirmation
+    (inscription ou connexion sur la même page) ; le prix exact, qui tient compte d'un abonnement ou d'un carnet, et
+    la réservation elle-même restent réservés aux clients connectés. Le choix est gardé dans l'onglet du navigateur,
+    y compris quand l'accueil doit d'abord valider le compte.

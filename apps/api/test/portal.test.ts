@@ -370,7 +370,11 @@ describe("client portal", () => {
     expect(member.body.profile).toBe("member");
     expect(member.body.types[0].formats[0].price.amount).toBe(12_000);
     expect(member.body.types[1].formats[0].price).toMatchObject({ amount: 30_000, profile: "visitor" });
-    expect((await h.callPublic("GET", "/api/portal/catalogue")).status).toBe(401);
+    // A visitor who has not signed in browses with the prices of a new account.
+    const anonymous = await h.callPublic("GET", "/api/portal/catalogue");
+    expect(anonymous.status).toBe(200);
+    expect(anonymous.body.profile).toBe("visitor");
+    expect(anonymous.body.types).toEqual(seen.body.types);
   });
 
   it("lists free slots within the horizon and shows the floor without personal data", async () => {
@@ -387,6 +391,14 @@ describe("client portal", () => {
     expect(state.status).toBe(200);
     expect(state.body.floor).toMatchObject({ id: ids.floor, name: "RDC", planMediaId: null });
     expect(state.body.resources.every((r: Record<string, unknown>) => !("occupant" in r) && !("subscriber" in r))).toBe(true);
+
+    // The slots and the plan are open before signing in; pricing for the account and booking are not.
+    expect((await h.callPublic("GET", `/api/portal/formats/${ids.hour}/slots?date=${date}`)).body.slots).toEqual(slots.body.slots);
+    const anonymousState = await h.callPublic("GET", `/api/portal/floors/${ids.floor}/state?date=${date}&startTime=08:00&endTime=09:00`);
+    expect(anonymousState.body).toEqual(state.body);
+    const attempt = { resourceId: ids.m1, formatId: ids.hour, date, startTime: "10:00" };
+    expect((await h.callPublic("POST", "/api/portal/bookings/quote", undefined, attempt)).status).toBe(401);
+    expect((await h.callPublic("POST", "/api/portal/bookings", undefined, attempt)).status).toBe(401);
   });
 
   it("books as the signed-in member: requested or confirmed by approval mode, limits enforced", async () => {

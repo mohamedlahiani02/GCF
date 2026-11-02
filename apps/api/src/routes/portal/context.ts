@@ -36,6 +36,17 @@ export async function signedIn(db: Kysely<Database>, request: FastifyRequest): P
   return { ...portal, member };
 }
 
+/**
+ * The open portal and the member signed in to it, or no member for a visitor who has not signed in yet. Only
+ * read-only pages that show no personal data use it: the catalogue, the free slots and the floor plan state.
+ */
+export async function maybeSignedIn(db: Kysely<Database>, request: FastifyRequest): Promise<Portal & { member: MemberSession | null }> {
+  const portal = await openPortal(db);
+  const member = request.member;
+  const signed = member && member.status === "active" && member.centreId === portal.centre.id ? member : null;
+  return { ...portal, member: signed };
+}
+
 /** Opens a portal session for a member and sets its cookie, with the same options as the staff session cookie. */
 export async function startMemberSession(db: Kysely<Database>, config: Config, request: FastifyRequest, reply: FastifyReply, memberId: string): Promise<void> {
   const token = await createMemberSession(
