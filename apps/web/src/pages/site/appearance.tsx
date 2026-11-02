@@ -335,7 +335,7 @@ function AppearanceForm({ settings, homeId }: { settings: SiteSettings; homeId: 
 }
 
 export function AppearancePage() {
-  usePage(["Site web", "Apparence"]);
+  usePage(["Paramètres", "Apparence du site"]);
   const settings = useQuery({ queryKey: siteKeys.settings, queryFn: fetchSettings });
   const pages = useQuery({ queryKey: siteKeys.pages, queryFn: fetchPages });
   const home = flattenPages(pages.data ?? []).find((p) => p.page.isHome)?.page;

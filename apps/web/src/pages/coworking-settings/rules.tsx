@@ -56,6 +56,7 @@ export function RulesTab() {
   const toast = useToast();
   const settings = useQuery({ queryKey: CW_KEYS.settings, queryFn: () => api.get<CwSettings>("/coworking/settings") });
   const [v, setV] = useState<Form | null>(null);
+  const [advancedOpen, setAdvancedOpen] = useState(false);
   useEffect(() => {
     if (settings.data) setV(toForm(settings.data));
   }, [settings.data]);
@@ -89,6 +90,15 @@ export function RulesTab() {
     offpeakFrom: v.offpeakEnabled && !/^([01]\d|2[0-3]):[0-5]\d$/.test(v.offpeakFrom) ? "Indiquez une heure." : null,
   };
   const valid = Object.values(errors).every((e) => e === null);
+  /** A wrong value in the folded options keeps them open, so the message is never hidden. */
+  const advancedError = [
+    errors.bookingHorizonDays,
+    errors.minNoticeMinutes,
+    errors.maxActiveBookings,
+    errors.requestExpiryHours,
+    errors.noShowGraceMinutes,
+    errors.offpeakFrom,
+  ].some((e) => e !== null);
   const submit = () => {
     if (!valid) return;
     save.mutate({
@@ -118,126 +128,6 @@ export function RulesTab() {
       }
     >
       <div className="card-b stack">
-        <h3 className="h2">Réservations depuis l'espace client</h3>
-        <span className="cap">
-          Ces limites s'appliquent aux réservations faites par les clients. L'accueil peut les dépasser ; le dépassement est noté au journal.
-        </span>
-        <div className="grid3">
-          <Field label="Horizon de réservation (jours)" hint="Un client réserve au plus ce nombre de jours à l'avance." error={errors.bookingHorizonDays}>
-            <input
-              className="input num"
-              type="number"
-              min={1}
-              max={365}
-              value={v.bookingHorizonDays}
-              onChange={(e) => set("bookingHorizonDays", e.target.value)}
-            />
-          </Field>
-          <Field label="Délai minimum (minutes)" hint="Temps minimum entre la réservation et le début du créneau." error={errors.minNoticeMinutes}>
-            <input
-              className="input num"
-              type="number"
-              min={0}
-              max={10080}
-              value={v.minNoticeMinutes}
-              onChange={(e) => set("minNoticeMinutes", e.target.value)}
-            />
-          </Field>
-          <Field
-            label="Réservations en cours par client"
-            hint="Nombre maximum de réservations à venir ou en cours pour un même client."
-            error={errors.maxActiveBookings}
-          >
-            <input
-              className="input num"
-              type="number"
-              min={1}
-              max={100}
-              value={v.maxActiveBookings}
-              onChange={(e) => set("maxActiveBookings", e.target.value)}
-            />
-          </Field>
-        </div>
-        <h3 className="h2">Validation des demandes</h3>
-        <div className="grid2">
-          <Field label="Réservations soumises à validation" hint="Un type d'espace peut aussi exiger une validation, quel que soit ce réglage.">
-            <select className="input" value={v.approvalMode} onChange={(e) => set("approvalMode", e.target.value as Form["approvalMode"])}>
-              {Object.entries(APPROVAL).map(([value, label]) => (
-                <option key={value} value={value}>
-                  {label}
-                </option>
-              ))}
-            </select>
-          </Field>
-          <Field
-            label="Expiration d'une demande (heures)"
-            hint="Une demande non traitée expire après ce délai, ou au début du créneau s'il arrive avant."
-            error={errors.requestExpiryHours}
-          >
-            <input
-              className="input num"
-              type="number"
-              min={1}
-              max={720}
-              value={v.requestExpiryHours}
-              onChange={(e) => set("requestExpiryHours", e.target.value)}
-            />
-          </Field>
-        </div>
-        <h3 className="h2">Annulation et absence</h3>
-        <div className="grid3">
-          <Field
-            label="Annulation gratuite (heures avant le début)"
-            hint="Avant ce délai, l'annulation libère le quota et annule l'échéance non payée."
-            error={errors.freeCancelHours}
-          >
-            <input className="input num" type="number" min={0} max={720} value={v.freeCancelHours} onChange={(e) => set("freeCancelHours", e.target.value)} />
-          </Field>
-          <Field
-            label="Frais d'annulation tardive (%)"
-            hint="Pourcentage du prix facturé après ce délai ; 0 : aucuns frais, le quota consommé reste perdu."
-            error={errors.lateCancelFeeBp}
-          >
-            <input className="input num" inputMode="decimal" value={v.lateCancelFee} onChange={(e) => set("lateCancelFee", e.target.value)} />
-          </Field>
-          <div className="stack" style={{ gap: 6 }}>
-            <label className="row center" style={{ gap: 8 }}>
-              <input type="checkbox" className="chk" checked={v.noShowEnabled} onChange={(e) => set("noShowEnabled", e.target.checked)} />
-              Marquer « absent » sans arrivée
-            </label>
-            <Field
-              label="Délai avant absence (minutes)"
-              hint="Sans arrivée enregistrée ce délai après le début, la réservation passe en absence et l'espace est libéré. Le montant reste dû."
-              error={errors.noShowGraceMinutes}
-            >
-              <input
-                className="input num"
-                type="number"
-                min={5}
-                max={240}
-                disabled={!v.noShowEnabled}
-                value={v.noShowGraceMinutes}
-                onChange={(e) => set("noShowGraceMinutes", e.target.value)}
-              />
-            </Field>
-          </div>
-        </div>
-        <h3 className="h2">Heures creuses</h3>
-        <div className="grid3">
-          <div className="stack" style={{ gap: 6 }}>
-            <label className="row center" style={{ gap: 8 }}>
-              <input type="checkbox" className="chk" checked={v.offpeakEnabled} onChange={(e) => set("offpeakEnabled", e.target.checked)} />
-              Appliquer un tarif heures creuses
-            </label>
-            <Field
-              label="Heures creuses à partir de"
-              hint="Une réservation qui commence à cette heure ou plus tard paie le tarif heures creuses du format, s'il en a un."
-              error={errors.offpeakFrom}
-            >
-              <input className="input" type="time" disabled={!v.offpeakEnabled} value={v.offpeakFrom} onChange={(e) => set("offpeakFrom", e.target.value)} />
-            </Field>
-          </div>
-        </div>
         <h3 className="h2">Espace client</h3>
         <label className="row center" style={{ gap: 8 }}>
           <input type="checkbox" className="chk" checked={v.portalEnabled} onChange={(e) => set("portalEnabled", e.target.checked)} />
@@ -254,6 +144,140 @@ export function RulesTab() {
             </select>
           </Field>
         </div>
+        <h3 className="h2">Validation des demandes</h3>
+        <div className="grid2">
+          <Field label="Réservations soumises à validation" hint="Un type d'espace peut aussi exiger une validation, quel que soit ce réglage.">
+            <select className="input" value={v.approvalMode} onChange={(e) => set("approvalMode", e.target.value as Form["approvalMode"])}>
+              {Object.entries(APPROVAL).map(([value, label]) => (
+                <option key={value} value={value}>
+                  {label}
+                </option>
+              ))}
+            </select>
+          </Field>
+        </div>
+        <h3 className="h2">Annulation</h3>
+        <div className="grid2">
+          <Field
+            label="Annulation gratuite (heures avant le début)"
+            hint="Avant ce délai, l'annulation libère le quota et annule l'échéance non payée."
+            error={errors.freeCancelHours}
+          >
+            <input className="input num" type="number" min={0} max={720} value={v.freeCancelHours} onChange={(e) => set("freeCancelHours", e.target.value)} />
+          </Field>
+          <Field
+            label="Frais d'annulation tardive (%)"
+            hint="Pourcentage du prix facturé après ce délai ; 0 : aucuns frais, le quota consommé reste perdu."
+            error={errors.lateCancelFeeBp}
+          >
+            <input className="input num" inputMode="decimal" value={v.lateCancelFee} onChange={(e) => set("lateCancelFee", e.target.value)} />
+          </Field>
+        </div>
+        <details className="advanced" open={advancedOpen || advancedError} onToggle={(e) => setAdvancedOpen(e.currentTarget.open)}>
+          <summary>Options avancées</summary>
+          <div className="stack">
+            <h3 className="h3">Limites des réservations en ligne</h3>
+            <span className="cap">
+              Ces limites s'appliquent aux réservations faites par les clients. L'accueil peut les dépasser ; le dépassement est noté au journal.
+            </span>
+            <div className="grid3">
+              <Field label="Horizon de réservation (jours)" hint="Un client réserve au plus ce nombre de jours à l'avance." error={errors.bookingHorizonDays}>
+                <input
+                  className="input num"
+                  type="number"
+                  min={1}
+                  max={365}
+                  value={v.bookingHorizonDays}
+                  onChange={(e) => set("bookingHorizonDays", e.target.value)}
+                />
+              </Field>
+              <Field label="Délai minimum (minutes)" hint="Temps minimum entre la réservation et le début du créneau." error={errors.minNoticeMinutes}>
+                <input
+                  className="input num"
+                  type="number"
+                  min={0}
+                  max={10080}
+                  value={v.minNoticeMinutes}
+                  onChange={(e) => set("minNoticeMinutes", e.target.value)}
+                />
+              </Field>
+              <Field
+                label="Réservations en cours par client"
+                hint="Nombre maximum de réservations à venir ou en cours pour un même client."
+                error={errors.maxActiveBookings}
+              >
+                <input
+                  className="input num"
+                  type="number"
+                  min={1}
+                  max={100}
+                  value={v.maxActiveBookings}
+                  onChange={(e) => set("maxActiveBookings", e.target.value)}
+                />
+              </Field>
+            </div>
+            <h3 className="h3">Demandes et absences</h3>
+            <div className="grid3">
+              <Field
+                label="Expiration d'une demande (heures)"
+                hint="Une demande non traitée expire après ce délai, ou au début du créneau s'il arrive avant."
+                error={errors.requestExpiryHours}
+              >
+                <input
+                  className="input num"
+                  type="number"
+                  min={1}
+                  max={720}
+                  value={v.requestExpiryHours}
+                  onChange={(e) => set("requestExpiryHours", e.target.value)}
+                />
+              </Field>
+              <div className="stack" style={{ gap: 6 }}>
+                <label className="row center" style={{ gap: 8 }}>
+                  <input type="checkbox" className="chk" checked={v.noShowEnabled} onChange={(e) => set("noShowEnabled", e.target.checked)} />
+                  Marquer « absent » sans arrivée
+                </label>
+                <Field
+                  label="Délai avant absence (minutes)"
+                  hint="Sans arrivée enregistrée ce délai après le début, la réservation passe en absence et l'espace est libéré. Le montant reste dû."
+                  error={errors.noShowGraceMinutes}
+                >
+                  <input
+                    className="input num"
+                    type="number"
+                    min={5}
+                    max={240}
+                    disabled={!v.noShowEnabled}
+                    value={v.noShowGraceMinutes}
+                    onChange={(e) => set("noShowGraceMinutes", e.target.value)}
+                  />
+                </Field>
+              </div>
+            </div>
+            <h3 className="h3">Heures creuses</h3>
+            <div className="grid3">
+              <div className="stack" style={{ gap: 6 }}>
+                <label className="row center" style={{ gap: 8 }}>
+                  <input type="checkbox" className="chk" checked={v.offpeakEnabled} onChange={(e) => set("offpeakEnabled", e.target.checked)} />
+                  Appliquer un tarif heures creuses
+                </label>
+                <Field
+                  label="Heures creuses à partir de"
+                  hint="Une réservation qui commence à cette heure ou plus tard paie le tarif heures creuses du format, s'il en a un."
+                  error={errors.offpeakFrom}
+                >
+                  <input
+                    className="input"
+                    type="time"
+                    disabled={!v.offpeakEnabled}
+                    value={v.offpeakFrom}
+                    onChange={(e) => set("offpeakFrom", e.target.value)}
+                  />
+                </Field>
+              </div>
+            </div>
+          </div>
+        </details>
         <ErrorBanner error={save.error} />
       </div>
     </Card>

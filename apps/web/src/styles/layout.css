@@ -1511,3 +1511,156 @@ body:has(.fpe-root) .toasts {
   min-height: 28px;
   padding: 0 6px;
 }
+
+/* Action menus (top bar "+ Nouveau", account) */
+.menu-wrap {
+  position: relative;
+}
+.menu-caret {
+  margin-inline-start: 6px;
+  font-size: 11px;
+}
+.menu-pop {
+  position: absolute;
+  z-index: 40;
+  inset-inline-end: 0;
+  top: calc(100% + 6px);
+  min-width: 260px;
+  padding: 6px;
+  display: flex;
+  flex-direction: column;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  box-shadow: 0 12px 32px rgba(15, 23, 42, 0.14);
+}
+.menu-pop button {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  min-height: 44px;
+  padding: 8px 12px;
+  border: 0;
+  border-radius: 8px;
+  background: none;
+  font: inherit;
+  color: var(--ink);
+  text-align: start;
+  cursor: pointer;
+}
+.menu-pop button:hover,
+.menu-pop button:focus-visible {
+  background: var(--accent-soft);
+  outline: none;
+}
+.account-btn {
+  max-width: 220px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Pending-work counter in the side menu */
+.nav-count {
+  margin-inline-start: auto;
+  min-width: 22px;
+  padding: 1px 7px;
+  border-radius: 999px;
+  background: #c2410c;
+  color: #ffffff;
+  font-size: 12px;
+  font-weight: 600;
+  text-align: center;
+}
+.side.collapsed .navi .nav-count {
+  display: block;
+  position: absolute;
+  top: 2px;
+  inset-inline-end: 2px;
+  min-width: 18px;
+  padding: 0 5px;
+  font-size: 11px;
+}
+
+/* "Grand texte": the whole back-office is scaled, so text, buttons and click targets grow together. */
+html.large-text {
+  zoom: 1.15;
+}
+
+/* Settings hub */
+.settings-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+  gap: 16px;
+}
+.settings-card {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 20px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--surface);
+  color: var(--ink);
+  text-decoration: none;
+}
+.settings-card:hover,
+.settings-card:focus-visible {
+  border-color: var(--accent);
+  box-shadow: 0 6px 20px rgba(14, 90, 138, 0.12);
+  outline: none;
+}
+.settings-card strong {
+  font-size: 16px;
+}
+.settings-card .go {
+  margin-top: auto;
+  padding-top: 8px;
+  color: var(--accent);
+  font-weight: 600;
+}
+
+/* Folded settings that most centres never change */
+details.advanced {
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 0 16px;
+}
+details.advanced > summary {
+  min-height: 48px;
+  display: flex;
+  align-items: center;
+  font-weight: 600;
+  cursor: pointer;
+}
+details.advanced[open] {
+  padding-bottom: 16px;
+}
+
+/* Dashboard "À faire aujourd'hui": one task per row, the action button on the right */
+.todo-list li {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 14px 16px;
+  border-top: 1px solid var(--line);
+}
+.todo-list strong {
+  font-weight: 600;
+}
+details.advanced > summary {
+  list-style: none;
+  gap: 8px;
+}
+details.advanced > summary::-webkit-details-marker {
+  display: none;
+}
+details.advanced > summary::before {
+  content: "▸";
+  color: var(--muted);
+}
+details.advanced[open] > summary::before {
+  content: "▾";
+}

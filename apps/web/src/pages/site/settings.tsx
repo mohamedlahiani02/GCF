@@ -308,7 +308,7 @@ function RedirectsCard() {
 }
 
 export function SiteSettingsPage() {
-  usePage(["Site web", "Paramètres du site"]);
+  usePage(["Paramètres", "Paramètres du site"]);
   const settings = useQuery({ queryKey: siteKeys.settings, queryFn: fetchSettings });
   return (
     <>

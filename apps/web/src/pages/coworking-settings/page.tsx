@@ -1,6 +1,6 @@
 import { useSearchParams } from "react-router";
 import { usePage } from "../../components/shell";
-import { PageHeader, Tabs } from "../../components/ui";
+import { PageHeader, Segmented, Tabs } from "../../components/ui";
 import { AttributesTab } from "./attributes";
 import { ClosuresTab } from "./closures";
 import { FloorsTab } from "./floors";
@@ -11,38 +11,72 @@ import { RulesTab } from "./rules";
 import { SpaceTypesTab } from "./spaceTypes";
 import { ZonesTab } from "./zones";
 
-const TABS = [
-  { value: "regles", label: "Règles" },
-  { value: "etages", label: "Étages et plans" },
-  { value: "zones", label: "Zones" },
-  { value: "attributs", label: "Attributs" },
-  { value: "types", label: "Types d'espaces" },
-  { value: "ressources", label: "Ressources" },
-  { value: "formules", label: "Formules et tarifs" },
-  { value: "fermetures", label: "Fermetures" },
-  { value: "abonnements", label: "Abonnements" },
+/** The nine settings screens, gathered in three groups so a manager first picks what they want to change. */
+const GROUPS = [
+  {
+    value: "espace",
+    label: "Mon espace",
+    tabs: [
+      { value: "etages", label: "Étages et plans" },
+      { value: "ressources", label: "Places et salles" },
+      { value: "types", label: "Types d'espaces" },
+      { value: "zones", label: "Zones" },
+      { value: "attributs", label: "Équipements" },
+    ],
+  },
+  {
+    value: "tarifs",
+    label: "Tarifs et abonnements",
+    tabs: [
+      { value: "formules", label: "Formules et tarifs" },
+      { value: "abonnements", label: "Abonnements" },
+    ],
+  },
+  {
+    value: "regles",
+    label: "Règles et fermetures",
+    tabs: [
+      { value: "regles", label: "Règles de réservation" },
+      { value: "fermetures", label: "Fermetures" },
+    ],
+  },
 ] as const;
-type Tab = (typeof TABS)[number]["value"];
+type Group = (typeof GROUPS)[number];
+type Tab = Group["tabs"][number]["value"];
 
-/** Coworking configuration; the open tab is kept in the address so the plan editor can come back to it. */
+const groupOf = (tab: string | null): { group: Group; tab: Tab } | null => {
+  for (const group of GROUPS) {
+    const found = group.tabs.find((t) => t.value === tab);
+    if (found) return { group, tab: found.value };
+  }
+  return null;
+};
+
+/** Coworking configuration; the open tab is kept in the address (`onglet`) so the plan editor can come back to it. */
 export function CoworkingSettingsPage() {
-  usePage(["Coworking", "Paramètres coworking"]);
+  usePage(["Paramètres", "Coworking"]);
   const [params, setParams] = useSearchParams();
-  const requested = params.get("onglet");
-  const tab: Tab = TABS.find((t) => t.value === requested)?.value ?? "regles";
+  const current = groupOf(params.get("onglet")) ?? { group: GROUPS[0], tab: GROUPS[0].tabs[0].value };
+  const open = (tab: Tab) => setParams({ onglet: tab }, { replace: true });
   return (
     <>
-      <PageHeader title="Paramètres coworking" subtitle="Règles de réservation, espaces, plans, tarifs et offres d'abonnement." />
-      <Tabs value={tab} tabs={[...TABS]} onChange={(value) => setParams({ onglet: value }, { replace: true })} />
-      {tab === "regles" ? <RulesTab /> : null}
-      {tab === "etages" ? <FloorsTab /> : null}
-      {tab === "zones" ? <ZonesTab /> : null}
-      {tab === "attributs" ? <AttributesTab /> : null}
-      {tab === "types" ? <SpaceTypesTab /> : null}
-      {tab === "ressources" ? <ResourcesTab /> : null}
-      {tab === "formules" ? <FormatsTab /> : null}
-      {tab === "fermetures" ? <ClosuresTab /> : null}
-      {tab === "abonnements" ? <OffersTab /> : null}
+      <PageHeader title="Paramètres du coworking" subtitle="Choisissez d'abord ce que vous voulez régler." />
+      <Segmented
+        label="Rubrique"
+        value={current.group.value}
+        onChange={(value) => open(GROUPS.find((g) => g.value === value)!.tabs[0].value)}
+        options={GROUPS.map((g) => ({ value: g.value, label: g.label }))}
+      />
+      {current.group.tabs.length > 1 ? <Tabs value={current.tab} tabs={[...current.group.tabs]} onChange={open} /> : null}
+      {current.tab === "regles" ? <RulesTab /> : null}
+      {current.tab === "etages" ? <FloorsTab /> : null}
+      {current.tab === "zones" ? <ZonesTab /> : null}
+      {current.tab === "attributs" ? <AttributesTab /> : null}
+      {current.tab === "types" ? <SpaceTypesTab /> : null}
+      {current.tab === "ressources" ? <ResourcesTab /> : null}
+      {current.tab === "formules" ? <FormatsTab /> : null}
+      {current.tab === "fermetures" ? <ClosuresTab /> : null}
+      {current.tab === "abonnements" ? <OffersTab /> : null}
     </>
   );
 }

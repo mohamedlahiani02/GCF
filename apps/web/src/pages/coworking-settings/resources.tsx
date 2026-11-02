@@ -172,7 +172,7 @@ function ResourceModal({
             ))}
           </div>
         ) : (
-          <span className="cap">Aucun attribut défini (onglet « Attributs »).</span>
+          <span className="cap">Aucun attribut défini (onglet « Équipements »).</span>
         )}
       </fieldset>
       {canLinkRoom ? (
