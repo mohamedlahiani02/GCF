@@ -525,7 +525,7 @@ function AuditLog() {
 }
 
 export function AdminPage() {
-  usePage(["Administration"]);
+  usePage(["Paramètres", "Administration"]);
   const { can } = useSession();
   const tabs = [
     { value: "settings" as const, label: "Paramètres" },

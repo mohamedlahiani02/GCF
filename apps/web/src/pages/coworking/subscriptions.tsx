@@ -5,6 +5,7 @@ import { api } from "../../api/client";
 import { useSession } from "../../auth/session";
 import { usePage } from "../../components/shell";
 import { useToast } from "../../components/toasts";
+import { ClientsTabs } from "./clientsTabs";
 import { Badge, Card, Empty, ErrorBanner, Field, Loading, Modal, PageHeader, Pagination, ReasonDialog, Segmented } from "../../components/ui";
 import { errorMessage } from "../../lib/errors";
 import { frDate, tnd, todayIso } from "../../lib/format";
@@ -296,7 +297,7 @@ const FILTER_QUERY: Record<Filter, Record<string, string | number>> = {
 
 /** Every subscription of the centre, filtered for the desk's follow-up: running, ending soon, unpaid, upcoming, ended. */
 export function SubscriptionsPage() {
-  usePage(["Coworking", "Abonnements"]);
+  usePage(["Coworking", "Clients", "Abonnements"]);
   const [filter, setFilter] = useState<Filter>("current");
   const [page, setPage] = useState(1);
   const list = useQuery({
@@ -306,7 +307,8 @@ export function SubscriptionsPage() {
   });
   return (
     <>
-      <PageHeader title="Abonnements" subtitle="Un abonnement se vend depuis la fiche du membre." />
+      <PageHeader title="Clients" subtitle="Un abonnement se vend depuis la fiche du membre." />
+      <ClientsTabs />
       <Segmented
         label="Filtre"
         value={filter}

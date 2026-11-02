@@ -1,13 +1,14 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { createContext, useContext, useEffect, useState, type ReactNode } from "react";
-import { Link, NavLink, Navigate, Outlet, useLocation, useNavigate } from "react-router";
+import { Link, Navigate, Outlet, useLocation, useNavigate } from "react-router";
 import { api } from "../api/client";
 import { useSession } from "../auth/session";
 import { setTimeZone } from "../lib/format";
 import { ROLE } from "../lib/labels";
 import { PasswordModal } from "../pages/admin";
 import { CollectDrawer, type Payer } from "../pages/collect";
-import { WalkInButton } from "../pages/coworking/walkin";
+import { WalkInWizard } from "../pages/coworking/walkin";
+import { MenuButton, type MenuAction } from "./menu";
 
 interface NavItem {
   to: string;
@@ -16,6 +17,10 @@ interface NavItem {
   permission: string | string[];
   /** Active only on this exact path (a section home whose sub-pages have their own entries). */
   end?: boolean;
+  /** Other paths whose pages are reached through this entry (tabs of a grouped page). */
+  also?: string[];
+  /** Small counter shown next to the label (pending work). */
+  badge?: "cwRequests";
 }
 
 interface NavSection {
@@ -41,19 +46,44 @@ const ICONS = {
   planning: "M8 2v4M16 2v4M3 10h18M5 4h14a2 2 0 0 1 2 2v14H3V6a2 2 0 0 1 2-2z",
   cash: "M2 6h20v12H2zM12 9.5a2.5 2.5 0 1 0 0 5 2.5 2.5 0 0 0 0-5",
   reports: "M3 3v18h18M7 15l4-4 3 3 5-6",
-  admin: "M12 8a4 4 0 1 0 0 8 4 4 0 0 0 0-8zM12 2v3M12 19v3M2 12h3M19 12h3M5 5l2 2M17 17l2 2M19 5l-2 2M7 17l-2 2",
   floorPlan: "M3 3h18v18H3zM3 12h8M11 3v18M15 8h2M15 15h2",
   inbox: "M22 12h-6l-2 3h-4l-2-3H2M5.5 5h13L22 12v7H2v-7z",
   members: "M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2M12 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8z",
-  subscriptions: "M3 5h18v14H3zM3 10h18M7 15h4",
-  mail: "M3 5h18v14H3zM3 6l9 7 9-7",
   stats: "M4 20V10M10 20V4M16 20v-7M22 20H2",
   settings: "M4 6h10M18 6h2M4 12h4M12 12h8M4 18h12M20 18h0M14 4v4M8 10v4M16 16v4",
   pages: "M14 3H6v18h12V7zM14 3v4h4",
-  palette: "M12 3a9 9 0 1 0 0 18c1 0 1.5-.8 1.5-1.5 0-1-1-1.5-1-2.5S13.3 15 14.5 15H17a4 4 0 0 0 4-4c0-4.4-4-8-9-8zM7.5 11h0M10 7h0M15 7h0",
   media: "M3 5h18v14H3zM3 16l5-5 4 4 3-3 6 6M15.5 9.5h0",
   leads: "M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z",
 };
+
+/** Every settings page of the back-office, gathered on one "Paramètres" page; each card shows only with its permission. */
+export const SETTINGS_LINKS: { to: string; title: string; text: string; permission: string | string[] }[] = [
+  {
+    to: "/coworking/parametres",
+    title: "Coworking",
+    text: "Votre espace (étages, plans, places), les tarifs et abonnements, les règles de réservation et les fermetures.",
+    permission: "coworking:manage",
+  },
+  {
+    to: "/site/apparence",
+    title: "Apparence du site",
+    text: "Logo, couleurs, police et thème du site public.",
+    permission: "website:edit",
+  },
+  {
+    to: "/site/parametres",
+    title: "Paramètres du site",
+    text: "Adresse, langues, coordonnées, réseaux sociaux et menu du site public.",
+    permission: "website:edit",
+  },
+  {
+    to: "/administration",
+    title: "Administration",
+    text: "Informations du centre, utilisateurs et rôles, modules activés et journal d'audit.",
+    permission: ["audit:read", "users:manage"],
+  },
+];
+const SETTINGS_PERMISSIONS = [...new Set(SETTINGS_LINKS.flatMap((l) => (Array.isArray(l.permission) ? l.permission : [l.permission])))];
 
 /** Daily work first, reference data folded under "Référentiels", then the other modules. */
 const NAV: NavSection[] = [
@@ -81,13 +111,16 @@ const NAV: NavSection[] = [
     title: "Coworking",
     items: [
       { to: "/coworking", label: "Plan en direct", icon: ICONS.floorPlan, permission: "coworking:read", end: true },
-      { to: "/coworking/demandes", label: "Demandes", icon: ICONS.inbox, permission: "coworking:write" },
+      { to: "/coworking/demandes", label: "Demandes", icon: ICONS.inbox, permission: "coworking:write", badge: "cwRequests" },
       { to: "/coworking/planning", label: "Planning coworking", icon: ICONS.planning, permission: "coworking:read" },
-      { to: "/coworking/membres", label: "Membres", icon: ICONS.members, permission: "coworking:read" },
-      { to: "/coworking/abonnements", label: "Abonnements", icon: ICONS.subscriptions, permission: "coworking:read" },
-      { to: "/coworking/courrier", label: "Courrier", icon: ICONS.mail, permission: "coworking:read" },
+      {
+        to: "/coworking/membres",
+        label: "Clients",
+        icon: ICONS.members,
+        permission: "coworking:read",
+        also: ["/coworking/abonnements", "/coworking/courrier"],
+      },
       { to: "/coworking/statistiques", label: "Statistiques", icon: ICONS.stats, permission: "coworking:reports" },
-      { to: "/coworking/parametres", label: "Paramètres coworking", icon: ICONS.settings, permission: "coworking:manage" },
     ],
   },
   {
@@ -95,10 +128,8 @@ const NAV: NavSection[] = [
     collapsible: true,
     items: [
       { to: "/site", label: "Pages", icon: ICONS.pages, permission: "website:edit", end: true },
-      { to: "/site/apparence", label: "Apparence", icon: ICONS.palette, permission: "website:edit" },
       { to: "/site/medias", label: "Médiathèque", icon: ICONS.media, permission: "website:edit" },
       { to: "/site/demandes", label: "Demandes du site", icon: ICONS.leads, permission: "website:leads" },
-      { to: "/site/parametres", label: "Paramètres du site", icon: ICONS.settings, permission: "website:edit" },
     ],
   },
   {
@@ -109,7 +140,13 @@ const NAV: NavSection[] = [
       { to: "/planning", label: "Planning", icon: ICONS.planning, permission: "catalogue:read" },
       { to: "/caisse", label: "Caisse", icon: ICONS.cash, permission: "cash:read" },
       { to: "/rapports", label: "Rapports", icon: ICONS.reports, permission: ["reports:operational", "reports:financial"] },
-      { to: "/administration", label: "Administration", icon: ICONS.admin, permission: ["audit:read", "users:manage"] },
+      {
+        to: "/parametres",
+        label: "Paramètres",
+        icon: ICONS.settings,
+        permission: SETTINGS_PERMISSIONS,
+        also: SETTINGS_LINKS.map((l) => l.to),
+      },
     ],
   },
 ];
@@ -130,6 +167,29 @@ const Icon = ({ d }: { d: string }) => (
   </svg>
 );
 
+const LARGE_TEXT_KEY = "gcf.largeText";
+
+/** "Grand texte" preference, kept in this browser only; storage may be unavailable (private window), then it lasts the visit. */
+function useLargeText(): [boolean, (on: boolean) => void] {
+  const [on, setOn] = useState(() => {
+    try {
+      return window.localStorage.getItem(LARGE_TEXT_KEY) === "1";
+    } catch {
+      return false;
+    }
+  });
+  const set = (value: boolean) => {
+    setOn(value);
+    try {
+      if (value) window.localStorage.setItem(LARGE_TEXT_KEY, "1");
+      else window.localStorage.removeItem(LARGE_TEXT_KEY);
+    } catch {
+      // Storage refused: the choice still applies until the page is reloaded.
+    }
+  };
+  return [on, set];
+}
+
 const initials = (name: string) =>
   name
     .split(/\s+/)
@@ -146,13 +206,37 @@ const personInitials = (fullName: string) =>
     .map((w) => w[0]!.toUpperCase())
     .join("");
 
-function NavEntry({ item }: { item: NavItem }) {
+const isUnder = (pathname: string, to: string) => pathname === to || pathname.startsWith(`${to}/`);
+
+/** Whether the page open at `pathname` belongs to this menu entry. */
+function entryActive(item: NavItem, pathname: string): boolean {
+  if (item.to === "/" || item.end === true) return pathname === item.to;
+  return [item.to, ...(item.also ?? [])].some((to) => isUnder(pathname, to));
+}
+
+function NavEntry({ item, active, count }: { item: NavItem; active: boolean; count: number }) {
   return (
-    <NavLink to={item.to} end={item.to === "/" || item.end === true} className={({ isActive }) => `navi${isActive ? " on" : ""}`} title={item.label}>
+    <Link to={item.to} className={`navi${active ? " on" : ""}`} aria-current={active ? "page" : undefined} title={item.label}>
       <Icon d={item.icon} />
       <span>{item.label}</span>
-    </NavLink>
+      {count > 0 ? (
+        <span className="nav-count" aria-label={`${count} en attente`}>
+          {count}
+        </span>
+      ) : null}
+    </Link>
   );
+}
+
+/** Pending coworking requests, shared with the requests page through its query key. */
+function useRequestCount(enabled: boolean): number {
+  const { data } = useQuery({
+    queryKey: ["cw-requests"],
+    queryFn: () => api.get<{ items: unknown[] }>("/coworking/requests"),
+    enabled,
+    refetchInterval: 60_000,
+  });
+  return data?.items.length ?? 0;
 }
 
 /* Page breadcrumb */
@@ -262,6 +346,12 @@ export function Shell() {
   const [openSections, setOpenSections] = useState<string[]>([]);
   const [menuOpen, setMenuOpen] = useState(false);
   const [fullScreen, setFullScreen] = useState(false);
+  const [walkIn, setWalkIn] = useState(false);
+  const [largeText, setLargeText] = useLargeText();
+  const requestCount = useRequestCount(!!session && can("coworking:write"));
+  useEffect(() => {
+    document.documentElement.classList.toggle("large-text", largeText && !fullScreen);
+  }, [largeText, fullScreen]);
   const allowed = (n: NavItem) => (Array.isArray(n.permission) ? n.permission.some(can) : can(n.permission));
   const location = useLocation();
   const client = useQueryClient();
@@ -280,6 +370,16 @@ export function Shell() {
       navigate("/connexion");
     },
   });
+
+  const createActions: MenuAction[] = [
+    ...(can("enrolments:write")
+      ? [{ label: "Inscrire un élève", hint: "Inscription à une formation ou un groupe", onSelect: () => navigate("/inscriptions/nouvelle") }]
+      : []),
+    ...(can("rooms:write") ? [{ label: "Nouvelle location", hint: "Louer une salle à un client", onSelect: () => navigate("/locations/nouvelle") }] : []),
+    ...(can("coworking:write")
+      ? [{ label: "Accueil coworking", hint: "Installer un client qui arrive sans réservation", onSelect: () => setWalkIn(true) }]
+      : []),
+  ];
 
   if (loading)
     return (
@@ -327,7 +427,7 @@ export function Shell() {
                   {NAV.map((section) => {
                     const items = section.items.filter(allowed);
                     if (!items.length) return null;
-                    const active = items.some((c) => (c.to === "/" ? location.pathname === "/" : location.pathname.startsWith(c.to)));
+                    const active = items.some((c) => entryActive(c, location.pathname));
                     const open = !section.collapsible || collapsed || active || openSections.includes(section.title);
                     const id = `nav-${section.title}`;
                     return (
@@ -349,7 +449,12 @@ export function Shell() {
                         {open ? (
                           <div id={id} className="nav-items">
                             {items.map((item) => (
-                              <NavEntry key={item.to} item={item} />
+                              <NavEntry
+                                key={item.to}
+                                item={item}
+                                active={entryActive(item, location.pathname)}
+                                count={item.badge === "cwRequests" ? requestCount : 0}
+                              />
                             ))}
                           </div>
                         ) : null}
@@ -384,28 +489,25 @@ export function Shell() {
                     {crumbs.map((c, i) => (i === crumbs.length - 1 ? <strong key={i}>{c}</strong> : <span key={i}>{c} ›</span>))}
                   </nav>
                   <div className="row center" style={{ gap: 8 }}>
-                    {can("coworking:write") ? <WalkInButton /> : null}
                     {can("payments:write") ? (
                       <button type="button" className="btn btn-p" onClick={() => setCollect({})}>
                         + Encaisser
                       </button>
                     ) : null}
-                    {can("enrolments:write") ? (
-                      <Link to="/inscriptions/nouvelle" className="btn">
-                        + Inscrire un élève
-                      </Link>
-                    ) : null}
-                    {can("rooms:write") ? (
-                      <Link to="/locations/nouvelle" className="btn">
-                        + Nouvelle location
-                      </Link>
-                    ) : null}
-                    <button type="button" className="btn btn-g" onClick={() => setChangingPassword(true)}>
-                      Mot de passe
-                    </button>
-                    <button type="button" className="btn btn-g" onClick={() => logout.mutate()}>
-                      Déconnexion
-                    </button>
+                    {createActions.length ? <MenuButton label="+ Nouveau" items={createActions} /> : null}
+                    <MenuButton
+                      label={session.user.fullName}
+                      className="btn btn-g account-btn"
+                      items={[
+                        { label: "Changer mon mot de passe", onSelect: () => setChangingPassword(true) },
+                        {
+                          label: largeText ? "Texte normal" : "Grand texte",
+                          hint: largeText ? "Revenir à la taille habituelle" : "Texte et boutons plus grands",
+                          onSelect: () => setLargeText(!largeText),
+                        },
+                        { label: "Se déconnecter", onSelect: () => logout.mutate() },
+                      ]}
+                    />
                   </div>
                 </header>
               )}
@@ -415,6 +517,7 @@ export function Shell() {
             </div>
           </div>
           {collect ? <CollectDrawer payer={collect} onClose={() => setCollect(null)} /> : null}
+          {can("coworking:write") ? <WalkInWizard open={walkIn} onClose={() => setWalkIn(false)} /> : null}
           {changingPassword ? <PasswordModal onClose={() => setChangingPassword(false)} /> : null}
         </CollectContext.Provider>
       </FullScreenContext.Provider>

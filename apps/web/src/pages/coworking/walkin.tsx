@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { api } from "../../api/client";
 import { useSession } from "../../auth/session";
 import { useToast } from "../../components/toasts";
@@ -166,9 +166,16 @@ function SeatStep({ onPick }: { onPick: (seat: Seat) => void }) {
  * match), pick a free seat now, confirm the quote (a slot already started may be overridden), then take the payment
  * in the collect drawer, after which the arrival is recorded automatically.
  */
-export function WalkInButton() {
+/**
+ * Desk wizard for a client walking in. The caller owns the trigger and keeps the wizard mounted, so the collect drawer
+ * and the arrival opened at the last step outlive the dialog.
+ */
+export function WalkInWizard({ open, onClose }: { open: boolean; onClose: () => void }) {
   const { can } = useSession();
   const [step, setStep] = useState<Step | null>(null);
+  useEffect(() => {
+    if (open) setStep("client");
+  }, [open]);
   const [member, setMember] = useState<MemberRow | null>(null);
   const [seat, setSeat] = useState<Seat | null>(null);
   const [booking, setBooking] = useState<(Booking & { quote: Quote }) | null>(null);
@@ -188,6 +195,7 @@ export function WalkInButton() {
     setMember(null);
     setSeat(null);
     setBooking(null);
+    onClose();
   };
   const steps: { key: Step; label: string }[] = [
     { key: "client", label: "1. Client" },
@@ -204,9 +212,6 @@ export function WalkInButton() {
 
   return (
     <>
-      <button type="button" className="btn" onClick={() => setStep("client")}>
-        + Accueil coworking
-      </button>
       {step ? (
         <Modal
           title="Accueil d'un client coworking"
