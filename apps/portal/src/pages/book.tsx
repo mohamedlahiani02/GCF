@@ -170,6 +170,8 @@ function ResourcePicker({
                     title: t.book.resourceTitle(r.code, t.planState[r.state]),
                     state: r.state,
                     disabled: r.typeId !== typeId || r.state !== "free",
+                    category: r.category,
+                    capacity: r.capacity,
                   };
                 }}
               />

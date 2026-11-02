@@ -208,6 +208,9 @@ export const CW_KEYS = {
   attributes: ["cw-config", "attributes"] as const,
   types: ["cw-config", "types"] as const,
   resources: ["cw-config", "resources"] as const,
+  /** Every resource of the centre, archived ones included: new codes must not reuse any of them. */
+  allResources: ["cw-config", "resources", "all"] as const,
+  floorResources: (floorId: string) => ["cw-config", "resources", "floor", floorId] as const,
   formats: ["cw-config", "formats"] as const,
   closures: ["cw-config", "closures"] as const,
   plans: ["cw-config", "plans"] as const,
