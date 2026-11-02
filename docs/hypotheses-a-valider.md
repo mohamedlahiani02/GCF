@@ -109,7 +109,7 @@ Administration, sans intervention technique.
 - **Contrôle d'accès physique** : hors périmètre pour cette version. Chaque arrivée (au comptoir ou par QR code) est
   historisée dans `cw_access_events`, que pourra alimenter un futur lecteur de badges.
 
-### Valeurs par défaut du coworking (paramétrables dans Paramètres coworking > Règles)
+### Valeurs par défaut du coworking (paramétrables dans Paramètres > Coworking > Règles et fermetures ; les limites, expirations, absences et heures creuses sont sous « Options avancées »)
 
 | Réglage                                | Défaut                                                                              |
 | -------------------------------------- | ----------------------------------------------------------------------------------- |

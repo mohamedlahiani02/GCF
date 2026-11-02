@@ -5,6 +5,7 @@ import { api } from "../../api/client";
 import { useSession } from "../../auth/session";
 import { usePage } from "../../components/shell";
 import { useToast } from "../../components/toasts";
+import { ClientsTabs } from "./clientsTabs";
 import { Badge, Card, Empty, ErrorBanner, Loading, PageHeader, Pagination } from "../../components/ui";
 import { frDate } from "../../lib/format";
 import { MEMBER_KIND, MEMBER_STATUS, memberName, type MemberRow, type Page } from "./api";
@@ -14,7 +15,7 @@ const PAGE_SIZE = 25;
 
 /** Coworking clients: members with a portal account and walk-in guests, with search and filters. */
 export function MembersPage() {
-  usePage(["Coworking", "Membres"]);
+  usePage(["Coworking", "Clients", "Membres"]);
   const { can } = useSession();
   const navigate = useNavigate();
   const toast = useToast();
@@ -38,7 +39,7 @@ export function MembersPage() {
   return (
     <>
       <PageHeader
-        title="Membres et clients"
+        title="Clients"
         actions={
           can("coworking:write") ? (
             <button type="button" className="btn btn-p" onClick={() => setCreating(true)}>
@@ -47,6 +48,7 @@ export function MembersPage() {
           ) : null
         }
       />
+      <ClientsTabs />
       <Card
         title={
           <div className="row center" style={{ gap: 8, flexWrap: "wrap" }}>

@@ -192,7 +192,7 @@ function ResourceForm({ resource, floor, renaming, onRenamed }: { resource: Floo
             ))}
           </div>
         ) : (
-          <span className="cap">Aucun équipement défini (onglet « Attributs »).</span>
+          <span className="cap">Aucun équipement défini (onglet « Équipements »).</span>
         )}
       </fieldset>
       <button type="submit" className="btn btn-p" disabled={!changed || !code.trim() || capacityValue === null || save.isPending}>

@@ -17,6 +17,7 @@ import { coworkingRoutes } from "./pages/coworking/routes";
 import { coworkingSettingsRoutes } from "./pages/coworking-settings/routes";
 import { ReceiptPage, ReceiptsPage } from "./pages/receipts";
 import { ReportsPage } from "./pages/reports";
+import { SettingsPage } from "./pages/settings";
 import { RentalPage, RentalWizardPage, RoomsPage } from "./pages/rooms";
 import { siteRoutes } from "./pages/site/routes";
 import { StudentPage } from "./pages/student";
@@ -84,6 +85,7 @@ export const router = createBrowserRouter([
       { path: "/caisse", element: guard("cash:read", <CashPage />) },
       { path: "/rapports", element: <ReportsPage /> },
       { path: "/administration", element: guard("centre:read", <AdminPage />) },
+      { path: "/parametres", element: <SettingsPage /> },
       ...coworkingRoutes,
       ...coworkingSettingsRoutes,
       ...siteRoutes,

@@ -369,7 +369,11 @@ a:focus-visible,
   cursor: pointer;
   white-space: nowrap;
 }
-.tab[aria-selected="true"] {
+a.tab {
+  text-decoration: none;
+}
+.tab[aria-selected="true"],
+.tab[aria-current="page"] {
   color: var(--accent);
   border-block-end-color: var(--accent);
   font-weight: 600;

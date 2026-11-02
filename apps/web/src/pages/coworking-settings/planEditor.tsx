@@ -213,7 +213,7 @@ export function FloorEditorPage() {
   useFullScreenPage();
   const { id = "" } = useParams();
   const floor = useQuery({ queryKey: CW_KEYS.floor(id), queryFn: () => api.get<FloorDetail>(`/coworking/floors/${id}`) });
-  usePage(["Coworking", "Paramètres coworking", floor.data ? `Plan : ${floor.data.name}` : "Plan"]);
+  usePage(["Paramètres", "Coworking", floor.data ? `Plan : ${floor.data.name}` : "Plan"]);
   if (floor.error)
     return (
       <BareEditor title="Plan">

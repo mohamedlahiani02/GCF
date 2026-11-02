@@ -5,6 +5,7 @@ import { api } from "../../api/client";
 import { useSession } from "../../auth/session";
 import { usePage } from "../../components/shell";
 import { useToast } from "../../components/toasts";
+import { ClientsTabs } from "./clientsTabs";
 import { Badge, Card, Empty, ErrorBanner, Field, Loading, Modal, PageHeader, Pagination, ReasonDialog, Segmented } from "../../components/ui";
 import { errorMessage } from "../../lib/errors";
 import { frDate, frDateTime } from "../../lib/format";
@@ -232,7 +233,7 @@ interface Domiciliation {
 
 /** Domiciliation desk: the members domiciled today, then the mail received for them, waiting items first. */
 export function MailPage() {
-  usePage(["Coworking", "Courrier"]);
+  usePage(["Coworking", "Clients", "Courrier"]);
   const { can } = useSession();
   const [status, setStatus] = useState<"open" | "all">("open");
   const [page, setPage] = useState(1);
@@ -245,7 +246,8 @@ export function MailPage() {
   });
   return (
     <>
-      <PageHeader title="Courrier et domiciliation" />
+      <PageHeader title="Clients" subtitle="Courrier reçu pour les clients domiciliés." />
+      <ClientsTabs />
       <Card
         title={`Courrier ${status === "open" ? "à remettre" : "reçu"}`}
         actions={

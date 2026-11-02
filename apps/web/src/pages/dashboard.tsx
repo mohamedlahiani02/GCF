@@ -106,12 +106,25 @@ export function DashboardPage() {
   const { can } = useSession();
   const [granularity, setGranularity] = useState<Granularity>("day");
   const data = useQuery({ queryKey: ["dashboard", granularity], queryFn: () => api.get<Dashboard>("/dashboard", { granularity }) });
+  const requests = useQuery({
+    queryKey: ["cw-requests"],
+    queryFn: () => api.get<{ items: unknown[] }>("/coworking/requests"),
+    enabled: can("coworking:write"),
+  });
   if (data.isPending) return <Loading />;
   if (data.error) return <ErrorBanner error={data.error} retry={() => data.refetch()} />;
   const d = data.data;
   const f = d.financial;
   const o = d.operational;
   const todo: { title: string; sub: string; to: string; action: string }[] = [];
+  const pendingRequests = requests.data?.items.length ?? 0;
+  if (pendingRequests)
+    todo.push({
+      title: `${pendingRequests} demande(s) de réservation coworking à traiter`,
+      sub: "Envoyées depuis l'espace client, en attente de votre réponse",
+      to: "/coworking/demandes",
+      action: "Répondre",
+    });
   if (o) {
     if (o.todo.sessionsWithoutSheet.length)
       todo.push({
@@ -147,26 +160,28 @@ export function DashboardPage() {
   }
   return (
     <>
-      <PageHeader
-        title="Tableau de bord"
-        actions={
-          f ? (
-            <>
-              <span className="cap">Période</span>
-              <Segmented
-                label="Période du graphique"
-                value={granularity}
-                onChange={setGranularity}
-                options={[
-                  { value: "day", label: "Jour" },
-                  { value: "week", label: "Semaine" },
-                  { value: "month", label: "Mois" },
-                ]}
-              />
-            </>
-          ) : null
-        }
-      />
+      <PageHeader title="Tableau de bord" />
+      {o || pendingRequests ? (
+        <Card title="À faire aujourd'hui" actions={todo.length ? <Badge tone="red">{todo.length}</Badge> : <Badge tone="green">Rien</Badge>}>
+          {todo.length === 0 ? (
+            <Empty title="Tout est à jour" />
+          ) : (
+            <ul className="todo-list">
+              {todo.map((t) => (
+                <li key={t.title}>
+                  <div>
+                    <strong>{t.title}</strong>
+                    <div className="cap">{t.sub}</div>
+                  </div>
+                  <Link className="btn btn-p" to={t.to}>
+                    {t.action}
+                  </Link>
+                </li>
+              ))}
+            </ul>
+          )}
+        </Card>
+      ) : null}
       <section className="grid4" aria-label="Indicateurs">
         {f ? (
           <>
@@ -178,52 +193,24 @@ export function DashboardPage() {
               sub={`TND, ${f.unpaidPayers} payeur(s) en retard`}
               tone={f.unpaidTotal > 0 ? "red" : undefined}
             />
-            <Kpi
-              label="Paie des intervenants à régler"
-              value={<span className="num">{tnd(f.payroll.toPay)}</span>}
-              sub={`TND validés ; ${tnd(f.payroll.toValidate)} TND calculés à valider`}
-              tone={f.payroll.toPay > 0 ? "amber" : undefined}
-            />
+            {f.payroll.toPay > 0 || f.payroll.toValidate > 0 ? (
+              <Kpi
+                label="Paie des intervenants à régler"
+                value={<span className="num">{tnd(f.payroll.toPay)}</span>}
+                sub={`TND validés ; ${tnd(f.payroll.toValidate)} TND calculés à valider`}
+                tone={f.payroll.toPay > 0 ? "amber" : undefined}
+              />
+            ) : null}
           </>
         ) : null}
-        {o ? (
-          <>
-            <Kpi label="Taux de présence" value={percent(o.attendanceRateBasisPoints)} sub="Ce mois, feuilles validées" />
-            <Kpi label="Occupation des salles" value={percent(o.roomOccupancyBasisPoints)} sub="Cette semaine, heures d'ouverture" />
-          </>
+        {o && o.attendanceRateBasisPoints !== null ? (
+          <Kpi label="Taux de présence" value={percent(o.attendanceRateBasisPoints)} sub="Ce mois, feuilles validées" />
         ) : null}
-        {f ? <Kpi label="Échéances reportées" value={f.postponedInstallments} sub="encore ouvertes" /> : null}
+        {o && o.roomOccupancyBasisPoints !== null ? (
+          <Kpi label="Occupation des salles" value={percent(o.roomOccupancyBasisPoints)} sub="Cette semaine, heures d'ouverture" />
+        ) : null}
+        {f && f.postponedInstallments > 0 ? <Kpi label="Échéances reportées" value={f.postponedInstallments} sub="encore ouvertes" /> : null}
       </section>
-      <div className="grid2" style={{ alignItems: "start" }}>
-        {f ? (
-          <Card title="Encaissements" actions={<span className="cap">TND</span>}>
-            <div className="card-b">
-              <Chart series={f.series} granularity={granularity} today={d.today} />
-            </div>
-          </Card>
-        ) : null}
-        {o ? (
-          <Card title="À faire aujourd'hui" actions={todo.length ? <Badge tone="red">{todo.length}</Badge> : <Badge tone="green">Rien</Badge>}>
-            {todo.length === 0 ? (
-              <Empty title="Tout est à jour" />
-            ) : (
-              <ul style={{ listStyle: "none", margin: 0, padding: 0 }}>
-                {todo.map((t) => (
-                  <li key={t.title} className="row between center" style={{ padding: "10px 16px", borderTop: "1px solid var(--line)", gap: 12 }}>
-                    <div>
-                      <div>{t.title}</div>
-                      <div className="cap">{t.sub}</div>
-                    </div>
-                    <Link className="btn" to={t.to}>
-                      {t.action}
-                    </Link>
-                  </li>
-                ))}
-              </ul>
-            )}
-          </Card>
-        ) : null}
-      </div>
       {o ? (
         <Card title="Séances et locations du jour" actions={can("catalogue:read") ? <Link to="/planning">Ouvrir le planning</Link> : null}>
           {o.agenda.length === 0 ? (
@@ -256,6 +243,27 @@ export function DashboardPage() {
               </table>
             </div>
           )}
+        </Card>
+      ) : null}
+      {f ? (
+        <Card
+          title="Encaissements (TND)"
+          actions={
+            <Segmented
+              label="Période du graphique"
+              value={granularity}
+              onChange={setGranularity}
+              options={[
+                { value: "day", label: "Jour" },
+                { value: "week", label: "Semaine" },
+                { value: "month", label: "Mois" },
+              ]}
+            />
+          }
+        >
+          <div className="card-b">
+            <Chart series={f.series} granularity={granularity} today={d.today} />
+          </div>
         </Card>
       ) : null}
     </>
