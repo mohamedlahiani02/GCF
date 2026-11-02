@@ -1,9 +1,12 @@
 import {
   FEATURE_ICONS,
+  GALLERY_LAYOUTS,
   isHttpsUrl,
   LEAD_KINDS,
   SECTION_LIMITS,
   type FeatureIcon,
+  type GalleryLayout,
+  type HeroImageLayout,
   type LeadKind,
   type LinkTarget,
   type SectionButton,
@@ -12,13 +15,13 @@ import {
   type SiteSection,
 } from "@gcf/shared";
 import { useQuery } from "@tanstack/react-query";
-import { type ReactNode } from "react";
+import { useState, type ReactNode } from "react";
 import { api } from "../../api/client";
 import { useSession } from "../../auth/session";
 import { Field } from "../../components/ui";
 import { flattenPages, LEAD_KIND, pageTitle, type PageNode } from "./api";
 import { MoveButtons, moveItem } from "./common";
-import { ImageField } from "./media";
+import { ImageField, MediaPickerModal } from "./media";
 import { emptyRichText, RichTextEditor } from "./richtext";
 
 /** Anchor proposed for a new section of each type; numbered when the page already has one. */
@@ -48,7 +51,7 @@ export const SECTION_HELP: Record<SectionType, string> = {
   pricing:
     "Rempli automatiquement : les formules d'abonnement, les carnets et les tarifs de réservation publics du coworking, pour tous les types d'espaces ou un seul.",
   availability: "Rempli automatiquement : le nombre de places libres maintenant et pour le reste de la journée, par type d'espace public du coworking.",
-  gallery: "Grille de photos avec une légende facultative.",
+  gallery: "Album de photos en mosaïque, grille ou carrousel, avec une légende facultative. Sur le site, un clic ouvre la photo en grand.",
   testimonials: "Citations de clients avec leur nom et leur fonction.",
   faq: "Questions et réponses dépliables.",
   contact:
@@ -73,6 +76,27 @@ const ICON_LABEL: Record<FeatureIcon, string> = {
   star: "Étoile",
   check: "Coche",
 };
+
+const GALLERY_LAYOUT_LABEL: Record<GalleryLayout, string> = {
+  mosaic: "Mosaïque : une grande photo puis des petites",
+  grid: "Grille : photos de même taille",
+  carousel: "Carrousel : une bande de grandes photos qui défile",
+};
+
+/** Picks several photos of the library at once, for a gallery. */
+function AddPhotosButton({ room, onAdd }: { room: number; onAdd: (ids: string[]) => void }) {
+  const [picking, setPicking] = useState(false);
+  return (
+    <>
+      <button type="button" className="btn" disabled={room <= 0} onClick={() => setPicking(true)}>
+        + Plusieurs photos
+      </button>
+      {picking ? (
+        <MediaPickerModal title="Ajouter des photos" max={room} onSelectMany={(list) => onAdd(list.map((m) => m.id))} onClose={() => setPicking(false)} />
+      ) : null}
+    </>
+  );
+}
 
 /** A new section of the type, with an anchor not used by the page yet. */
 export function newSection(type: SectionType, usedIds: readonly string[]): SiteSection {
@@ -150,14 +174,18 @@ function ItemsEditor<T>({
   onChange,
   noun,
   min,
+  max = SECTION_LIMITS.items,
   create,
   render,
+  extraActions,
 }: {
   items: T[];
   onChange: (items: T[]) => void;
   noun: string;
   min: number;
+  max?: number;
   create: () => T;
+  extraActions?: ReactNode;
   render: (item: T, update: (item: T) => void, index: number) => ReactNode;
 }) {
   return (
@@ -193,11 +221,12 @@ function ItemsEditor<T>({
         </fieldset>
       ))}
       <div className="row center" style={{ gap: 8 }}>
-        <button type="button" className="btn" disabled={items.length >= SECTION_LIMITS.items} onClick={() => onChange([...items, create()])}>
+        <button type="button" className="btn" disabled={items.length >= max} onClick={() => onChange([...items, create()])}>
           + {noun}
         </button>
+        {extraActions}
         <span className="cap">
-          {items.length} / {SECTION_LIMITS.items}
+          {items.length} / {max}
         </span>
       </div>
     </div>
@@ -362,6 +391,18 @@ export function SectionForm({
             />
             Afficher un bouton
           </label>
+          {section.imageId ? (
+            <Field label="Présentation de l'image">
+              <select
+                className="input"
+                value={section.imageLayout ?? "cover"}
+                onChange={(e) => onChange({ ...section, imageLayout: e.target.value as HeroImageLayout })}
+              >
+                <option value="cover">En fond, sur toute la largeur, le texte par-dessus</option>
+                <option value="split">À côté du texte</option>
+              </select>
+            </Field>
+          ) : null}
           {section.button ? <ButtonEditor value={section.button} links={links} onChange={(button) => onChange({ ...section, button })} /> : null}
         </div>
       );
@@ -429,11 +470,28 @@ export function SectionForm({
       return (
         <div className="stack">
           {titleField(section)}
+          <TextInput label="Introduction" multiline max={500} value={section.intro} onChange={(v) => onChange(withText(section, "intro", v))} />
+          <Field label="Mise en page" hint="Un clic sur une photo l'ouvre en grand sur le site, avec les flèches pour passer à la suivante.">
+            <select className="input" value={section.layout ?? "grid"} onChange={(e) => onChange({ ...section, layout: e.target.value as GalleryLayout })}>
+              {GALLERY_LAYOUTS.map((layout) => (
+                <option key={layout} value={layout}>
+                  {GALLERY_LAYOUT_LABEL[layout]}
+                </option>
+              ))}
+            </select>
+          </Field>
           <ItemsEditor<(typeof section.items)[number]>
             items={section.items}
             noun="Image"
             min={0}
+            max={SECTION_LIMITS.galleryItems}
             create={() => ({ imageId: "" })}
+            extraActions={
+              <AddPhotosButton
+                room={SECTION_LIMITS.galleryItems - section.items.length}
+                onAdd={(ids) => onChange({ ...section, items: [...section.items, ...ids.map((imageId) => ({ imageId }))] })}
+              />
+            }
             onChange={(items) => onChange({ ...section, items })}
             render={(item, update) => (
               <div className="grid2">

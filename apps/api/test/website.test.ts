@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { mkdtemp, mkdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
@@ -269,6 +270,10 @@ describe("public website", () => {
     expect(res.body).toContain('"@type":"LocalBusiness"');
     expect(res.body).toContain('"@type":"FAQPage"');
     expect(res.body).toContain("<h1>Bienvenue au centre</h1>");
+    // A hero image sits behind the text by default; the script allowed by the policy is the one the page carries.
+    expect(res.body).toContain('<section id="accueil" class="hero hero-cover"><div class="hero-bg"><img');
+    const script = /<script>([^<]+)<\/script>/.exec(res.body)![1]!;
+    expect(res.headers["content-security-policy"]).toContain(`'sha256-${createHash("sha256").update(script).digest("base64")}'`);
     expect(res.body).toContain('alt="Open space lumineux"');
     expect(res.body).toContain('href="/tarifs"');
     expect(res.body).toContain('<a href="https://example.tn/charte"><strong>la charte</strong></a>');
@@ -421,6 +426,13 @@ describe("dynamic sections", () => {
       { id: "dispo", type: "availability", title: "Disponibilités" },
       { id: "contact", type: "contact", title: "Nous trouver", showMap: true },
       { id: "cta", type: "cta", title: "Prêt ?", button: { label: "Réserver un poste", target: { kind: "booking" } } },
+      {
+        id: "lieu",
+        type: "gallery",
+        title: "Le lieu",
+        layout: "mosaic",
+        items: [{ imageId: ids.media, caption: "Open space" }, { imageId: ids.media }],
+      },
     ];
     await saveDraft(ids.spaces, "fr", "Espaces", sections);
     await saveDraft(ids.spaces, "en", "Spaces", sections);
@@ -436,7 +448,19 @@ describe("dynamic sections", () => {
     expect(res.body).toContain("Résident");
     expect(res.body).toContain("250,000&nbsp;TND");
     expect(res.body).toContain("Carnet 10 demi-journées");
-    expect(res.body).toMatch(/<th scope="row">Open space Jasmin<\/th><td class="num">2<\/td><td class="num">2<\/td>/);
+    expect(res.body).toMatch(
+      /<h3>Open space Jasmin<\/h3><p class="avail-num">2<\/p><p class="avail-label">Libres maintenant<\/p><p class="muted">Libres jusqu&#39;à la fermeture : 2<\/p>/,
+    );
+    // A space booked by the slot links to the booking with its type chosen.
+    expect(res.body).toMatch(/href="\/espace\/reserver\?type=[0-9a-f-]{36}">Réserver<span class="visually-hidden"> : Open space Jasmin<\/span>/);
+    // The gallery opens each photo in a viewer reached by a link, with the next photo and a way back.
+    expect(res.body).toContain('<ul class="gallery gallery-mosaic"><li id="lieu_p1" class="m-2">');
+    expect(res.body).toContain('<a class="g-open" href="#lieu_v1" aria-label="Agrandir la photo : Open space">');
+    expect(res.body).toMatch(/<div class="lb" id="lieu_v1" data-photo="lieu_p1" role="dialog" aria-label="Open space"><a class="lb-close" href="#lieu_p1"/);
+    expect(res.body).toContain('<a class="lb-next" href="#lieu_v2" aria-label="Photo suivante">');
+    expect(res.body).not.toContain('href="#lieu_v3"');
+    expect(res.body).toContain("Photo 2 sur 2");
+    expect(res.body).toContain("2 photos");
     expect(res.body).toContain("Fête de la femme");
     expect(res.body).toContain('href="https://maps.example/x"');
     expect(res.body).toContain('<a class="btn btn-primary" href="/espace/">Réserver</a>');

@@ -47,6 +47,12 @@ export interface SiteLabels {
   freeNow: string;
   freeRestOfDay: string;
   closedNow: string;
+  enlargePhoto: (caption: string) => string;
+  closePhoto: string;
+  previousPhoto: string;
+  nextPhoto: string;
+  photoCount: (count: number) => string;
+  photoPosition: (index: number, total: number) => string;
   formName: string;
   formEmail: string;
   formPhone: string;
@@ -111,6 +117,12 @@ export const SITE_LABELS: Record<"fr" | "en", SiteLabels> = {
     freeNow: "Libres maintenant",
     freeRestOfDay: "Libres jusqu'à la fermeture",
     closedNow: "Fermé",
+    enlargePhoto: (caption) => `Agrandir la photo : ${caption}`,
+    closePhoto: "Fermer la photo",
+    previousPhoto: "Photo précédente",
+    nextPhoto: "Photo suivante",
+    photoCount: (count) => `${count} photo${count > 1 ? "s" : ""}`,
+    photoPosition: (index, total) => `Photo ${index} sur ${total}`,
     formName: "Nom",
     formEmail: "E-mail",
     formPhone: "Téléphone",
@@ -171,6 +183,12 @@ export const SITE_LABELS: Record<"fr" | "en", SiteLabels> = {
     freeNow: "Free now",
     freeRestOfDay: "Free until closing",
     closedNow: "Closed",
+    enlargePhoto: (caption) => `Enlarge photo: ${caption}`,
+    closePhoto: "Close photo",
+    previousPhoto: "Previous photo",
+    nextPhoto: "Next photo",
+    photoCount: (count) => `${count} photo${count > 1 ? "s" : ""}`,
+    photoPosition: (index, total) => `Photo ${index} of ${total}`,
     formName: "Name",
     formEmail: "E-mail",
     formPhone: "Phone",

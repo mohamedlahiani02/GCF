@@ -81,8 +81,10 @@ par module (activer les modules avant) :
   1 h, 2 h, 3 h, demi-journée, journée et durée libre, tarifs visiteur et membre, abonnements, pack, code promo,
   entreprises, membres et un invité, domiciliation et courrier, réservations dans tous les états des deux dernières
   semaines et des jours suivants, encaissements du jour ;
-- site web : identité et thème, pages en français et en anglais, deux articles dont un programmé, redirections et,
-  si `PUBLIC_ORIGIN` est renseigné, deux demandes de visiteurs.
+- site web : identité, logo et thème, pages en français et en anglais (dont une page Galerie de trois albums), photos
+  des types d'espaces, deux articles dont un programmé, redirections et, si `PUBLIC_ORIGIN` est renseigné, deux
+  demandes de visiteurs. Les images viennent de `apps/api/demo-media/` : ce sont des illustrations dessinées pour la
+  démonstration, à remplacer par les photos du centre.
 
 Les données passent par l'API, avec ses contrôles et son journal d'audit. Seules les réservations passées du coworking
 sont créées par les fonctions métier avec une heure de référence antérieure, l'API refusant un créneau terminé.

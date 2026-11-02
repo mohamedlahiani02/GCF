@@ -8,7 +8,15 @@ import { z } from "zod";
 export const SITE_LANGUAGES = ["fr", "en"] as const;
 export type SiteLanguage = (typeof SITE_LANGUAGES)[number];
 
-export const SECTION_LIMITS = { sections: 40, items: 24, richBlocks: 100, inlines: 50, listItems: 50 } as const;
+export const SECTION_LIMITS = { sections: 40, items: 24, galleryItems: 60, richBlocks: 100, inlines: 50, listItems: 50 } as const;
+
+/** How a gallery lays its photos out; a gallery saved before layouts existed shows as `grid`. */
+export const GALLERY_LAYOUTS = ["mosaic", "grid", "carousel"] as const;
+export type GalleryLayout = (typeof GALLERY_LAYOUTS)[number];
+
+/** How the hero shows its image: behind the text across the full width (`cover`, the default) or beside it (`split`). */
+export const HERO_IMAGE_LAYOUTS = ["cover", "split"] as const;
+export type HeroImageLayout = (typeof HERO_IMAGE_LAYOUTS)[number];
 
 export const SECTION_TYPES = [
   "hero",
@@ -134,6 +142,7 @@ export const heroSectionSchema = z
     title: requiredText(200),
     subtitle: optionalText(500),
     imageId: mediaId.optional(),
+    imageLayout: z.enum(HERO_IMAGE_LAYOUTS).optional(),
     button: buttonSchema.optional(),
   })
   .strict();
@@ -163,10 +172,12 @@ export const gallerySectionSchema = z
   .object({
     ...titled,
     type: z.literal("gallery"),
+    intro: optionalText(500),
+    layout: z.enum(GALLERY_LAYOUTS).optional(),
     items: z
       .array(z.object({ imageId: mediaId, caption: optionalText(200) }).strict())
       .min(1)
-      .max(SECTION_LIMITS.items),
+      .max(SECTION_LIMITS.galleryItems),
   })
   .strict();
 
