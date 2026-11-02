@@ -137,3 +137,7 @@ Administration, sans intervention technique.
     n'est pas annulé (message « échéance déjà payée »), comme pour la formation. Un abonnement payé ne s'annule pas
     non plus : il se résilie à une date, et les échéances dues après cette date sont annulées.
 21. **Surface publique** : une installation sert le site et le portail d'un seul centre, à l'adresse `PUBLIC_ORIGIN`.
+22. **Galeries du site** : une galerie compte au plus 60 photos et s'affiche en mosaïque, en grille ou en carrousel ;
+    un clic ouvre la photo en plein écran (flèches, Échap, balayage sur téléphone). Un album est une galerie : une
+    page « Galerie » en réunit plusieurs. Le bandeau d'accueil met son image en fond sur toute la largeur, sauf si
+    l'éditeur choisit « À côté du texte ».

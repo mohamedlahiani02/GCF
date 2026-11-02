@@ -1,11 +1,12 @@
 /**
- * Website part of the demonstration dataset: identity and theme in French and English, a few illustrations
- * generated here (no external files), a home page, an offers page, a contact page and two articles built from the
- * typed sections, published versions, one scheduled publication, a manual and an automatic redirect, and visitor
- * requests sent through the public form endpoint.
+ * Website part of the demonstration dataset: identity and theme in French and English, the logo and the interior
+ * illustrations of `demo-media/` (drawn for the demonstration, to be replaced by the centre's own photos), a home
+ * page, an offers page, a photo gallery page with three albums, a contact page and two articles built from the typed
+ * sections, photos on the coworking space types, published versions, one scheduled publication, a manual and an
+ * automatic redirect, and visitor requests sent through the public form endpoint.
  */
-import { deflateSync, crc32 } from "node:zlib";
-import { addDays, type SiteSection } from "@gcf/shared";
+import { readFile } from "node:fs/promises";
+import { addDays, type CwCategory, type SiteSection } from "@gcf/shared";
 import type { Kysely } from "kysely";
 import type { Database } from "../db/types.js";
 import type { Call } from "./seedDemo.js";
@@ -20,20 +21,44 @@ interface Context {
   coworking: boolean;
 }
 
-type Rgb = [number, number, number];
+const DEMO_MEDIA = new URL("../../demo-media/", import.meta.url);
+
+/** Illustration shown on the public cards of each coworking category. */
+const CATEGORY_PHOTO: Record<CwCategory, keyof typeof ILLUSTRATIONS> = {
+  hot_desk: "openSpace",
+  dedicated_desk: "openSpace",
+  private_office: "office",
+  meeting_room: "meeting",
+  phone_booth: "booth",
+  event_space: "events",
+};
+
+const ILLUSTRATIONS = {
+  openSpace: { file: "open-space.jpg", alt: "Open space lumineux avec trois postes de travail" },
+  meeting: { file: "meeting.jpg", alt: "Salle de réunion avec écran et grande table" },
+  booth: { file: "booth.jpg", alt: "Cabine téléphonique insonorisée" },
+  office: { file: "office.jpg", alt: "Bureau privé avec bibliothèque" },
+  lounge: { file: "lounge.jpg", alt: "Espace détente avec canapé" },
+  events: { file: "events.jpg", alt: "Espace événement avec rangées de chaises face à l'écran" },
+  terrace: { file: "terrace.jpg", alt: "Terrasse avec vue sur la ville" },
+  training: { file: "training.jpg", alt: "Salle de formation avec tableau et postes" },
+  reception: { file: "reception.jpg", alt: "Accueil du centre" },
+} as const;
 
 export async function seedWebsite({ call, publicCall, db, centreId, today, coworking }: Context): Promise<void> {
   const existing = await db.selectFrom("site_pages").select("id").where("centre_id", "=", centreId).executeTakeFirst();
   if (existing) throw new Error("this centre already has website pages: demonstration data only goes into an empty website");
 
-  const upload = async (alt: string, width: number, height: number, from: Rgb, to: Rgb) =>
-    (await call("POST", "/media", { image: `data:image/png;base64,${gradientPng(width, height, from, to).toString("base64")}`, alt, folder: "site" })).id;
-  const images = {
-    hero: await upload("Open space lumineux du centre", 1600, 900, [29, 78, 216], [15, 118, 110]),
-    meeting: await upload("Salle de réunion équipée", 1200, 800, [15, 118, 110], [224, 242, 254]),
-    terrace: await upload("Espace détente et cuisine", 1200, 800, [180, 83, 9], [254, 243, 199]),
-    logo: await upload("Logo du centre", 256, 256, [29, 78, 216], [29, 78, 216]),
+  const upload = async (file: string, alt: string, folder: string) => {
+    const bytes = await readFile(new URL(file, DEMO_MEDIA));
+    const mime = file.endsWith(".png") ? "image/png" : "image/jpeg";
+    return (await call<{ id: string }>("POST", "/media", { image: `data:${mime};base64,${bytes.toString("base64")}`, alt, folder })).id;
   };
+  const images = {} as Record<keyof typeof ILLUSTRATIONS, string>;
+  for (const [key, { file, alt }] of Object.entries(ILLUSTRATIONS) as [keyof typeof ILLUSTRATIONS, (typeof ILLUSTRATIONS)[keyof typeof ILLUSTRATIONS]][])
+    images[key] = await upload(file, alt, "site");
+  const logo = await upload("logo.png", "Centre Avenir", "identite");
+  const favicon = await upload("logo-mark.png", "Monogramme du Centre Avenir", "identite");
 
   await call("PUT", "/site/settings", {
     theme: "corporate",
@@ -42,8 +67,8 @@ export async function seedWebsite({ call, publicCall, db, centreId, today, cowor
     font: "inter",
     radius: "small",
     colorScheme: "light",
-    logoMediaId: images.logo,
-    faviconMediaId: images.logo,
+    logoMediaId: logo,
+    faviconMediaId: favicon,
     languages: ["fr", "en"],
     defaultLanguage: "fr",
     siteName: "Centre Avenir",
@@ -62,6 +87,7 @@ export async function seedWebsite({ call, publicCall, db, centreId, today, cowor
   const pages = {
     home: await page({ title: "Accueil", slug: "accueil", showInMenu: true }),
     offers: await page({ title: "Nos offres", slug: "nos-offres", showInMenu: true, showInFooter: true }),
+    gallery: await page({ title: "Galerie", slug: "galerie", showInMenu: true, showInFooter: true }),
     contact: await page({ title: "Contact", slug: "contact", showInMenu: true, showInFooter: true }),
     opening: await page({ kind: "article", title: "Ouverture de l'espace", slug: "ouverture", articleDate: addDays(today, -20) }),
     event: await page({ kind: "article", title: "Petit-déjeuner des membres", slug: "petit-dejeuner", articleDate: today }),
@@ -77,6 +103,8 @@ export async function seedWebsite({ call, publicCall, db, centreId, today, cowor
 
   const resourceTypes = coworking ? await call<{ id: string; category: string }[]>("GET", "/coworking/resource-types") : [];
   const deskType = resourceTypes.find((t) => t.category === "hot_desk");
+  for (const type of resourceTypes)
+    await call("PATCH", `/coworking/resource-types/${type.id}`, { photoMediaId: images[CATEGORY_PHOTO[type.category as CwCategory]] });
 
   await draft(pages.home, "fr", {
     title: "Accueil",
@@ -88,7 +116,7 @@ export async function seedWebsite({ call, publicCall, db, centreId, today, cowor
         type: "hero",
         title: "Travaillez au cœur de Tunis",
         subtitle: "Postes en open space, salles de réunion et bureaux privés, réservables en ligne.",
-        imageId: images.hero,
+        imageId: images.openSpace,
         button: { label: "Réserver un poste", target: { kind: "booking" } },
       },
       {
@@ -112,9 +140,15 @@ export async function seedWebsite({ call, publicCall, db, centreId, today, cowor
         id: "galerie",
         type: "gallery",
         title: "Le lieu",
+        intro: "Un aperçu du centre ; toutes les photos sont sur la page Galerie.",
+        layout: "mosaic",
         items: [
+          { imageId: images.openSpace, caption: "L'open space" },
           { imageId: images.meeting, caption: "Salle Kairouan, jusqu'à 10 personnes" },
-          { imageId: images.terrace, caption: "L'espace détente" },
+          { imageId: images.lounge, caption: "L'espace détente" },
+          { imageId: images.terrace, caption: "La terrasse" },
+          { imageId: images.booth, caption: "Les cabines téléphoniques" },
+          { imageId: images.office, caption: "Un bureau privé" },
         ],
       },
       {
@@ -146,7 +180,7 @@ export async function seedWebsite({ call, publicCall, db, centreId, today, cowor
         type: "hero",
         title: "Work in the heart of Tunis",
         subtitle: "Open-space desks, meeting rooms and private offices, bookable online.",
-        imageId: images.hero,
+        imageId: images.openSpace,
         button: { label: "Book a desk", target: { kind: "booking" } },
       },
       {
@@ -170,9 +204,15 @@ export async function seedWebsite({ call, publicCall, db, centreId, today, cowor
         id: "galerie",
         type: "gallery",
         title: "The place",
+        intro: "A glimpse of the centre; every photo is on the Gallery page.",
+        layout: "mosaic",
         items: [
+          { imageId: images.openSpace, caption: "The open space" },
           { imageId: images.meeting, caption: "Kairouan room, up to 10 people" },
-          { imageId: images.terrace, caption: "The lounge" },
+          { imageId: images.lounge, caption: "The lounge" },
+          { imageId: images.terrace, caption: "The terrace" },
+          { imageId: images.booth, caption: "The phone booths" },
+          { imageId: images.office, caption: "A private office" },
         ],
       },
       {
@@ -254,6 +294,58 @@ export async function seedWebsite({ call, publicCall, db, centreId, today, cowor
   await draft(pages.offers, "fr", { title: "Nos offres", sections: offers("fr") });
   await draft(pages.offers, "en", { title: "Our plans", menuLabel: "Plans", sections: offers("en") });
 
+  const albums = (language: "fr" | "en"): SiteSection[] => {
+    const fr = language === "fr";
+    return [
+      {
+        id: "espaces-de-travail",
+        type: "gallery",
+        title: fr ? "Les espaces de travail" : "Workspaces",
+        intro: fr ? "Open space, salles de réunion, cabines et bureaux privés." : "Open space, meeting rooms, booths and private offices.",
+        layout: "grid",
+        items: [
+          { imageId: images.openSpace, caption: fr ? "L'open space" : "The open space" },
+          { imageId: images.meeting, caption: fr ? "Salle Kairouan" : "Kairouan room" },
+          { imageId: images.booth, caption: fr ? "Cabine téléphonique" : "Phone booth" },
+          { imageId: images.office, caption: fr ? "Bureau privé" : "Private office" },
+          { imageId: images.reception, caption: fr ? "L'accueil" : "The front desk" },
+        ],
+      },
+      {
+        id: "detente",
+        type: "gallery",
+        title: fr ? "Se détendre" : "Taking a break",
+        layout: "carousel",
+        items: [
+          { imageId: images.lounge, caption: fr ? "Le salon" : "The lounge" },
+          { imageId: images.terrace, caption: fr ? "La terrasse" : "The terrace" },
+          { imageId: images.reception, caption: fr ? "Café à l'accueil" : "Coffee at the front desk" },
+        ],
+      },
+      {
+        id: "evenements",
+        type: "gallery",
+        title: fr ? "Événements et formations" : "Events and training",
+        layout: "mosaic",
+        items: [
+          { imageId: images.events, caption: fr ? "Conférence des membres" : "Members' talk" },
+          { imageId: images.training, caption: fr ? "Salle de formation" : "Training room" },
+          { imageId: images.meeting, caption: fr ? "Atelier en petit groupe" : "Small-group workshop" },
+        ],
+      },
+    ];
+  };
+  await draft(pages.gallery, "fr", {
+    title: "Galerie",
+    seoDescription: "Les photos du Centre Avenir : espaces de travail, détente, événements.",
+    sections: albums("fr"),
+  });
+  await draft(pages.gallery, "en", {
+    title: "Gallery",
+    seoDescription: "Photos of Centre Avenir: workspaces, lounge and events.",
+    sections: albums("en"),
+  });
+
   const contact = (language: "fr" | "en"): SiteSection[] => [
     { id: "coordonnees", type: "contact", title: language === "fr" ? "Nous trouver" : "Find us", showMap: true },
     {
@@ -277,9 +369,13 @@ export async function seedWebsite({ call, publicCall, db, centreId, today, cowor
   await draft(
     pages.opening,
     "fr",
-    article("Ouverture de l'espace", "Notre espace de coworking ouvre ses portes avec 8 postes, 2 salles de réunion et 2 bureaux privés.", images.hero),
+    article("Ouverture de l'espace", "Notre espace de coworking ouvre ses portes avec 8 postes, 2 salles de réunion et 2 bureaux privés.", images.openSpace),
   );
-  await draft(pages.opening, "en", article("Our space opens", "Our coworking space opens with 8 desks, 2 meeting rooms and 2 private offices.", images.hero));
+  await draft(
+    pages.opening,
+    "en",
+    article("Our space opens", "Our coworking space opens with 8 desks, 2 meeting rooms and 2 private offices.", images.openSpace),
+  );
   await draft(
     pages.event,
     "fr",
@@ -291,7 +387,7 @@ export async function seedWebsite({ call, publicCall, db, centreId, today, cowor
     article("Members' breakfast", "Join us on the first Friday of the month to meet the other members over coffee.", images.terrace),
   );
 
-  for (const id of [pages.home, pages.offers, pages.contact, pages.opening]) await call("POST", `/site/pages/${id}/publish`, {});
+  for (const id of [pages.home, pages.offers, pages.gallery, pages.contact, pages.opening]) await call("POST", `/site/pages/${id}/publish`, {});
   await call("POST", `/site/pages/${pages.event}/publish`, { at: new Date(Date.now() + 3 * 24 * 3_600_000).toISOString() });
 
   // A page that moves keeps its old address through an automatic redirect; the manual one covers an old site.
@@ -322,33 +418,4 @@ export async function seedWebsite({ call, publicCall, db, centreId, today, cowor
       section: "devis",
     });
   }
-}
-
-/** A horizontal gradient as a PNG file (8-bit RGB, no interlacing), small enough to stay well under the upload limit. */
-function gradientPng(width: number, height: number, from: Rgb, to: Rgb): Buffer {
-  const row = Buffer.alloc(1 + width * 3);
-  for (let x = 0; x < width; x++) {
-    const t = width === 1 ? 0 : x / (width - 1);
-    for (let c = 0; c < 3; c++) row[1 + x * 3 + c] = Math.round(from[c]! + (to[c]! - from[c]!) * t);
-  }
-  const raw = Buffer.concat(Array.from({ length: height }, () => row));
-  const chunk = (kind: string, data: Buffer) => {
-    const length = Buffer.alloc(4);
-    length.writeUInt32BE(data.length);
-    const body = Buffer.concat([Buffer.from(kind, "ascii"), data]);
-    const crc = Buffer.alloc(4);
-    crc.writeUInt32BE(crc32(body));
-    return Buffer.concat([length, body, crc]);
-  };
-  const header = Buffer.alloc(13);
-  header.writeUInt32BE(width, 0);
-  header.writeUInt32BE(height, 4);
-  header.writeUInt8(8, 8);
-  header.writeUInt8(2, 9);
-  return Buffer.concat([
-    Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]),
-    chunk("IHDR", header),
-    chunk("IDAT", deflateSync(raw)),
-    chunk("IEND", Buffer.alloc(0)),
-  ]);
 }

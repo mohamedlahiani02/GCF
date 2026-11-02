@@ -294,8 +294,34 @@ export function MediaPage() {
   );
 }
 
-/** Library browser to choose an image, with upload in place; used by the page editor and the appearance screen. */
-export function MediaPickerModal({ title, onSelect, onClose }: { title: string; onSelect: (media: MediaFile) => void; onClose: () => void }) {
+/**
+ * Library browser to choose an image, with upload in place; used by the page editor and the appearance screen.
+ * With `onSelectMany`, a click ticks or unticks a photo (up to `max`) and a button adds the ticked photos in order.
+ */
+export function MediaPickerModal({
+  title,
+  onSelect,
+  onSelectMany,
+  max,
+  onClose,
+}: {
+  title: string;
+  onSelect?: (media: MediaFile) => void;
+  onSelectMany?: (media: MediaFile[]) => void;
+  max?: number;
+  onClose: () => void;
+}) {
+  const [ticked, setTicked] = useState<MediaFile[]>([]);
+  const many = onSelectMany !== undefined;
+  const limit = max ?? Number.POSITIVE_INFINITY;
+  const choose = (m: MediaFile) => {
+    if (!many) {
+      onSelect?.(m);
+      onClose();
+      return;
+    }
+    setTicked((list) => (list.some((t) => t.id === m.id) ? list.filter((t) => t.id !== m.id) : list.length < limit ? [...list, m] : list));
+  };
   const folders = useFolders();
   const [folder, setFolder] = useState("");
   const [page, setPage] = useState(1);
@@ -312,12 +338,33 @@ export function MediaPickerModal({ title, onSelect, onClose }: { title: string; 
       footer={
         <>
           {list.data ? <Pagination page={page} hasMore={list.data.hasMore} onPage={setPage} /> : <span />}
-          <button type="button" className="btn" onClick={onClose}>
-            Fermer
-          </button>
+          <div className="row center" style={{ gap: 8 }}>
+            <button type="button" className="btn" onClick={onClose}>
+              {many ? "Annuler" : "Fermer"}
+            </button>
+            {many ? (
+              <button
+                type="button"
+                className="btn btn-p"
+                disabled={ticked.length === 0}
+                onClick={() => {
+                  onSelectMany(ticked);
+                  onClose();
+                }}
+              >
+                Ajouter {ticked.length} photo{ticked.length > 1 ? "s" : ""}
+              </button>
+            ) : null}
+          </div>
         </>
       }
     >
+      {many ? (
+        <span className="cap">
+          Cliquez sur les photos à ajouter, dans l'ordre voulu{Number.isFinite(limit) ? ` (${limit} au plus)` : ""}. Vous pouvez changer de dossier ou de page
+          sans perdre la sélection.
+        </span>
+      ) : null}
       <div className="row between center">
         <FolderFilter folders={folders} value={folder} onChange={(v) => (setFolder(v), setPage(1))} />
         <button type="button" className="btn" onClick={() => setUploading(true)}>
@@ -331,27 +378,47 @@ export function MediaPickerModal({ title, onSelect, onClose }: { title: string; 
         <Empty title="Aucune image" text="Ajoutez une image pour la choisir." />
       ) : (
         <ul className="site-media-grid">
-          {list.data?.items.map((m) => (
-            <li key={m.id}>
-              <button
-                type="button"
-                className="site-media-card site-media-pick"
-                onClick={() => (onSelect(m), onClose())}
-                aria-label={`Choisir ${m.alt || `l'image ${m.width} × ${m.height}`}`}
-              >
-                <span className="site-media-thumb">
-                  <img src={mediaFileUrl(m.id)} alt="" loading="lazy" />
-                </span>
-                <span className="cap site-clamp" style={{ padding: "6px 8px" }}>
-                  {m.alt || m.folder || `${m.width} × ${m.height}`}
-                </span>
-              </button>
-            </li>
-          ))}
+          {list.data?.items.map((m) => {
+            const position = ticked.findIndex((t) => t.id === m.id) + 1;
+            return (
+              <li key={m.id}>
+                <button
+                  type="button"
+                  className={`site-media-card site-media-pick${position ? " ticked" : ""}`}
+                  onClick={() => choose(m)}
+                  aria-pressed={many ? position > 0 : undefined}
+                  aria-label={`${many ? "Sélectionner" : "Choisir"} ${m.alt || `l'image ${m.width} × ${m.height}`}`}
+                >
+                  <span className="site-media-thumb">
+                    <img src={mediaFileUrl(m.id)} alt="" loading="lazy" />
+                    {position ? (
+                      <span className="site-media-order" aria-hidden="true">
+                        {position}
+                      </span>
+                    ) : null}
+                  </span>
+                  <span className="cap site-clamp" style={{ padding: "6px 8px" }}>
+                    {m.alt || m.folder || `${m.width} × ${m.height}`}
+                  </span>
+                </button>
+              </li>
+            );
+          })}
         </ul>
       )}
       {uploading ? (
-        <UploadModal folders={folders} defaultFolder={folder} onClose={() => setUploading(false)} onUploaded={(m) => (onSelect(m), onClose())} />
+        <UploadModal
+          folders={folders}
+          defaultFolder={folder}
+          onClose={() => setUploading(false)}
+          onUploaded={(m) => {
+            if (many) setTicked((list) => (list.length < limit ? [...list, m] : list));
+            else {
+              onSelect?.(m);
+              onClose();
+            }
+          }}
+        />
       ) : null}
     </Modal>
   );

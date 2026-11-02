@@ -68,16 +68,42 @@ export interface DocumentInput {
   main: string;
 }
 
-// The only script of the site: the mobile menu toggle, allowed by its hash in the Content-Security-Policy.
-const MENU_SCRIPT =
-  'document.documentElement.classList.add("js");document.addEventListener("click",function(e){var b=e.target.closest&&e.target.closest(".nav-toggle");if(!b)return;var o=b.getAttribute("aria-expanded")!=="true";b.setAttribute("aria-expanded",String(o));document.getElementById("site-nav").classList.toggle("open",o)});';
-const MENU_SCRIPT_HASH = createHash("sha256").update(MENU_SCRIPT).digest("base64");
+/*
+ * The only script of the site, allowed by its hash in the Content-Security-Policy. It toggles the mobile menu and
+ * improves the photo viewer, which works without it through `:target`: Escape, arrow keys and swipes move or close
+ * it, a backdrop click closes it, moving between photos replaces the history entry so Back closes the viewer, and
+ * focus goes to the viewer then back to the photo. It also scrolls carousels from their buttons.
+ */
+const SITE_SCRIPT = [
+  'document.documentElement.classList.add("js");',
+  "var opened=false,last=null,sx=null;",
+  'function openBox(){return document.querySelector(".lb:target")}',
+  'function go(a){if(a)location.replace(a.getAttribute("href"))}',
+  'function closeBox(box){if(opened){opened=false;history.back()}else go(box.querySelector(".lb-close"))}',
+  'document.addEventListener("click",function(e){var t=e.target;if(!t.closest)return;',
+  'var b=t.closest(".nav-toggle");if(b){var o=b.getAttribute("aria-expanded")!=="true";b.setAttribute("aria-expanded",String(o));document.getElementById("site-nav").classList.toggle("open",o);return}',
+  'if(t.closest(".g-open")){opened=true;return}',
+  'var box=t.closest(".lb");if(box){var step=t.closest(".lb-prev,.lb-next");if(step){e.preventDefault();go(step);return}',
+  'if(t.closest(".lb-close")||t===box){e.preventDefault();closeBox(box)}return}',
+  'var c=t.closest(".car-prev,.car-next");if(c){var list=c.closest(".gallery-wrap").querySelector(".gallery-carousel");',
+  'list.scrollBy({left:(c.classList.contains("car-next")?1:-1)*list.clientWidth*0.8,behavior:"smooth"})}});',
+  'document.addEventListener("keydown",function(e){var box=openBox();if(!box)return;',
+  'if(e.key==="Escape"){e.preventDefault();closeBox(box)}else if(e.key==="ArrowLeft")go(box.querySelector(".lb-prev"));',
+  'else if(e.key==="ArrowRight")go(box.querySelector(".lb-next"))});',
+  'document.addEventListener("touchstart",function(e){sx=openBox()&&e.touches.length===1?e.touches[0].clientX:null},{passive:true});',
+  'document.addEventListener("touchend",function(e){if(sx===null)return;var dx=e.changedTouches[0].clientX-sx;sx=null;var box=openBox();',
+  'if(box&&Math.abs(dx)>=50)go(box.querySelector(dx>0?".lb-prev":".lb-next"))});',
+  'function focusBox(){var box=openBox();if(box){box.querySelector(".lb-close").focus({preventScroll:true});last=box.getAttribute("data-photo")}',
+  'else if(last){var th=document.getElementById(last);last=null;if(th){var a=th.querySelector(".g-open");if(a)a.focus({preventScroll:true})}}}',
+  'window.addEventListener("hashchange",focusBox);focusBox();',
+].join("");
+const SITE_SCRIPT_HASH = createHash("sha256").update(SITE_SCRIPT).digest("base64");
 
-/** Content-Security-Policy of a rendered page: self, inline styles, the menu script by hash, Google Fonts when used, https images. */
+/** Content-Security-Policy of a rendered page: self, inline styles, the site script by hash, Google Fonts when used, https images. */
 export function contentSecurityPolicy(usesGoogleFonts: boolean): string {
   return [
     "default-src 'self'",
-    `script-src 'sha256-${MENU_SCRIPT_HASH}'`,
+    `script-src 'sha256-${SITE_SCRIPT_HASH}'`,
     `style-src 'self' 'unsafe-inline'${usesGoogleFonts ? " https://fonts.googleapis.com" : ""}`,
     `font-src 'self'${usesGoogleFonts ? " https://fonts.gstatic.com" : ""}`,
     "img-src 'self' https: data:",
@@ -179,14 +205,20 @@ function renderSpaces(section: Extract<SiteSection, { type: "spaces" }>, ctx: Re
   const cards = spaces
     .map((s) => {
       const capacity = s.capacityMin !== null && s.capacityMax !== null ? `<p class="muted">${esc(l.capacity(s.capacityMin, s.capacityMax))}</p>` : "";
-      return `<article class="card">${image(s.photoId, ctx, { alt: s.name })}<h3>${esc(s.name)}</h3><p class="muted">${esc(CW_CATEGORY_LABELS[ctx.language][s.category])}</p>${s.description ? paragraphs(s.description) : ""}${capacity}${lowestPrice(s, ctx)}</article>`;
+      // A space sold only by subscription has no slot to book online: its card shows its price without a button.
+      const bookable = ctx.bookingUrl !== null && s.lowest !== null && (s.lowest.per === "hour" || s.lowest.per === "booking");
+      const book = bookable
+        ? `<p class="card-action"><a class="btn btn-primary" href="${esc(`${ctx.bookingUrl}reserver?type=${encodeURIComponent(s.id)}`)}">${esc(l.book)}<span class="visually-hidden"> : ${esc(
+            s.name,
+          )}</span></a></p>`
+        : "";
+      const photo = image(s.photoId, ctx, { alt: s.name });
+      return `<article class="card space-card">${photo ? `<div class="card-photo">${photo}</div>` : ""}<div class="card-body"><h3>${esc(s.name)}</h3><p class="muted">${esc(
+        CW_CATEGORY_LABELS[ctx.language][s.category],
+      )}</p>${s.description ? paragraphs(s.description) : ""}${capacity}${lowestPrice(s, ctx)}${book}</div></article>`;
     })
     .join("");
-  return wrapSection(
-    section,
-    alt,
-    `${sectionHead(section.title, section.intro)}<div class="grid">${cards}</div>${ctx.bookingUrl ? `<p><a class="btn btn-primary" href="${esc(ctx.bookingUrl)}">${esc(l.book)}</a></p>` : ""}`,
-  );
+  return wrapSection(section, alt, `${sectionHead(section.title, section.intro)}<div class="grid">${cards}</div>`);
 }
 
 function renderPricing(section: Extract<SiteSection, { type: "pricing" }>, ctx: RenderContext, alt: boolean): string {
@@ -235,15 +267,14 @@ function renderAvailability(section: Extract<SiteSection, { type: "availability"
   const rows = ctx.data.availability;
   if (!rows || rows.length === 0) return "";
   const l = ctx.labels;
-  const cell = (value: number | null) => (value === null ? esc(l.closedNow) : String(value));
-  const body = rows
-    .map((r) => `<tr><th scope="row">${esc(r.name)}</th><td class="num">${cell(r.freeNow)}</td><td class="num">${cell(r.freeRestOfDay)}</td></tr>`)
+  const cards = rows
+    .map((r) => {
+      const now = r.freeNow === null ? `<p class="avail-num avail-closed">${esc(l.closedNow)}</p>` : `<p class="avail-num">${r.freeNow}</p>`;
+      const later = r.freeRestOfDay === null ? "" : `<p class="muted">${esc(l.freeRestOfDay)} : ${r.freeRestOfDay}</p>`;
+      return `<li class="card avail-card${r.freeNow === 0 ? " avail-full" : ""}"><h3>${esc(r.name)}</h3>${now}<p class="avail-label">${esc(l.freeNow)}</p>${later}</li>`;
+    })
     .join("");
-  return wrapSection(
-    section,
-    alt,
-    `${sectionHead(section.title)}<div class="table-scroll"><table class="tbl"><thead><tr><th scope="col">${esc(l.columnSpace)}</th><th scope="col" class="num">${esc(l.freeNow)}</th><th scope="col" class="num">${esc(l.freeRestOfDay)}</th></tr></thead><tbody>${body}</tbody></table></div>`,
-  );
+  return wrapSection(section, alt, `${sectionHead(section.title)}<ul class="avail grid">${cards}</ul>`);
 }
 
 function renderContact(section: Extract<SiteSection, { type: "contact" }>, ctx: RenderContext, alt: boolean, centreAddress: string | null): string {
@@ -320,14 +351,89 @@ function renderForm(section: Extract<SiteSection, { type: "form" }>, ctx: Render
   );
 }
 
+/**
+ * Tile sizes of a mosaic, so every row of its four columns is full: blocks of five photos (a large one, then four
+ * small), and the photos left over sized to close the last rows. On two columns every size but `m-1` is full width.
+ */
+function mosaicTiles(total: number): string[] {
+  // One photo left over after a block would stretch across the whole width: the last block and it share two rows.
+  const blocks = total % 5 === 1 && total > 5 ? Math.floor(total / 5) - 1 : Math.floor(total / 5);
+  const tiles: string[] = [];
+  for (let i = 0; i < blocks; i += 1) tiles.push("m-big", "m-1", "m-1", "m-1", "m-1");
+  const rest = total - blocks * 5;
+  const closing: Record<number, string[]> = {
+    0: [],
+    1: ["m-4"],
+    2: ["m-2", "m-2"],
+    3: ["m-big", "m-2", "m-2"],
+    4: ["m-big", "m-2", "m-1", "m-1"],
+    6: ["m-big", "m-2", "m-1", "m-1", "m-2", "m-2"],
+  };
+  return [...tiles, ...closing[rest]!];
+}
+
+/**
+ * A photo gallery in its layout, followed by one full-screen viewer per photo. Each viewer is shown by `:target`,
+ * so it opens, moves and closes through plain links; ids use an underscore, which section anchors cannot contain.
+ */
+function renderGallery(section: Extract<SiteSection, { type: "gallery" }>, ctx: RenderContext, alt: boolean): string {
+  const l = ctx.labels;
+  const layout = section.layout ?? "grid";
+  const photos = section.items
+    .map((item) => ({ item, media: ctx.media.get(item.imageId) }))
+    .filter((p): p is { item: (typeof section.items)[number]; media: NonNullable<typeof p.media> } => p.media !== undefined);
+  if (photos.length === 0) return "";
+  const total = photos.length;
+  const thumbId = (n: number) => `${section.id}_p${n}`;
+  const tiles = layout === "mosaic" ? mosaicTiles(total) : [];
+  const viewId = (n: number) => `${section.id}_v${n}`;
+  const items = photos
+    .map(({ item, media }, i) => {
+      const n = i + 1;
+      const label = item.caption ?? media.alt ?? l.photoPosition(n, total);
+      const tile = tiles[i] ? ` class="${tiles[i]}"` : "";
+      return `<li id="${thumbId(n)}"${tile}><figure><a class="g-open" href="#${viewId(n)}" aria-label="${esc(l.enlargePhoto(label))}">${image(
+        item.imageId,
+        ctx,
+        {
+          alt: item.caption,
+        },
+      )}</a>${item.caption ? `<figcaption>${esc(item.caption)}</figcaption>` : ""}</figure></li>`;
+    })
+    .join("");
+  const viewers = photos
+    .map(({ item, media }, i) => {
+      const n = i + 1;
+      const label = item.caption ?? media.alt ?? section.title ?? l.photoPosition(n, total);
+      const prev = n > 1 ? `<a class="lb-prev" href="#${viewId(n - 1)}" aria-label="${esc(l.previousPhoto)}">&lsaquo;</a>` : "";
+      const next = n < total ? `<a class="lb-next" href="#${viewId(n + 1)}" aria-label="${esc(l.nextPhoto)}">&rsaquo;</a>` : "";
+      return `<div class="lb" id="${viewId(n)}" data-photo="${thumbId(n)}" role="dialog" aria-label="${esc(label)}"><a class="lb-close" href="#${thumbId(
+        n,
+      )}" aria-label="${esc(l.closePhoto)}">&times;</a>${prev}<figure>${image(item.imageId, ctx, { alt: item.caption })}<figcaption>${
+        item.caption ? `${esc(item.caption)} ` : ""
+      }<span class="lb-count">${esc(l.photoPosition(n, total))}</span></figcaption></figure>${next}</div>`;
+    })
+    .join("");
+  const carouselNav =
+    layout === "carousel" && total > 1
+      ? `<div class="car-nav"><button class="car-prev" type="button" aria-label="${esc(l.previousPhoto)}">&lsaquo;</button><button class="car-next" type="button" aria-label="${esc(
+          l.nextPhoto,
+        )}">&rsaquo;</button></div>`
+      : "";
+  const head = `<div class="gallery-head">${sectionHead(section.title, section.intro)}<p class="gallery-count muted">${esc(l.photoCount(total))}</p>${carouselNav}</div>`;
+  return wrapSection(section, alt, `<div class="gallery-wrap">${head}<ul class="gallery gallery-${layout}">${items}</ul></div>${viewers}`);
+}
+
 function renderSection(section: SiteSection, ctx: RenderContext, alt: boolean, headingLevel: 1 | 2, centreAddress: string | null): string {
   switch (section.type) {
     case "hero": {
       const img = image(section.imageId, ctx, { eager: true });
+      const cover = img !== "" && section.imageLayout !== "split";
       const h = `h${headingLevel}`;
-      return `<section id="${esc(section.id)}" class="hero"><div class="wrap hero-inner${img ? " has-image" : ""}"><div><${h}>${esc(section.title)}</${h}>${
-        section.subtitle ? paragraphs(section.subtitle) : ""
-      }${button(section.button, ctx)}</div>${img}</div></section>`;
+      const text = `<div><${h}>${esc(section.title)}</${h}>${section.subtitle ? paragraphs(section.subtitle) : ""}${button(section.button, ctx)}</div>`;
+      if (cover)
+        return `<section id="${esc(section.id)}" class="hero hero-cover"><div class="hero-bg">${img}</div><div class="wrap hero-inner">${text}</div></section>`;
+      return `<section id="${esc(section.id)}" class="hero"><div class="wrap hero-inner${img ? " has-image" : ""}">${text}${img}</div></section>`;
     }
     case "rich_text":
       return wrapSection(section, alt, `<div class="prose">${sectionHead(section.title)}${richText(section.body)}</div>`);
@@ -343,15 +449,8 @@ function renderSection(section: SiteSection, ctx: RenderContext, alt: boolean, h
       return renderPricing(section, ctx, alt);
     case "availability":
       return renderAvailability(section, ctx, alt);
-    case "gallery": {
-      const items = section.items
-        .map((item) => {
-          const img = image(item.imageId, ctx, { alt: item.caption });
-          return img ? `<li><figure>${img}${item.caption ? `<figcaption>${esc(item.caption)}</figcaption>` : ""}</figure></li>` : "";
-        })
-        .join("");
-      return items ? wrapSection(section, alt, `${sectionHead(section.title)}<ul class="gallery">${items}</ul>`) : "";
-    }
+    case "gallery":
+      return renderGallery(section, ctx, alt);
     case "testimonials": {
       const items = section.items
         .map(
@@ -456,7 +555,7 @@ export function renderDocument(input: DocumentInput): string {
     favicon ? `<link rel="icon" href="${esc(ctx.mediaUrl(favicon.id))}" type="${esc(favicon.mime)}">` : "",
     fontsHref ? `<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin><link rel="stylesheet" href="${esc(fontsHref)}">` : "",
     `<style>${themeCss(s)}</style>`,
-    `<script>${MENU_SCRIPT}</script>`,
+    `<script>${SITE_SCRIPT}</script>`,
     ...input.jsonLd.map((data) => `<script type="application/ld+json">${jsonForScript(data)}</script>`),
   ].join("");
 
