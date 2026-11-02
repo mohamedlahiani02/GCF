@@ -1,3 +1,4 @@
+import type { CwCategory } from "@gcf/shared";
 import { api } from "../../api/client";
 import type { MediaFile } from "./api";
 
@@ -89,4 +90,48 @@ export function weekdaysLabel(days: number[]): string {
     .sort()
     .map((d) => WEEKDAY_SHORT[d])
     .join(", ");
+}
+
+/** Code prefix of a new resource when no resource of its type has a numbered code yet. */
+const CODE_PREFIX: Record<CwCategory, string> = {
+  hot_desk: "P-",
+  dedicated_desk: "PA-",
+  private_office: "B-",
+  meeting_room: "S-",
+  phone_booth: "C-",
+  event_space: "E-",
+};
+
+/**
+ * The next `count` free resource codes for a type: the prefix and number width most used by the type's codes
+ * ("D-08" gives "D-09"), or the category's prefix. Codes are unique in the centre whatever the case, archived
+ * resources included, so `allCodes` must hold every code of the centre.
+ */
+export function nextCodes(typeCodes: string[], allCodes: string[], category: CwCategory, count: number): string[] {
+  const numbered = typeCodes.flatMap((code) => {
+    const match = /^(.*?)(\d+)$/.exec(code);
+    return match ? [{ prefix: match[1]!, digits: match[2]! }] : [];
+  });
+  const usage = new Map<string, number>();
+  for (const n of numbered) usage.set(n.prefix, (usage.get(n.prefix) ?? 0) + 1);
+  const prefix = [...usage.entries()].sort((a, b) => b[1] - a[1])[0]?.[0] ?? CODE_PREFIX[category];
+  const widths = numbered.filter((n) => n.prefix === prefix).map((n) => n.digits.length);
+  const width = widths.length ? Math.max(...widths) : 2;
+  const lower = prefix.toLowerCase();
+  const taken = new Set(allCodes.map((c) => c.toLowerCase()));
+  let next =
+    Math.max(
+      0,
+      ...allCodes.flatMap((code) => {
+        const match = /^(.*?)(\d+)$/.exec(code.toLowerCase());
+        return match && match[1] === lower ? [Number(match[2])] : [];
+      }),
+    ) + 1;
+  const codes: string[] = [];
+  while (codes.length < count) {
+    const code = `${prefix}${String(next).padStart(width, "0")}`;
+    if (!taken.has(code.toLowerCase())) codes.push(code);
+    next += 1;
+  }
+  return codes;
 }

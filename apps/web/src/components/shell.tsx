@@ -168,6 +168,19 @@ export function usePage(crumbs: string[]) {
   }, [key, set]);
 }
 
+/* Full-screen pages */
+
+const FullScreenContext = createContext<(on: boolean) => void>(() => undefined);
+
+/** A page that needs the whole window (the floor plan editor) hides the sidebar and the top bar while it is open. */
+export function useFullScreenPage() {
+  const set = useContext(FullScreenContext);
+  useEffect(() => {
+    set(true);
+    return () => set(false);
+  }, [set]);
+}
+
 /* Collect drawer opened from anywhere */
 
 const CollectContext = createContext<(payer?: Payer) => void>(() => undefined);
@@ -248,6 +261,7 @@ export function Shell() {
   const [changingPassword, setChangingPassword] = useState(false);
   const [openSections, setOpenSections] = useState<string[]>([]);
   const [menuOpen, setMenuOpen] = useState(false);
+  const [fullScreen, setFullScreen] = useState(false);
   const allowed = (n: NavItem) => (Array.isArray(n.permission) ? n.permission.some(can) : can(n.permission));
   const location = useLocation();
   const client = useQueryClient();
@@ -277,127 +291,133 @@ export function Shell() {
 
   return (
     <CrumbContext.Provider value={setCrumbs}>
-      <CollectContext.Provider value={(payer) => setCollect(payer ?? {})}>
-        <div className="app">
-          <aside className={`side${collapsed ? " collapsed" : ""}${menuOpen ? " menu-open" : ""}`} aria-label="Navigation principale">
-            <div className={`side-brand${centre.data?.logoVersion ? " has-logo" : ""}`}>
-              {centre.data?.logoVersion ? (
-                <span className="brand-logo">
-                  <img src={api.fileUrl("/centre/logo", { v: centre.data.logoVersion })} alt="" />
-                </span>
-              ) : (
-                <span className="logo" aria-hidden="true">
-                  {initials(centre.data?.name ?? "Gestion du centre")}
-                </span>
-              )}
-              <span className="lbl brand-text">
-                <strong>{centre.data?.name ?? "Gestion du centre"}</strong>
-                <span className="cap">Back-office</span>
-              </span>
-              <button
-                type="button"
-                className="btn nav-toggle"
-                aria-expanded={menuOpen}
-                onClick={() => {
-                  setCollapsed(false);
-                  setMenuOpen((o) => !o);
-                }}
-              >
-                {menuOpen ? "Fermer" : "Menu"}
-              </button>
-            </div>
-            <GlobalSearch />
-            <nav className="side-nav">
-              {NAV.map((section) => {
-                const items = section.items.filter(allowed);
-                if (!items.length) return null;
-                const active = items.some((c) => (c.to === "/" ? location.pathname === "/" : location.pathname.startsWith(c.to)));
-                const open = !section.collapsible || collapsed || active || openSections.includes(section.title);
-                const id = `nav-${section.title}`;
-                return (
-                  <div key={section.title} className="nav-section">
-                    {section.collapsible ? (
-                      <button
-                        type="button"
-                        className="nav-title"
-                        aria-expanded={open}
-                        aria-controls={id}
-                        onClick={() => setOpenSections((list) => (open ? list.filter((t) => t !== section.title) : [...list, section.title]))}
-                      >
-                        <span>{section.title}</span>
-                        <span aria-hidden="true">{open ? "▾" : "▸"}</span>
-                      </button>
-                    ) : (
-                      <span className="nav-title">{section.title}</span>
-                    )}
-                    {open ? (
-                      <div id={id} className="nav-items">
-                        {items.map((item) => (
-                          <NavEntry key={item.to} item={item} />
-                        ))}
-                      </div>
-                    ) : null}
-                  </div>
-                );
-              })}
-            </nav>
-            <div className="side-foot">
-              <span className="avatar" aria-hidden="true">
-                {personInitials(session.user.fullName)}
-              </span>
-              <span className="lbl user-text">
-                <strong>{session.user.fullName}</strong>
-                <span className="cap">{ROLE[session.user.role]}</span>
-              </span>
-              <button
-                type="button"
-                className="btn btn-g"
-                aria-label={collapsed ? "Déplier la barre latérale" : "Réduire la barre latérale"}
-                onClick={() => setCollapsed((c) => !c)}
-                style={{ minHeight: 30, padding: "0 6px" }}
-              >
-                <span className="rtl-flip">{collapsed ? "›" : "‹"}</span>
-              </button>
-            </div>
-          </aside>
-          <div className="col">
-            <header className="top">
-              <nav className="crumbs" aria-label="Fil d'Ariane">
-                {crumbs.map((c, i) => (i === crumbs.length - 1 ? <strong key={i}>{c}</strong> : <span key={i}>{c} ›</span>))}
-              </nav>
-              <div className="row center" style={{ gap: 8 }}>
-                {can("coworking:write") ? <WalkInButton /> : null}
-                {can("payments:write") ? (
-                  <button type="button" className="btn btn-p" onClick={() => setCollect({})}>
-                    + Encaisser
+      <FullScreenContext.Provider value={setFullScreen}>
+        <CollectContext.Provider value={(payer) => setCollect(payer ?? {})}>
+          <div className={`app${fullScreen ? " full" : ""}`}>
+            {fullScreen ? null : (
+              <aside className={`side${collapsed ? " collapsed" : ""}${menuOpen ? " menu-open" : ""}`} aria-label="Navigation principale">
+                <div className={`side-brand${centre.data?.logoVersion ? " has-logo" : ""}`}>
+                  {centre.data?.logoVersion ? (
+                    <span className="brand-logo">
+                      <img src={api.fileUrl("/centre/logo", { v: centre.data.logoVersion })} alt="" />
+                    </span>
+                  ) : (
+                    <span className="logo" aria-hidden="true">
+                      {initials(centre.data?.name ?? "Gestion du centre")}
+                    </span>
+                  )}
+                  <span className="lbl brand-text">
+                    <strong>{centre.data?.name ?? "Gestion du centre"}</strong>
+                    <span className="cap">Back-office</span>
+                  </span>
+                  <button
+                    type="button"
+                    className="btn nav-toggle"
+                    aria-expanded={menuOpen}
+                    onClick={() => {
+                      setCollapsed(false);
+                      setMenuOpen((o) => !o);
+                    }}
+                  >
+                    {menuOpen ? "Fermer" : "Menu"}
                   </button>
-                ) : null}
-                {can("enrolments:write") ? (
-                  <Link to="/inscriptions/nouvelle" className="btn">
-                    + Inscrire un élève
-                  </Link>
-                ) : null}
-                {can("rooms:write") ? (
-                  <Link to="/locations/nouvelle" className="btn">
-                    + Nouvelle location
-                  </Link>
-                ) : null}
-                <button type="button" className="btn btn-g" onClick={() => setChangingPassword(true)}>
-                  Mot de passe
-                </button>
-                <button type="button" className="btn btn-g" onClick={() => logout.mutate()}>
-                  Déconnexion
-                </button>
-              </div>
-            </header>
-            <main className="page">
-              <Outlet />
-            </main>
+                </div>
+                <GlobalSearch />
+                <nav className="side-nav">
+                  {NAV.map((section) => {
+                    const items = section.items.filter(allowed);
+                    if (!items.length) return null;
+                    const active = items.some((c) => (c.to === "/" ? location.pathname === "/" : location.pathname.startsWith(c.to)));
+                    const open = !section.collapsible || collapsed || active || openSections.includes(section.title);
+                    const id = `nav-${section.title}`;
+                    return (
+                      <div key={section.title} className="nav-section">
+                        {section.collapsible ? (
+                          <button
+                            type="button"
+                            className="nav-title"
+                            aria-expanded={open}
+                            aria-controls={id}
+                            onClick={() => setOpenSections((list) => (open ? list.filter((t) => t !== section.title) : [...list, section.title]))}
+                          >
+                            <span>{section.title}</span>
+                            <span aria-hidden="true">{open ? "▾" : "▸"}</span>
+                          </button>
+                        ) : (
+                          <span className="nav-title">{section.title}</span>
+                        )}
+                        {open ? (
+                          <div id={id} className="nav-items">
+                            {items.map((item) => (
+                              <NavEntry key={item.to} item={item} />
+                            ))}
+                          </div>
+                        ) : null}
+                      </div>
+                    );
+                  })}
+                </nav>
+                <div className="side-foot">
+                  <span className="avatar" aria-hidden="true">
+                    {personInitials(session.user.fullName)}
+                  </span>
+                  <span className="lbl user-text">
+                    <strong>{session.user.fullName}</strong>
+                    <span className="cap">{ROLE[session.user.role]}</span>
+                  </span>
+                  <button
+                    type="button"
+                    className="btn btn-g"
+                    aria-label={collapsed ? "Déplier la barre latérale" : "Réduire la barre latérale"}
+                    onClick={() => setCollapsed((c) => !c)}
+                    style={{ minHeight: 30, padding: "0 6px" }}
+                  >
+                    <span className="rtl-flip">{collapsed ? "›" : "‹"}</span>
+                  </button>
+                </div>
+              </aside>
+            )}
+            <div className="col">
+              {fullScreen ? null : (
+                <header className="top">
+                  <nav className="crumbs" aria-label="Fil d'Ariane">
+                    {crumbs.map((c, i) => (i === crumbs.length - 1 ? <strong key={i}>{c}</strong> : <span key={i}>{c} ›</span>))}
+                  </nav>
+                  <div className="row center" style={{ gap: 8 }}>
+                    {can("coworking:write") ? <WalkInButton /> : null}
+                    {can("payments:write") ? (
+                      <button type="button" className="btn btn-p" onClick={() => setCollect({})}>
+                        + Encaisser
+                      </button>
+                    ) : null}
+                    {can("enrolments:write") ? (
+                      <Link to="/inscriptions/nouvelle" className="btn">
+                        + Inscrire un élève
+                      </Link>
+                    ) : null}
+                    {can("rooms:write") ? (
+                      <Link to="/locations/nouvelle" className="btn">
+                        + Nouvelle location
+                      </Link>
+                    ) : null}
+                    <button type="button" className="btn btn-g" onClick={() => setChangingPassword(true)}>
+                      Mot de passe
+                    </button>
+                    <button type="button" className="btn btn-g" onClick={() => logout.mutate()}>
+                      Déconnexion
+                    </button>
+                  </div>
+                </header>
+              )}
+              <main className="page">
+                <Outlet />
+              </main>
+            </div>
           </div>
-        </div>
-        {collect ? <CollectDrawer payer={collect} onClose={() => setCollect(null)} /> : null}
-        {changingPassword ? <PasswordModal onClose={() => setChangingPassword(false)} /> : null}
-      </CollectContext.Provider>
+          {collect ? <CollectDrawer payer={collect} onClose={() => setCollect(null)} /> : null}
+          {changingPassword ? <PasswordModal onClose={() => setChangingPassword(false)} /> : null}
+        </CollectContext.Provider>
+      </FullScreenContext.Provider>
     </CrumbContext.Provider>
   );
 }

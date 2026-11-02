@@ -339,9 +339,11 @@ export function LivePlanPage() {
                     label: r.code,
                     title: `${r.code}, ${r.typeName} : ${rate === undefined ? "non réservable" : `${Math.round(rate / 100)} % d'occupation`}`,
                     heat: rate === undefined ? 0 : rate / 10_000,
+                    category: r.category,
+                    capacity: r.capacity,
                   };
                 }
-                return { label: r.code, title: stateTitle(r), state: r.state };
+                return { label: r.code, title: stateTitle(r), state: r.state, category: r.category, capacity: r.capacity };
               }}
             />
           ) : (

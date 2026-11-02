@@ -1,5 +1,6 @@
-import type { FloorLayout, PlanItem, PlanState } from "@gcf/shared";
+import type { CwCategory, FloorLayout, PlanItem, PlanState } from "@gcf/shared";
 import type { KeyboardEvent, ReactNode } from "react";
+import { furniture } from "./furniture";
 
 /** How one placed resource looks: its plan state (or a heat value for occupancy maps) and its accessible name. */
 export interface ResourceAppearance {
@@ -9,6 +10,10 @@ export interface ResourceAppearance {
   /** 0 to 1: occupancy rate drawn as a colour ramp instead of a state. */
   heat?: number | undefined;
   disabled?: boolean | undefined;
+  /** Draws the furniture of this kind of space inside the shape (desk, table and chairs, office walls). */
+  category?: CwCategory | undefined;
+  /** Seats drawn around a meeting or event table. */
+  capacity?: number | undefined;
 }
 
 export interface FloorPlanViewProps {
@@ -43,7 +48,8 @@ function itemBox(item: PlanItem, height: number) {
 const LABEL_SIZE = { s: 14, m: 20, l: 30 } as const;
 
 /**
- * Read-only rendering of a floor: plan image, zones, labels and resources coloured by state. Resources are
+ * Read-only rendering of a floor: plan image, zones, labels and resources coloured by state, with their furniture
+ * drawn from above when the category is known. Resources are
  * buttons (click, Enter or Space) when onSelect is given. Colours come from the host stylesheet through the
  * fp-state-* classes so the back-office and the portal keep their own palette.
  */
@@ -104,7 +110,9 @@ export function FloorPlanView({ layout, image, appearance, zones, selectedId, on
         const interactive = !!onSelect && !look.disabled;
         const stateClass = look.heat !== undefined ? "fp-heat" : `fp-state-${look.state ?? "free"}`;
         const heatStyle = look.heat !== undefined ? { fillOpacity: 0.15 + 0.85 * Math.min(1, Math.max(0, look.heat)) } : undefined;
-        const fontSize = Math.max(10, Math.min(22, Math.min(w, h) * 0.38));
+        const { drawing, label } = furniture(look.category, look.capacity, { cx, cy, w, h, round: item.shape === "ellipse" });
+        const anchor = label ?? { x: cx, y: cy, maxSize: Infinity };
+        const fontSize = Math.max(10, Math.min(22, Math.min(w, h) * 0.38, anchor.maxSize));
         return (
           <g
             key={item.resourceId}
@@ -127,14 +135,19 @@ export function FloorPlanView({ layout, image, appearance, zones, selectedId, on
             ) : (
               <rect className="fp-shape" x={cx - w / 2} y={cy - h / 2} width={w} height={h} rx={4} style={heatStyle} />
             )}
+            {drawing ? (
+              <g className="fp-furniture" aria-hidden="true">
+                {drawing}
+              </g>
+            ) : null}
             <text
               className="fp-code"
-              x={cx}
-              y={cy}
+              x={anchor.x}
+              y={anchor.y}
               fontSize={fontSize}
               textAnchor="middle"
               dominantBaseline="central"
-              transform={`rotate(${-item.rotation} ${cx} ${cy})`}
+              transform={`rotate(${-item.rotation} ${anchor.x} ${anchor.y})`}
             >
               {look.label}
             </text>
