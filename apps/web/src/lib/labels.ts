@@ -43,9 +43,9 @@ export const PAY_BASE: Record<string, string> = {
   training_flat: "Forfait de formation",
 };
 export const PRESENCE_EFFECT: Record<string, string> = {
-  ignore: "Ignorée (100 %)",
+  ignore: "Sans effet (100 %)",
   prorata: "Au prorata du taux de présence",
-  session_due: "Séance due (payée même sans élève)",
+  session_due: "Séance due (ancienne option, identique à « Sans effet »)",
   threshold: "Seuil minimum",
 };
 export const PAYMENT_MODE: Record<string, string> = { full: "Intégral", installments: "Tranches", monthly: "Mensuel", per_session: "À la séance" };

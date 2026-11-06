@@ -1,9 +1,9 @@
 import { isIsoDate } from "@gcf/shared";
 import type { FastifyPluginAsync, FastifyRequest } from "fastify";
-import { sql } from "kysely";
+import { sql, type Kysely, type Transaction } from "kysely";
 import { z } from "zod";
 import { writeAudit } from "../audit.js";
-import type { Student } from "../db/types.js";
+import type { Database, Student } from "../db/types.js";
 import { notFound, unprocessable } from "../errors.js";
 
 const optionalText = (max: number) =>
@@ -65,9 +65,12 @@ const present = (s: Student) => ({
 
 type StudentView = ReturnType<typeof present>;
 
-/** A student flagged as minor must have a guardian with at least one way to reach them (specification 5.3). */
-function assertGuardianWhenMinor(student: Pick<StudentView, "isMinor" | "guardianName" | "guardianPhone" | "guardianEmail">) {
-  if (!student.isMinor) return;
+/**
+ * When the centre requires it (Administration, off by default), a student flagged as minor must have a guardian
+ * with at least one way to reach them.
+ */
+function assertGuardianWhenMinor(required: boolean, student: Pick<StudentView, "isMinor" | "guardianName" | "guardianPhone" | "guardianEmail">) {
+  if (!required || !student.isMinor) return;
   if (!student.guardianName || (!student.guardianPhone && !student.guardianEmail)) {
     throw unprocessable("guardian_required", "a minor student needs a guardian name and a guardian phone or e-mail");
   }
@@ -79,6 +82,11 @@ function escapeLike(value: string): string {
 
 export const studentRoutes: FastifyPluginAsync = async (app) => {
   const { db } = app;
+
+  const guardianRequired = async (centreId: string, executor: Kysely<Database> | Transaction<Database> = db): Promise<boolean> => {
+    const centre = await executor.selectFrom("centres").select("guardian_required_for_minors").where("id", "=", centreId).executeTakeFirstOrThrow();
+    return centre.guardian_required_for_minors;
+  };
 
   app.get("/", { preHandler: app.requirePermission("students:read") }, async (request) => {
     const query = listQuery.parse(request.query);
@@ -169,7 +177,7 @@ export const studentRoutes: FastifyPluginAsync = async (app) => {
   app.post("/", { preHandler: app.requirePermission("students:write") }, async (request, reply) => {
     const actor = request.user!;
     const body = createBody.parse(request.body);
-    assertGuardianWhenMinor({
+    assertGuardianWhenMinor(await guardianRequired(actor.centreId), {
       isMinor: body.isMinor ?? false,
       guardianName: body.guardianName ?? null,
       guardianPhone: body.guardianPhone ?? null,
@@ -217,7 +225,7 @@ export const studentRoutes: FastifyPluginAsync = async (app) => {
       if (!before) throw notFound("student");
       const beforeView = present(before);
       const merged = { ...beforeView, ...Object.fromEntries(Object.entries(body).filter(([, v]) => v !== undefined)) } as StudentView;
-      assertGuardianWhenMinor(merged);
+      assertGuardianWhenMinor(await guardianRequired(actor.centreId, trx), merged);
       const after = await trx
         .updateTable("students")
         .set({

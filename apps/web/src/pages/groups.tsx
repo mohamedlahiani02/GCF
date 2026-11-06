@@ -763,6 +763,9 @@ function EditGroupModal({ group, onClose }: { group: GroupDetail; onClose: () =>
   const [endDate, setEndDate] = useState(group.endDate);
   const [priceText, setPriceText] = useState(group.priceOverride === null ? "" : tnd(group.priceOverride));
   const priceOverride = priceText.trim() ? tryParseTnd(priceText) : null;
+  const [absenceBilled, setAbsenceBilled] = useState(group.absenceBilledOverride);
+  const [countJustified, setCountJustified] = useState(group.countJustifiedOverride);
+  const [countMakeup, setCountMakeup] = useState(group.countMakeupOverride);
   const save = useMutation({
     mutationFn: () =>
       api.patch(`/groups/${group.id}`, {
@@ -773,6 +776,9 @@ function EditGroupModal({ group, onClose }: { group: GroupDetail; onClose: () =>
         startDate,
         endDate,
         priceOverride,
+        ...(group.kind === "study" ? { absenceBilledOverride: absenceBilled } : {}),
+        countJustifiedOverride: countJustified,
+        countMakeupOverride: countMakeup,
       }),
     onSuccess: async () => {
       await client.invalidateQueries();
@@ -844,6 +850,39 @@ function EditGroupModal({ group, onClose }: { group: GroupDetail; onClose: () =>
           <input className="input num" inputMode="decimal" value={priceText} onChange={(e) => setPriceText(e.target.value)} />
         </Field>
       </div>
+      <h3 className="h2">Règles propres au groupe</h3>
+      <div className="grid3">
+        {group.kind === "study" ? (
+          <OverrideSelect
+            label="Absences facturées"
+            inheritedFrom="du cours particulier"
+            yes="Facturées"
+            no="Non facturées"
+            value={absenceBilled}
+            onChange={setAbsenceBilled}
+          />
+        ) : null}
+        <OverrideSelect
+          label="Absences justifiées dans le taux"
+          inheritedFrom="du centre"
+          yes="Comptées présentes"
+          no="Comptées absentes"
+          value={countJustified}
+          onChange={setCountJustified}
+        />
+        <OverrideSelect
+          label="Rattrapages dans un autre groupe"
+          inheritedFrom="du centre"
+          yes="Comptés présents"
+          no="Comptés absents"
+          value={countMakeup}
+          onChange={setCountMakeup}
+        />
+      </div>
+      <span className="cap">
+        Le taux de présence compte dans la paie au prorata ou au seuil ; les absences facturées comptent pour les feuilles de présence validées après la
+        modification.
+      </span>
       <ErrorBanner error={save.error} />
       <ConflictBanner conflicts={conflictsOf(save.error)} />
     </Modal>
@@ -1500,5 +1539,36 @@ export function GroupPage() {
         />
       ) : null}
     </>
+  );
+}
+
+/** A setting the group can follow (empty value) or replace with its own yes or no. */
+function OverrideSelect({
+  label,
+  inheritedFrom,
+  yes,
+  no,
+  value,
+  onChange,
+}: {
+  label: string;
+  inheritedFrom: string;
+  yes: string;
+  no: string;
+  value: boolean | null;
+  onChange: (value: boolean | null) => void;
+}) {
+  return (
+    <Field label={label}>
+      <select
+        className="input"
+        value={value === null ? "" : String(value)}
+        onChange={(e) => onChange(e.target.value === "" ? null : e.target.value === "true")}
+      >
+        <option value="">Réglage {inheritedFrom}</option>
+        <option value="true">{yes}</option>
+        <option value="false">{no}</option>
+      </select>
+    </Field>
   );
 }

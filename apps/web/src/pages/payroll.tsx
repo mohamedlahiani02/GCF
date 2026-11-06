@@ -13,7 +13,11 @@ import { frDate, frDateTime, frTime, monthLabel, percent, tnd, todayIso, tryPars
 import { EMPLOYMENT, METHOD, PAY_BASE, PRESENCE_EFFECT } from "../lib/labels";
 
 type BaseKind = "pct_collections" | "pct_session_tariff" | "fixed_per_session" | "monthly_flat" | "hourly" | "training_flat";
+/** "session_due" is a former option that behaves as "ignore"; it is shown on old rules but no longer offered. */
 type PresenceKind = "ignore" | "prorata" | "session_due" | "threshold";
+const SELECTABLE_PRESENCE: PresenceKind[] = ["ignore", "prorata", "threshold"];
+/** Bases counted per session or per hour: the only ones a cancelled or an unattended session can change. */
+const SESSION_BASES: BaseKind[] = ["fixed_per_session", "pct_session_tariff", "hourly"];
 type Periodicity = "session" | "month" | "training";
 
 /** When a rule's items fall due; the first rhythm of each base is its default. */
@@ -46,6 +50,8 @@ interface RuleRow {
   min_rate_basis_points: number | null;
   floor_amount: number | null;
   prorata_above: boolean | null;
+  pay_cancelled_sessions: boolean;
+  pay_empty_sessions: boolean;
   periodicity: Periodicity;
   valid_from: string;
   valid_to: string | null;
@@ -80,6 +86,15 @@ export function describePresence(r: Pick<RuleRow, "presence_kind" | "min_rate_ba
   return `Seuil ${percent(r.min_rate_basis_points)} : en dessous ${r.floor_amount !== null ? `plancher de ${tnd(r.floor_amount)} TND` : "rien"}, au-dessus ${r.prorata_above ? "au prorata" : "100 %"}`;
 }
 
+/** The session options of a rule in words; empty for a base they do not apply to. */
+export function describeSessionOptions(r: Pick<RuleRow, "base_kind" | "pay_cancelled_sessions" | "pay_empty_sessions">): string {
+  if (!SESSION_BASES.includes(r.base_kind)) return "";
+  return [
+    r.pay_cancelled_sessions ? "séances annulées payées" : "séances annulées non payées",
+    r.pay_empty_sessions ? "séances sans élève payées" : "séances sans élève non payées",
+  ].join(", ");
+}
+
 /* Rule editor with live simulation */
 
 interface RuleDraft {
@@ -94,6 +109,8 @@ interface RuleDraft {
   minRateText: string;
   floorText: string;
   prorataAbove: boolean;
+  payCancelledSessions: boolean;
+  payEmptySessions: boolean;
   periodicity: Periodicity;
   validFrom: string;
   validTo: string;
@@ -122,13 +139,16 @@ function RuleModal({ instructors, initialInstructorId, onClose }: { instructors:
     minRateText: "50",
     floorText: "",
     prorataAbove: false,
+    payCancelledSessions: false,
+    payEmptySessions: true,
     periodicity: "month",
     validFrom: `${todayIso().slice(0, 7)}-01`,
     validTo: "",
   });
   const set = <K extends keyof RuleDraft>(k: K, v: RuleDraft[K]) => setD((o) => ({ ...o, [k]: v }));
-  const [sim, setSim] = useState({ collected: "1000", sessions: "8", minutes: "720", rate: "85" });
+  const [sim, setSim] = useState({ collected: "1000", sessions: "8", minutes: "720", rate: "85", cancelled: "1" });
 
+  const sessionBase = SESSION_BASES.includes(d.baseKind);
   const usesPercent = d.baseKind === "pct_collections" || d.baseKind === "pct_session_tariff";
   const usesAmount = d.baseKind !== "pct_collections";
   const basisPoints = usesPercent ? percentToBp(d.percentText) : null;
@@ -153,6 +173,9 @@ function RuleModal({ instructors, initialInstructorId, onClose }: { instructors:
     const sessions = Math.max(0, Math.trunc(Number(sim.sessions) || 0));
     const minutes = Math.max(0, Math.trunc(Number(sim.minutes) || 0));
     const rateBp = sim.rate.trim() === "" ? null : (percentToBp(sim.rate) ?? (Number(sim.rate) === 0 ? 0 : null));
+    const cancelledCount = sessionBase && d.payCancelledSessions ? Math.max(0, Math.trunc(Number(sim.cancelled) || 0)) : 0;
+    // A simulated cancelled session lasts as long as an average simulated held one.
+    const cancelled = { sessions: cancelledCount, minutes: sessions > 0 ? Math.round((minutes * cancelledCount) / sessions) : 0 };
     const base: PayRule["base"] =
       d.baseKind === "pct_collections"
         ? { kind: "pct_collections", basisPoints: basisPoints!, collected }
@@ -168,7 +191,9 @@ function RuleModal({ instructors, initialInstructorId, onClose }: { instructors:
         ? { kind: "threshold", minRateBasisPoints: minRate!, prorataAbove: d.prorataAbove, ...(floor !== null ? { floor } : {}) }
         : { kind: d.presenceKind };
     try {
-      return { result: computePay({ base, presence }, rateBp === null ? { numerator: 0, denominator: 0 } : { numerator: rateBp, denominator: 10_000 }) };
+      return {
+        result: computePay({ base, presence }, rateBp === null ? { numerator: 0, denominator: 0 } : { numerator: rateBp, denominator: 10_000 }, cancelled),
+      };
     } catch (error) {
       if (error instanceof PayrollError) return { error: "Taux de présence indéfini : aucune présence d'élève comptée sur la période." };
       throw error;
@@ -187,6 +212,7 @@ function RuleModal({ instructors, initialInstructorId, onClose }: { instructors:
         ...(d.baseKind === "pct_collections" ? { collectionBasis: d.collectionBasis } : {}),
         presenceKind: d.presenceKind,
         periodicity: d.periodicity,
+        ...(sessionBase ? { payCancelledSessions: d.payCancelledSessions, payEmptySessions: d.payEmptySessions } : {}),
         ...(d.presenceKind === "threshold"
           ? { minRateBasisPoints: minRate, prorataAbove: d.prorataAbove, ...(floor !== null ? { floorAmount: floor } : {}) }
           : {}),
@@ -323,7 +349,7 @@ function RuleModal({ instructors, initialInstructorId, onClose }: { instructors:
           </Field>
           <Field label="Effet de la présence des élèves">
             <select className="input" value={d.presenceKind} onChange={(e) => set("presenceKind", e.target.value as PresenceKind)}>
-              {(Object.keys(PRESENCE_EFFECT) as PresenceKind[]).map((p) => (
+              {SELECTABLE_PRESENCE.map((p) => (
                 <option key={p} value={p}>
                   {PRESENCE_EFFECT[p]}
                 </option>
@@ -344,6 +370,19 @@ function RuleModal({ instructors, initialInstructorId, onClose }: { instructors:
               </label>
             </div>
           ) : null}
+          {sessionBase ? (
+            <fieldset className="stack" style={{ border: 0, padding: 0, margin: 0, gap: 6 }}>
+              <legend className="cap">Séances payées</legend>
+              <label className="row center" style={{ gap: 8 }}>
+                <input type="checkbox" className="chk" checked={d.payCancelledSessions} onChange={(e) => set("payCancelledSessions", e.target.checked)} /> Payer
+                les séances annulées (à 100 %)
+              </label>
+              <label className="row center" style={{ gap: 8 }}>
+                <input type="checkbox" className="chk" checked={d.payEmptySessions} onChange={(e) => set("payEmptySessions", e.target.checked)} /> Payer les
+                séances tenues sans aucun élève présent
+              </label>
+            </fieldset>
+          ) : null}
           <div className="grid2">
             <Field label="En vigueur à partir du *">
               <input className="input" type="date" value={d.validFrom} onChange={(e) => set("validFrom", e.target.value)} />
@@ -358,7 +397,10 @@ function RuleModal({ instructors, initialInstructorId, onClose }: { instructors:
             <h3 className="h2">Simulateur</h3>
           </div>
           <div className="card-b stack">
-            <span className="cap">Même calcul que la paie : Paie = Base × facteur de présence. Les séances annulées ne sont jamais comptées.</span>
+            <span className="cap">
+              Même calcul que la paie : Paie = Base × facteur de présence
+              {sessionBase && d.payCancelledSessions ? ", plus les séances annulées à 100 %." : ". Les séances annulées ne sont pas comptées."}
+            </span>
             <div className="grid2">
               {d.baseKind === "pct_collections" ? (
                 <Field label="Montant du groupe (TND)">
@@ -373,6 +415,11 @@ function RuleModal({ instructors, initialInstructorId, onClose }: { instructors:
               {d.baseKind === "hourly" ? (
                 <Field label="Minutes assurées">
                   <input className="input num" type="number" min={0} value={sim.minutes} onChange={(e) => setSim({ ...sim, minutes: e.target.value })} />
+                </Field>
+              ) : null}
+              {sessionBase && d.payCancelledSessions ? (
+                <Field label="Séances annulées">
+                  <input className="input num" type="number" min={0} value={sim.cancelled} onChange={(e) => setSim({ ...sim, cancelled: e.target.value })} />
                 </Field>
               ) : null}
               <Field label="Taux de présence (%)" hint="Vide : aucune présence comptée">
@@ -396,6 +443,12 @@ function RuleModal({ instructors, initialInstructorId, onClose }: { instructors:
                     <td>Facteur de présence</td>
                     <td className="num">{percent(Math.round((simulation.result.factor.numerator * 10_000) / simulation.result.factor.denominator))}</td>
                   </tr>
+                  {simulation.result.cancelledPay > 0 ? (
+                    <tr>
+                      <td>Séances annulées</td>
+                      <td className="num">{tnd(simulation.result.cancelledPay)} TND</td>
+                    </tr>
+                  ) : null}
                 </tbody>
                 <tfoot>
                   <tr>
@@ -504,7 +557,10 @@ function RulesTab() {
                     <div className="cap">{target(r)}</div>
                   </td>
                   <td>{describeBase(r)}</td>
-                  <td>{describePresence(r)}</td>
+                  <td>
+                    {describePresence(r)}
+                    {describeSessionOptions(r) ? <div className="cap">{describeSessionOptions(r)}</div> : null}
+                  </td>
                   <td>{PERIODICITY[r.periodicity]}</td>
                   <td>
                     {frDate(r.valid_from)}
@@ -692,6 +748,8 @@ interface PayItem {
     collected?: number;
     rateBasisPoints?: number | null;
     share?: { mine: number; total: number } | null;
+    cancelledSessions?: number;
+    cancelledPay?: number;
     error?: string;
   };
   status: "calculated" | "validated" | "cancelled";
@@ -741,6 +799,7 @@ function perimeter(i: PayItem): string {
   if (i.kind !== "rule" || !i.rule) return i.reason ?? "";
   const parts = [describeBase(i.rule), describePresence(i.rule)];
   if (i.details.sessions !== undefined) parts.push(`${i.details.sessions} séance(s)`);
+  if (i.details.cancelledSessions) parts.push(`${i.details.cancelledSessions} séance(s) annulée(s) payée(s)`);
   if (i.details.share) parts.push(`part de ${i.details.share.mine} séance(s) sur ${i.details.share.total}`);
   if (i.details.rateBasisPoints !== undefined && i.details.rateBasisPoints !== null) parts.push(`présence ${percent(i.details.rateBasisPoints)}`);
   if (i.details.error) parts.push("taux de présence indéfini");

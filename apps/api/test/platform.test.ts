@@ -103,7 +103,29 @@ describe("students", () => {
     expect(audit.map((a) => a.action)).toEqual(["student.created"]);
   });
 
-  it("requires a guardian for a student flagged as minor", async () => {
+  it("accepts a minor without a guardian unless the centre requires one", async () => {
+    const free = await h.app.inject({
+      method: "POST",
+      url: "/api/students",
+      headers: json(secretariat),
+      payload: { firstName: "Nour", lastName: "Gharbi", isMinor: true },
+    });
+    expect(free.statusCode).toBe(201);
+    expect(free.json()).toMatchObject({ isMinor: true, guardianName: null });
+
+    const setting = await h.app.inject({ method: "PATCH", url: "/api/centre", headers: json(admin), payload: { guardianRequiredForMinors: true } });
+    expect(setting.statusCode).toBe(200);
+    expect(setting.json().guardianRequiredForMinors).toBe(true);
+    const archived = await h.app.inject({
+      method: "POST",
+      url: `/api/students/${free.json().id}/archive`,
+      headers: json(secretariat),
+      payload: { reason: "Doublon" },
+    });
+    expect(archived.statusCode).toBeLessThan(300);
+  });
+
+  it("requires a guardian for a student flagged as minor when the centre asks for one", async () => {
     const missing = await h.app.inject({
       method: "POST",
       url: "/api/students",

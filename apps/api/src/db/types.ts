@@ -21,6 +21,7 @@ export interface CentresTable {
   timezone: Generated<string>;
   count_justified_as_present: Generated<boolean>;
   count_makeup_as_present: Generated<boolean>;
+  guardian_required_for_minors: Generated<boolean>;
   postponement_requires_approval: Generated<boolean>;
   max_postponements: Generated<number>;
   overdue_grace_days: Generated<number>;
@@ -479,6 +480,8 @@ export interface PayRulesTable {
   min_rate_basis_points: number | null;
   floor_amount: number | null;
   prorata_above: boolean | null;
+  pay_cancelled_sessions: Generated<boolean>;
+  pay_empty_sessions: Generated<boolean>;
   periodicity: PayPeriodicity;
   valid_from: DateColumn;
   valid_to: NullableDate;

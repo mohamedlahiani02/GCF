@@ -1,29 +1,36 @@
 # Décisions et points ouverts
 
-Chaque règle ci-dessous est implémentée telle qu'écrite. Les réglages marqués « paramétrable » se changent dans
-Administration, sans intervention technique.
+Chaque règle ci-dessous est implémentée telle qu'écrite. Principe validé par le client : toute la logique métier est
+paramétrable par un consultant d'implémentation, sans intervention technique. Les réglages, leurs valeurs par défaut et
+l'endroit où les changer sont décrits dans `docs/guide-parametrage.md`.
 
 ## Décisions validées par le client
 
 ### Élèves
 
-1. **Âge** : aucune règle d'âge. La fiche porte une case « élève mineur » ; un mineur doit avoir un parent ou tuteur
-   avec un nom et au moins un téléphone ou un e-mail. La date de naissance est facultative et sert d'information.
+1. **Âge** : aucune règle d'âge. La fiche porte une case « élève mineur ». Les coordonnées du parent ou tuteur sont
+   facultatives par défaut ; le centre peut les exiger (nom et au moins un téléphone ou un e-mail) dans
+   Administration. La date de naissance est facultative et sert d'information.
 
 ### Présences
 
 2. **Taux de présence** = présences comptées / présences attendues, sur les feuilles validées uniquement.
    Par défaut l'absence justifiée n'est pas comptée comme présente et le rattrapage dans un autre groupe l'est,
-   pour le groupe d'origine (paramétrable par centre et par groupe). Un élève invité en rattrapage n'entre pas dans le
-   taux du groupe d'accueil.
+   pour le groupe d'origine. Les deux sont paramétrables pour le centre et, au besoin, pour chaque groupe. Un élève
+   invité en rattrapage n'entre pas dans le taux du groupe d'accueil.
 
 ### Paie
 
-3. **Séance annulée** : une séance annulée n'est jamais due ni payée, quel que soit l'effet de présence. Seules les
-   séances tenues dont la feuille est validée entrent dans la paie.
-4. **« Ignorée » et « Séance due »** paient toutes les deux chaque séance tenue à 100 %, même sans élève présent.
-5. **Seuil minimum** : sous le seuil, rien n'est payé, ou le plancher s'il est renseigné. Au-dessus, la paie est
-   complète, ou au prorata si l'option « au-dessus du seuil, payer au prorata » est cochée sur la règle.
+La paie se règle sur chaque règle de rémunération, par intervenant (et au besoin par groupe, cours particulier ou
+formation). Les valeurs ci-dessous sont les valeurs par défaut.
+
+3. **Séance annulée** : non payée par défaut. Une règle à la séance ou horaire peut la payer ; elle compte alors à 100 %,
+   sans effet de la présence. Une séance tenue n'entre dans la paie qu'une fois sa feuille validée (contrôle fixe).
+4. **Effet de la présence** : sans effet (100 %), au prorata du taux de présence, ou seuil minimum, au choix sur la
+   règle. Une séance tenue sans aucun élève présent est payée par défaut ; une règle à la séance ou horaire peut ne pas
+   la payer. L'ancienne option « Séance due », identique à « Sans effet », n'est plus proposée.
+5. **Seuil minimum** : taux minimum, plancher et comportement au-dessus du seuil se règlent sur la règle. Sous le seuil,
+   rien n'est payé, ou le plancher s'il est renseigné ; au-dessus, la paie est complète ou au prorata.
 6. **Tarif de séance** : c'est un montant saisi sur la règle de rémunération. La base vaut
    pourcentage x tarif de séance x séances tenues.
 7. **Arrondi** : un seul arrondi au millime, au demi supérieur, à l'application du facteur de présence.
