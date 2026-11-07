@@ -7,6 +7,7 @@ import { createDb } from "../src/db/client.js";
 import { migrateToLatest } from "../src/db/migrate.js";
 import type { Database, Module, Role } from "../src/db/types.js";
 import type { Mailer, OutgoingMail } from "../src/mail.js";
+import { testClockOffsetMs } from "./clock.js";
 
 export const ORIGIN = "https://gestion.test";
 export const PUBLIC_ORIGIN = "https://www.cowork.test";
@@ -48,11 +49,33 @@ export class RecordingMailer implements Mailer {
   }
 }
 
+/**
+ * Recreates the schema and makes now() in PostgreSQL follow the same fixed clock as Date in the tests
+ * (see clock.ts). public stays first in the search path so tables are created there; test_clock comes before
+ * pg_catalog so its now() wins, including in column defaults created by the migrations.
+ */
+async function installTestClock(connectionString: string): Promise<void> {
+  const setup = createDb(connectionString);
+  try {
+    await sql`drop schema if exists public cascade`.execute(setup);
+    await sql`create schema public`.execute(setup);
+    await sql`drop schema if exists test_clock cascade`.execute(setup);
+    await sql`create schema test_clock`.execute(setup);
+    const offset = Math.round(testClockOffsetMs());
+    await sql
+      .raw(`create function test_clock.now() returns timestamptz language sql stable as $$ select pg_catalog.now() + interval '${offset} milliseconds' $$`)
+      .execute(setup);
+    await sql`do $$ begin execute format('alter database %I set search_path = public, test_clock, pg_catalog', current_database()); end $$`.execute(setup);
+  } finally {
+    await setup.destroy();
+  }
+}
+
 export async function createHarness(options: { mailer?: Mailer } = {}): Promise<Harness> {
   if (!testDatabaseUrl) throw new Error("TEST_DATABASE_URL must point to a disposable PostgreSQL database");
+  await installTestClock(testDatabaseUrl);
+  // A new pool, so every connection starts with the search path that resolves now() to the test clock.
   const db = createDb(testDatabaseUrl);
-  await sql`drop schema if exists public cascade`.execute(db);
-  await sql`create schema public`.execute(db);
   await migrateToLatest(db);
 
   const centre = await db.insertInto("centres").values({ name: "Centre de test" }).returning("id").executeTakeFirstOrThrow();

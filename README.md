@@ -118,7 +118,12 @@ TEST_DATABASE_URL=postgres://user@localhost:5432/gcf_test pnpm --filter @gcf/api
 pnpm typecheck                                # API, tests, règles partagées et interface
 ```
 
-`TEST_DATABASE_URL` doit pointer vers une base jetable : le schéma `public` est recréé à chaque exécution.
+`TEST_DATABASE_URL` doit pointer vers une base jetable : les schémas `public` et `test_clock` sont recréés à chaque
+exécution, et le `search_path` de la base est modifié.
+
+Les tests d'API tournent à une date fixe, le mardi 20 octobre 2026 à 09:00 (heure de Tunis), pour l'application comme
+pour PostgreSQL (`test/clock.ts`). Les jeux de données datés gardent ainsi leur sens quelle que soit la date réelle.
+Écrivez les nouveaux jeux de données par rapport à cette date.
 
 ## Avancement
 
