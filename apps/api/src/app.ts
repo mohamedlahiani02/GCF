@@ -17,6 +17,7 @@ import { forbidden, HttpError, unauthenticated } from "./errors.js";
 import { runWithApiToken } from "./requestContext.js";
 import { accountRoutes } from "./routes/accounts.js";
 import { auditRoutes } from "./routes/audit.js";
+import { automationRoutes } from "./routes/automations.js";
 import { authRoutes } from "./routes/auth.js";
 import { cashRoutes } from "./routes/cash.js";
 import { catalogueRoutes } from "./routes/catalogue.js";
@@ -219,6 +220,7 @@ export async function buildApp(options: AppOptions): Promise<FastifyInstance> {
   await app.register(dashboardRoutes, { prefix: "/api/dashboard" });
   await app.register(searchRoutes, { prefix: "/api/search" });
   await app.register(integrationRoutes, { prefix: "/api/integrations" });
+  await app.register(automationRoutes, { prefix: "/api/automations" });
   await app.register(mediaRoutes, { prefix: "/api/media" });
   await app.register(coworkingConfigRoutes, { prefix: "/api/coworking" });
   await app.register(coworkingMemberRoutes, { prefix: "/api/coworking" });

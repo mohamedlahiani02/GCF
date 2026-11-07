@@ -6,9 +6,10 @@ import { writeAudit } from "../../audit.js";
 import { deleteMemberSessions } from "../../auth/memberSessions.js";
 import { issueMemberToken, MEMBER_TOKEN_TTL_MINUTES } from "../../auth/memberTokens.js";
 import type { SessionUser } from "../../auth/sessions.js";
-import type { CwMailKind } from "../../db/types.coworking.js";
 import type { Database } from "../../db/types.js";
 import { cancelMemberCharges, issueMemberCharges } from "../../domain/coworking/memberCharges.js";
+import { automationMode } from "../../domain/automations/settings.js";
+import { lockOpenMailItem, notifyMailItem } from "../../domain/coworking/mailItems.js";
 import { portalLink, sendMemberMail } from "../../domain/coworking/memberMail.js";
 import { assertAssignableResource, createSubscription, loadPlanForSale, periodEnd, renewSubscription } from "../../domain/coworking/subscriptions.js";
 import { centreClock, installmentBalances, lockPayer, payerTotals, settlePayer, type Payer } from "../../domain/ledger.js";
@@ -76,7 +77,6 @@ const mailQuery = z.object({
   ...page,
 });
 const collectBody = z.object({ collectedByName: requiredText(150), notes: optionalText(1000) }).strict();
-const MAIL_KIND_FR: Record<CwMailKind, string> = { letter: "une lettre", registered: "une lettre recommandée", parcel: "un colis", other: "un envoi" };
 
 const frDate = (iso: string) => iso.split("-").reverse().join("/");
 const escapeLike = (value: string) => `%${value.toLowerCase().replace(/[\\%_]/g, (c) => `\\${c}`)}%`;
@@ -961,19 +961,6 @@ export const coworkingMemberRoutes: FastifyPluginAsync = async (app) => {
     return row;
   };
 
-  const lockOpenMailItem = async (trx: Transaction<Database>, centreId: string, id: string) => {
-    const item = await trx
-      .selectFrom("cw_mail_items")
-      .select(["id", "member_id", "status", "kind", "sender", "received_at"])
-      .where("id", "=", id)
-      .where("centre_id", "=", centreId)
-      .forUpdate()
-      .executeTakeFirst();
-    if (!item) throw notFound("mail item");
-    if (item.status !== "received" && item.status !== "notified") throw conflict("mail_item_closed", "this mail has already been collected or returned");
-    return item;
-  };
-
   /** Members holding a domiciliation today, with how many items wait for them. */
   app.get("/domiciliations", { preHandler: read }, async (request) => {
     const centreId = request.user!.centreId;
@@ -1067,33 +1054,28 @@ export const coworkingMemberRoutes: FastifyPluginAsync = async (app) => {
       await audit(trx, actor, "cw_mail_item.received", "cw_mail_item", created.id, { after: body });
       return created.id;
     });
-    return reply.status(201).send(await loadMailItem(actor.centreId, id));
+    // With the automatic notice switched on, the member is told at once; a member without an e-mail address is
+    // left for the reception to contact, and the item stays "received".
+    let notice: "sent" | "failed" | "no_recipient" | null = null;
+    if ((await automationMode(db, actor.centreId, "mail_item_notice")) === "auto") {
+      try {
+        notice = await notifyMailItem(db, app.mailer, request.log, actor.centreId, id, null);
+      } catch (error) {
+        // The item is recorded either way: a failed notice never undoes the reception.
+        if (error instanceof HttpError && error.code === "no_recipient") notice = "no_recipient";
+        else {
+          request.log.error({ err: error, mailItemId: id }, "automatic mail notice failed");
+          notice = "failed";
+        }
+      }
+    }
+    return reply.status(201).send({ ...(await loadMailItem(actor.centreId, id)), notice });
   });
 
   app.post("/mail-items/:id/notify", { preHandler: write }, async (request) => {
     const actor = request.user!;
     const { id } = idParam.parse(request.params);
-    const notice = await db.transaction().execute(async (trx) => {
-      const item = await lockOpenMailItem(trx, actor.centreId, id);
-      const member = await trx.selectFrom("members").select(["email", "first_name"]).where("id", "=", item.member_id).executeTakeFirstOrThrow();
-      if (!member.email) throw unprocessable("no_recipient", "the member has no e-mail address");
-      const { timezone } = await centreClock(trx, actor.centreId);
-      const received = await sql<{ day: string }>`select to_char(${item.received_at}::timestamptz at time zone ${timezone}, 'DD/MM/YYYY') as day`.execute(trx);
-      await trx.updateTable("cw_mail_items").set({ status: "notified", notified_at: new Date() }).where("id", "=", id).execute();
-      await audit(trx, actor, "cw_mail_item.notified", "cw_mail_item", id, { before: { status: item.status }, after: { status: "notified" } });
-      return { item, member: { email: member.email, firstName: member.first_name }, day: received.rows[0]!.day };
-    });
-    const centre = await centreName(actor.centreId);
-    const from = notice.item.sender ? ` de la part de ${notice.item.sender}` : "";
-    const mail = await sendMemberMail(db, app.mailer, request.log, {
-      centreId: actor.centreId,
-      memberId: notice.item.member_id,
-      kind: "mail_item",
-      to: notice.member.email,
-      subject: `${centre} : du courrier vous attend`,
-      text: `Bonjour ${notice.member.firstName},\n\nNous avons reçu ${MAIL_KIND_FR[notice.item.kind]}${from} pour vous le ${notice.day}. Vous pouvez le retirer à l'accueil aux heures d'ouverture.\n\n${centre}`,
-      sentBy: actor.userId,
-    });
+    const mail = await notifyMailItem(db, app.mailer, request.log, actor.centreId, id, actor.userId);
     return { ...(await loadMailItem(actor.centreId, id)), mail };
   });
 
