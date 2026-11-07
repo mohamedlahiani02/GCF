@@ -98,6 +98,8 @@ export interface PayWarning {
 
 interface HeldSession {
   id: string;
+  /** A cancelled session is only kept when the rule that applies pays cancelled sessions. */
+  cancelled: boolean;
   groupId: string;
   groupName: string;
   instructorId: string;
@@ -120,10 +122,12 @@ export interface CandidateScope {
 }
 
 /**
- * Pay items due in a range, from held sessions with a validated sheet only (a cancelled session is never paid).
- * Each session is paid by the one rule that applies on its date, at that rule's rhythm: one item per session, per
- * month, or per training group at its end. Collections of a group are shared between its instructors in proportion
- * to the sessions each held in the month.
+ * Pay items due in a range, from held sessions with a validated sheet. Each session is paid by the one rule that
+ * applies on its date, at that rule's rhythm: one item per session, per month, or per training group at its end.
+ * The rule also decides whether a cancelled session is paid (at 100 %, attendance does not apply) and whether a held
+ * session with no student present is paid; a session the rule does not pay is left out of the item and of its
+ * attendance rate. Collections of a group are shared between its instructors in proportion to the sessions each
+ * held in the month.
  */
 export async function computeCandidates(db: Db, centreId: string, scope: CandidateScope): Promise<{ candidates: PayCandidate[]; warnings: PayWarning[] }> {
   const centre = await db
@@ -140,6 +144,7 @@ export async function computeCandidates(db: Db, centreId: string, scope: Candida
       .leftJoin("training_sessions", "training_sessions.id", "groups.training_session_id")
       .select([
         "class_sessions.id",
+        sql<boolean>`class_sessions.status = 'cancelled'`.as("cancelled"),
         "class_sessions.group_id as groupId",
         "groups.name as groupName",
         "class_sessions.instructor_id as instructorId",
@@ -151,8 +156,12 @@ export async function computeCandidates(db: Db, centreId: string, scope: Candida
         "groups.end_date as groupEnd",
       ])
       .where("class_sessions.centre_id", "=", centreId)
-      .where("class_sessions.status", "=", "held")
-      .where("class_sessions.sheet_status", "=", "validated")
+      .where((eb) =>
+        eb.or([
+          eb.and([eb("class_sessions.status", "=", "held"), eb("class_sessions.sheet_status", "=", "validated")]),
+          eb("class_sessions.status", "=", "cancelled"),
+        ]),
+      )
       .$if(scope.instructorId !== undefined, (qb) => qb.where("class_sessions.instructor_id", "=", scope.instructorId!))
       .$if(scope.groupId !== undefined, (qb) => qb.where("class_sessions.group_id", "=", scope.groupId!));
 
@@ -210,6 +219,23 @@ export async function computeCandidates(db: Db, centreId: string, scope: Candida
     : [];
   const statusesBySession = new Map<string, AttendanceStatus[]>();
   for (const r of records) statusesBySession.set(r.sessionId, [...(statusesBySession.get(r.sessionId) ?? []), r.status]);
+  // A session counts as attended when at least one student, a make-up guest included, is marked present on its sheet.
+  const attended = new Set<string>();
+  const held = sessions.filter((s) => !s.cancelled);
+  if (held.length) {
+    const rows = await db
+      .selectFrom("attendance_records")
+      .select("session_id as sessionId")
+      .distinct()
+      .where(
+        "session_id",
+        "in",
+        held.map((s) => s.id),
+      )
+      .where("status", "=", "present")
+      .execute();
+    for (const r of rows) attended.add(r.sessionId);
+  }
 
   const collectedInMonth = async (groupId: string, month: string, basis: "collected" | "invoiced"): Promise<number> => {
     const { start, end } = monthBounds(month);
@@ -271,6 +297,8 @@ export async function computeCandidates(db: Db, centreId: string, scope: Candida
 
   for (const s of sessions) {
     const rule = pickRule(rules, s.instructorId, { id: s.groupId, studyId: s.studyId, trainingId: s.trainingId }, s.localDate);
+    if (s.cancelled && !rule?.pay_cancelled_sessions) continue;
+    if (rule && !s.cancelled && !rule.pay_empty_sessions && !attended.has(s.id)) continue;
     if (!rule) {
       if (!warned.has(`${s.instructorId}|${s.groupId}`)) {
         warned.add(`${s.instructorId}|${s.groupId}`);
@@ -349,8 +377,10 @@ export async function computeCandidates(db: Db, centreId: string, scope: Candida
   for (const b of buckets.values()) {
     if (b.periodEnd < scope.from || b.periodEnd > scope.to) continue;
     const settings = b.groupId ? (groupSettings.get(b.groupId) ?? centreSettings) : centreSettings;
+    const heldSessions = b.sessions.filter((s) => !s.cancelled);
+    const cancelledSessions = b.sessions.filter((s) => s.cancelled);
     const rate = attendanceRate(
-      b.sessions.flatMap((s) => statusesBySession.get(s.id) ?? []),
+      heldSessions.flatMap((s) => statusesBySession.get(s.id) ?? []),
       settings,
     );
     let collected = 0;
@@ -358,10 +388,11 @@ export async function computeCandidates(db: Db, centreId: string, scope: Candida
     if (b.rule.base_kind === "pct_collections" && b.groupId && b.month) {
       const total = await heldInMonth(b.groupId, b.month);
       const groupTotal = await collectedInMonth(b.groupId, b.month, b.rule.collection_basis ?? "collected");
-      collected = total > 0 ? mulDivRound(groupTotal, b.sessions.length, total) : 0;
-      share = { mine: b.sessions.length, total };
+      collected = total > 0 ? mulDivRound(groupTotal, heldSessions.length, total) : 0;
+      share = { mine: heldSessions.length, total };
     }
-    const inputs = { collected, sessions: b.sessions.length, minutes: b.sessions.reduce((t, s) => t + s.minutes, 0) };
+    const inputs = { collected, sessions: heldSessions.length, minutes: heldSessions.reduce((t, s) => t + s.minutes, 0) };
+    const cancellations = { sessions: cancelledSessions.length, minutes: cancelledSessions.reduce((t, s) => t + s.minutes, 0) };
     const common = {
       instructorId: b.instructorId,
       rule: b.rule,
@@ -375,13 +406,18 @@ export async function computeCandidates(db: Db, centreId: string, scope: Candida
       sessionIds: b.sessions.map((s) => s.id),
     };
     try {
-      const result = computePay(toPayRule(b.rule, inputs), rate);
+      const result = computePay(toPayRule(b.rule, inputs), rate, cancellations);
       candidates.push({
         ...common,
         base: result.base,
         rate: result.factor,
         amount: result.amount,
-        details: { ...inputs, share, rateBasisPoints: rateToBasisPoints(rate) ?? null },
+        details: {
+          ...inputs,
+          share,
+          rateBasisPoints: rateToBasisPoints(rate) ?? null,
+          ...(cancellations.sessions ? { cancelledSessions: cancellations.sessions, cancelledPay: result.cancelledPay } : {}),
+        },
       });
     } catch (error) {
       if (!(error instanceof PayrollError)) throw error;
@@ -391,7 +427,13 @@ export async function computeCandidates(db: Db, centreId: string, scope: Candida
         base: 0,
         rate: { numerator: 0, denominator: 1 },
         amount: 0,
-        details: { ...inputs, share, rateBasisPoints: null, error: error.message },
+        details: {
+          ...inputs,
+          share,
+          rateBasisPoints: null,
+          error: error.message,
+          ...(cancellations.sessions ? { cancelledSessions: cancellations.sessions } : {}),
+        },
       });
     }
   }

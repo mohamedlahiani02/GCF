@@ -17,6 +17,7 @@ interface Centre {
   timezone: string;
   countJustifiedAsPresent: boolean;
   countMakeupAsPresent: boolean;
+  guardianRequiredForMinors: boolean;
   postponementRequiresApproval: boolean;
   maxPostponements: number;
   overdueGraceDays: number;
@@ -143,6 +144,7 @@ function CentreSettings() {
         taxId: body.taxId ?? "",
         countJustifiedAsPresent: body.countJustifiedAsPresent,
         countMakeupAsPresent: body.countMakeupAsPresent,
+        guardianRequiredForMinors: body.guardianRequiredForMinors,
         postponementRequiresApproval: body.postponementRequiresApproval,
         maxPostponements: body.maxPostponements,
         overdueGraceDays: body.overdueGraceDays,
@@ -196,6 +198,12 @@ function CentreSettings() {
             <input className="input" value={v.taxId ?? ""} onChange={(e) => set("taxId", e.target.value)} />
           </Field>
         </div>
+        <h3 className="h2">Élèves</h3>
+        <label className="row center" style={{ gap: 8 }}>
+          <input type="checkbox" className="chk" checked={v.guardianRequiredForMinors} onChange={(e) => set("guardianRequiredForMinors", e.target.checked)} />{" "}
+          Exiger un parent ou tuteur joignable (nom et téléphone ou e-mail) pour un élève mineur
+        </label>
+        <span className="cap">Désactivé : les coordonnées du tuteur restent facultatives.</span>
         <h3 className="h2">Présences</h3>
         <label className="row center" style={{ gap: 8 }}>
           <input type="checkbox" className="chk" checked={v.countJustifiedAsPresent} onChange={(e) => set("countJustifiedAsPresent", e.target.checked)} />{" "}

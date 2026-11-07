@@ -19,6 +19,9 @@ const PERIODICITIES: Record<PayBaseKind, PayPeriodicity[]> = {
   training_flat: ["training"],
 };
 
+/** Bases counted per session or per hour: the only ones a cancelled or an unattended session can change. */
+const SESSION_BASES: PayBaseKind[] = ["fixed_per_session", "pct_session_tariff", "hourly"];
+
 const ruleBody = z
   .object({
     instructorId: uuid,
@@ -28,10 +31,13 @@ const ruleBody = z
     basisPoints: basisPoints.optional(),
     amount: millimes.optional(),
     collectionBasis: z.enum(["collected", "invoiced"]).optional(),
-    presenceKind: z.enum(["ignore", "prorata", "session_due", "threshold"]),
+    // "session_due" behaved exactly as "ignore"; rules created with it keep working but no new rule uses it.
+    presenceKind: z.enum(["ignore", "prorata", "threshold"]),
     minRateBasisPoints: basisPoints.optional(),
     floorAmount: millimes.optional(),
     prorataAbove: z.boolean().optional(),
+    payCancelledSessions: z.boolean().optional(),
+    payEmptySessions: z.boolean().optional(),
     periodicity: z.enum(["session", "month", "training"]).optional(),
     validFrom: isoDate,
     validTo: isoDate.optional(),
@@ -47,6 +53,8 @@ const ruleBody = z
     if ((r.presenceKind === "threshold") !== (r.minRateBasisPoints !== undefined && r.prorataAbove !== undefined))
       issue("a threshold needs minRateBasisPoints and prorataAbove");
     if (r.presenceKind !== "threshold" && r.floorAmount !== undefined) issue("a floor only applies to a threshold");
+    if (!SESSION_BASES.includes(r.baseKind) && (r.payCancelledSessions !== undefined || r.payEmptySessions !== undefined))
+      issue("payCancelledSessions and payEmptySessions only apply to a base counted per session or per hour");
     if (r.validTo && r.validTo < r.validFrom) issue("validTo cannot be before validFrom");
     if (r.periodicity !== undefined && !PERIODICITIES[r.baseKind].includes(r.periodicity)) issue("this periodicity does not fit the base of the rule");
   });
@@ -133,6 +141,8 @@ export const payrollRoutes: FastifyPluginAsync = async (app) => {
           min_rate_basis_points: body.minRateBasisPoints ?? null,
           floor_amount: body.floorAmount ?? null,
           prorata_above: body.prorataAbove ?? null,
+          pay_cancelled_sessions: body.payCancelledSessions ?? false,
+          pay_empty_sessions: body.payEmptySessions ?? true,
           periodicity: body.periodicity ?? PERIODICITIES[body.baseKind][0]!,
           valid_from: body.validFrom,
           valid_to: body.validTo ?? null,

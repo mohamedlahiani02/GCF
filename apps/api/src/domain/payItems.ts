@@ -94,7 +94,6 @@ export async function calculateItems(trx: Trx, actor: Actor, instructorId: strin
   let created = 0;
   let unchanged = 0;
   let replaced = 0;
-  const seen = new Set<string>();
   const cancel = async (id: string, reason: string) => {
     await trx
       .updateTable("pay_items")
@@ -103,9 +102,16 @@ export async function calculateItems(trx: Trx, actor: Actor, instructorId: strin
       .execute();
     await trx.updateTable("pay_item_sessions").set({ active: false }).where("item_id", "=", id).execute();
   };
+  // Calculated items the rules no longer produce are cancelled first, so their sessions are free for the new items.
+  const produced = new Set(candidates.map((c) => keyOf(c.rule.id, c.groupId, c.periodKey)));
+  for (const [key, item] of byKey) {
+    if (item.status === "calculated" && !produced.has(key)) {
+      await cancel(item.id, "Ne s'applique plus après recalcul");
+      replaced += 1;
+    }
+  }
   for (const c of candidates) {
     const key = keyOf(c.rule.id, c.groupId, c.periodKey);
-    seen.add(key);
     const current = byKey.get(key);
     if (current?.status === "validated") continue;
     if (current && sameCalculation(current, c)) {
@@ -146,12 +152,6 @@ export async function calculateItems(trx: Trx, actor: Actor, instructorId: strin
         .execute();
     }
     created += 1;
-  }
-  for (const [key, item] of byKey) {
-    if (item.status === "calculated" && !seen.has(key)) {
-      await cancel(item.id, "Ne s'applique plus après recalcul");
-      replaced += 1;
-    }
   }
   await writeAudit(trx, {
     centreId: actor.centreId,

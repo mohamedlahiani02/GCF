@@ -90,7 +90,10 @@ export function StudentFormModal({
       onSaved(s);
     },
   });
-  const guardianMissing = v.isMinor && (!v.guardianName.trim() || (!v.guardianPhone.trim() && !v.guardianEmail.trim()));
+  // The centre decides whether a minor needs a reachable guardian (Administration, off by default).
+  const centre = useQuery({ queryKey: ["centre"], queryFn: () => api.get<{ guardianRequiredForMinors: boolean }>("/centre") });
+  const guardianRequired = centre.data?.guardianRequiredForMinors ?? false;
+  const guardianMissing = guardianRequired && v.isMinor && (!v.guardianName.trim() || (!v.guardianPhone.trim() && !v.guardianEmail.trim()));
   return (
     <Modal
       wide
@@ -140,7 +143,7 @@ export function StudentFormModal({
       </label>
       {v.isMinor ? (
         <div className="grid3">
-          <Field label="Parent ou tuteur *">
+          <Field label={guardianRequired ? "Parent ou tuteur *" : "Parent ou tuteur"}>
             <input className="input" value={v.guardianName} onChange={(e) => set("guardianName", e.target.value)} />
           </Field>
           <Field label="Téléphone du tuteur">

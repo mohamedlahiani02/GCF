@@ -129,6 +129,10 @@ export interface GroupDetail {
   startDate: string;
   endDate: string;
   priceOverride: number | null;
+  /** Null: the group follows the private lesson (absences) or the centre (attendance rate). */
+  absenceBilledOverride: boolean | null;
+  countJustifiedOverride: boolean | null;
+  countMakeupOverride: boolean | null;
   billingMode: "monthly" | "per_session" | null;
   status: string;
   effective: { price: number; absenceBilled: boolean | null; countJustifiedAsPresent: boolean; countMakeupAsPresent: boolean };

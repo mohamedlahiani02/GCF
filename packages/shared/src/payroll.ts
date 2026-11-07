@@ -18,10 +18,11 @@ export type PayBase =
   | { kind: "training_flat"; amount: Millimes };
 
 /**
- * How student attendance affects pay. Cancelled sessions are never counted as held, whatever the effect.
+ * How student attendance affects pay. Whether a cancelled session, or a held session with no student present, is
+ * paid at all is a separate setting of the rule, applied before this effect (see `computePay`).
  * - ignore: attendance plays no role (100 %).
  * - prorata: pay x attendance rate.
- * - session_due: every held session is paid, even when no student attended.
+ * - session_due: former option that behaves exactly as `ignore`; kept so rules created with it still compute.
  * - threshold: no pay (or the floor) below the minimum rate; full pay, or prorata if enabled, above it.
  */
 export type PresenceEffect =
@@ -36,9 +37,18 @@ export interface PayRule {
 }
 
 export interface PayComputation {
+  /** Base of the sessions held, before the presence factor. */
   base: Millimes;
   factor: Rate;
+  /** Pay for cancelled sessions the rule pays; attendance does not apply to them. Included in `amount`. */
+  cancelledPay: Millimes;
   amount: Millimes;
+}
+
+/** Cancelled sessions a rule pays: counted like held sessions in a base per session or per hour, at 100 %. */
+export interface PaidCancellations {
+  sessions: number;
+  minutes: number;
 }
 
 function assertCount(value: number, label: string): void {
@@ -95,12 +105,49 @@ function requireRate(rate: Rate): Rate {
   return rate;
 }
 
-export function computePay(rule: PayRule, rate: Rate): PayComputation {
-  const base = computeBase(rule.base);
-  const factor = computeFactor(rule.presence, rate);
-  let amount = mulDivRound(base, factor.numerator, factor.denominator);
-  if (rule.presence.kind === "threshold" && factor.numerator === 0 && rule.presence.floor !== undefined) {
-    amount = assertMillimes(rule.presence.floor, "floor");
+/** The same base, counting the given sessions instead of the held ones. Only bases counted per session or per hour have one. */
+function cancellationBase(base: PayBase, cancelled: PaidCancellations): PayBase {
+  switch (base.kind) {
+    case "pct_session_tariff":
+    case "fixed_per_session":
+      return { ...base, sessionsHeld: cancelled.sessions };
+    case "hourly":
+      return { ...base, minutesDelivered: cancelled.minutes };
+    default:
+      throw new Error(`cancelled sessions cannot be paid with a ${base.kind} base`);
   }
-  return { base, factor, amount };
+}
+
+/** True when a base counted per session or per hour has no held session to pay, so no attendance is needed. */
+function nothingHeld(base: PayBase): boolean {
+  switch (base.kind) {
+    case "pct_session_tariff":
+    case "fixed_per_session":
+      return base.sessionsHeld === 0;
+    case "hourly":
+      return base.minutesDelivered === 0;
+    default:
+      return false;
+  }
+}
+
+/**
+ * Pay = Base x PresenceFactor for the sessions held, plus the base of the cancelled sessions the rule pays.
+ * When only cancelled sessions are paid, no attendance rate is needed.
+ */
+export function computePay(rule: PayRule, rate: Rate, cancelled: PaidCancellations = { sessions: 0, minutes: 0 }): PayComputation {
+  assertCount(cancelled.sessions, "cancelled sessions");
+  assertCount(cancelled.minutes, "cancelled minutes");
+  const hasCancelled = cancelled.sessions > 0;
+  const cancelledPay = hasCancelled ? computeBase(cancellationBase(rule.base, cancelled)) : 0;
+  const base = computeBase(rule.base);
+  if (hasCancelled && nothingHeld(rule.base)) {
+    return { base, factor: FULL, cancelledPay, amount: assertMillimes(base + cancelledPay, "pay") };
+  }
+  const factor = computeFactor(rule.presence, rate);
+  let held = mulDivRound(base, factor.numerator, factor.denominator);
+  if (rule.presence.kind === "threshold" && factor.numerator === 0 && rule.presence.floor !== undefined) {
+    held = assertMillimes(rule.presence.floor, "floor");
+  }
+  return { base, factor, cancelledPay, amount: assertMillimes(held + cancelledPay, "pay") };
 }

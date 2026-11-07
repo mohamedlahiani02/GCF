@@ -54,7 +54,7 @@ apps/web            Back-office (React), servi par l'API en production
 apps/portal         Portail client du coworking (React, français et anglais), servi sous /espace/ sur PUBLIC_ORIGIN
 packages/shared     Règles métier pures et testées : argent, présence, paie, dates, échéanciers, plan d'étage, sections du site
 packages/floorplan  Affichage du plan d'étage (SVG), partagé par le back-office et le portail
-docs/               Décisions validées avec le client et points encore ouverts
+docs/               Décisions validées avec le client, points encore ouverts et guide de paramétrage (consultant)
 ```
 
 ## Démarrage

@@ -67,4 +67,33 @@ describe("pay = base x presence factor", () => {
       PayrollError,
     );
   });
+
+  it("pays cancelled sessions at 100 %, on top of the held sessions after the presence factor", () => {
+    const rule = { base: { kind: "fixed_per_session" as const, amountPerSession: 40_000, sessionsHeld: 4 }, presence: { kind: "prorata" as const } };
+    const result = computePay(rule, rate85, { sessions: 1, minutes: 90 });
+    expect(result.base).toBe(160_000);
+    expect(result.cancelledPay).toBe(40_000);
+    expect(result.amount).toBe(136_000 + 40_000);
+  });
+
+  it("keeps the floor for held sessions and adds the cancelled ones", () => {
+    const rule = {
+      base: { kind: "fixed_per_session" as const, amountPerSession: 40_000, sessionsHeld: 4 },
+      presence: { kind: "threshold" as const, minRateBasisPoints: 5000, prorataAbove: false, floor: 50_000 },
+    };
+    expect(computePay(rule, { numerator: 2, denominator: 5 }, { sessions: 2, minutes: 180 }).amount).toBe(50_000 + 80_000);
+  });
+
+  it("pays only cancelled sessions without needing an attendance rate", () => {
+    const rule = { base: { kind: "hourly" as const, hourlyRate: 30_000, minutesDelivered: 0 }, presence: { kind: "prorata" as const } };
+    const result = computePay(rule, { numerator: 0, denominator: 0 }, { sessions: 1, minutes: 120 });
+    expect(result.factor).toEqual({ numerator: 1, denominator: 1 });
+    expect(result.amount).toBe(60_000);
+  });
+
+  it("refuses cancelled sessions on a base that is not counted per session", () => {
+    expect(() => computePay({ base: { kind: "monthly_flat", amount: 100_000 }, presence: { kind: "ignore" } }, rate85, { sessions: 1, minutes: 60 })).toThrow(
+      /cannot be paid/,
+    );
+  });
 });
