@@ -667,6 +667,55 @@ export interface Database extends CoworkingTables, WebsiteTables {
   api_tokens: ApiTokensTable;
   webhook_endpoints: WebhookEndpointsTable;
   webhook_deliveries: WebhookDeliveriesTable;
+  automation_settings: AutomationSettingsTable;
+  automation_runs: AutomationRunsTable;
+  proposals: ProposalsTable;
+}
+
+export type AutomationKey = "overdue_reminders" | "payroll_month" | "daily_digest" | "mail_item_notice";
+export type AutomationMode = "off" | "propose" | "auto";
+
+export interface AutomationSettingsTable {
+  centre_id: string;
+  key: AutomationKey;
+  mode: AutomationMode;
+  params: ColumnType<unknown, string | undefined, string>;
+  updated_by: OptionalRef;
+  updated_at: Timestamp;
+}
+
+export interface AutomationRunsTable {
+  id: Generated<string>;
+  centre_id: string;
+  key: AutomationKey;
+  period_key: string;
+  mode: "propose" | "auto";
+  status: Generated<"running" | "done" | "failed" | "skipped">;
+  started_at: Timestamp;
+  finished_at: NullableTimestamp;
+  summary: Json;
+  error: string | null;
+}
+
+export type ProposalKind = "reminders.send" | "payroll.calculate";
+export type ProposalStatus = "pending" | "confirmed" | "rejected" | "expired" | "failed";
+
+export interface ProposalsTable {
+  id: Generated<string>;
+  centre_id: string;
+  kind: ProposalKind;
+  title: string;
+  summary: ColumnType<unknown, string, string>;
+  payload: ColumnType<unknown, string, string>;
+  status: Generated<ProposalStatus>;
+  run_id: OptionalRef;
+  created_at: Timestamp;
+  expires_at: Date | string;
+  decided_by: OptionalRef;
+  decided_at: NullableTimestamp;
+  decision_note: string | null;
+  result: Json;
+  error: string | null;
 }
 
 /** Roles an access token may carry; admin is never one of them. */

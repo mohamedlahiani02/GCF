@@ -20,7 +20,7 @@ interface NavItem {
   /** Other paths whose pages are reached through this entry (tabs of a grouped page). */
   also?: string[];
   /** Small counter shown next to the label (pending work). */
-  badge?: "cwRequests";
+  badge?: "cwRequests" | "proposals";
 }
 
 interface NavSection {
@@ -54,6 +54,7 @@ const ICONS = {
   pages: "M14 3H6v18h12V7zM14 3v4h4",
   media: "M3 5h18v14H3zM3 16l5-5 4 4 3-3 6 6M15.5 9.5h0",
   leads: "M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z",
+  proposals: "M9 11l3 3 8-8M20 12v7a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h9",
 };
 
 /** Every settings page of the back-office, gathered on one "Paramètres" page; each card shows only with its permission. */
@@ -83,6 +84,12 @@ export const SETTINGS_LINKS: { to: string; title: string; text: string; permissi
     permission: ["audit:read", "users:manage"],
   },
   {
+    to: "/automatisations",
+    title: "Automatisations",
+    text: "Relances hebdomadaires, paie du mois, programme du lendemain, avis de courrier : désactivé, à confirmer ou automatique.",
+    permission: "centre:manage",
+  },
+  {
     to: "/integrations",
     title: "Intégrations",
     text: "Jetons d'accès à l'API et webhooks pour relier GCF à n8n, à la messagerie ou à un agent.",
@@ -101,6 +108,7 @@ const NAV: NavSection[] = [
       { to: "/presences", label: "Présences", icon: ICONS.attendance, permission: "attendance:read" },
       { to: "/encaissements", label: "Encaissements", icon: ICONS.payments, permission: "payments:read" },
       { to: "/paie", label: "Paie", icon: ICONS.payroll, permission: "payroll:read" },
+      { to: "/propositions", label: "Propositions", icon: ICONS.proposals, permission: ["reminders:send", "payroll:calculate"], badge: "proposals" },
     ],
   },
   {
@@ -235,6 +243,17 @@ function NavEntry({ item, active, count }: { item: NavItem; active: boolean; cou
 }
 
 /** Pending coworking requests, shared with the requests page through its query key. */
+/** Proposals prepared by the centre's automations that this person may confirm. */
+function useProposalCount(enabled: boolean): number {
+  const { data } = useQuery({
+    queryKey: ["proposals-count"],
+    queryFn: () => api.get<{ pending: number }>("/automations/proposals/count"),
+    enabled,
+    refetchInterval: 60_000,
+  });
+  return data?.pending ?? 0;
+}
+
 function useRequestCount(enabled: boolean): number {
   const { data } = useQuery({
     queryKey: ["cw-requests"],
@@ -355,6 +374,7 @@ export function Shell() {
   const [walkIn, setWalkIn] = useState(false);
   const [largeText, setLargeText] = useLargeText();
   const requestCount = useRequestCount(!!session && can("coworking:write"));
+  const proposalCount = useProposalCount(!!session && (can("reminders:send") || can("payroll:calculate")));
   useEffect(() => {
     document.documentElement.classList.toggle("large-text", largeText && !fullScreen);
   }, [largeText, fullScreen]);
@@ -459,7 +479,7 @@ export function Shell() {
                                 key={item.to}
                                 item={item}
                                 active={entryActive(item, location.pathname)}
-                                count={item.badge === "cwRequests" ? requestCount : 0}
+                                count={item.badge === "cwRequests" ? requestCount : item.badge === "proposals" ? proposalCount : 0}
                               />
                             ))}
                           </div>

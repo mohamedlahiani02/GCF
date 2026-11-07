@@ -59,9 +59,14 @@ export interface CalculationResult {
 /**
  * Calculates an instructor's items whose period ends in the range. Validated items are never touched and their
  * sessions are left out; a calculated item that the rules no longer produce identically is cancelled and replaced,
- * so the history of every calculation is kept.
+ * so the history of every calculation is kept. The actor has no user when the monthly payroll automation runs it.
  */
-export async function calculateItems(trx: Trx, actor: Actor, instructorId: string, range: { from: string; to: string }): Promise<CalculationResult> {
+export async function calculateItems(
+  trx: Trx,
+  actor: { centreId: string; userId: string | null },
+  instructorId: string,
+  range: { from: string; to: string },
+): Promise<CalculationResult> {
   await lockInstructor(trx, instructorId, actor.centreId);
   const { candidates, warnings } = await computeCandidates(trx, actor.centreId, { ...range, instructorId, excludeValidated: true });
   const existing = await trx
