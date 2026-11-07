@@ -96,6 +96,7 @@ export async function createHarness(options: { mailer?: Mailer } = {}): Promise<
     portalDistDir: null,
     memberSessionIdleMinutes: 10080,
     memberSessionAbsoluteHours: 720,
+    webhooks: { dispatchSeconds: 15, timeoutMs: 2_000, retentionDays: 30 },
   };
   const app = await buildApp({ config, db, rateLimit: false, mailer: options.mailer ?? null });
   const hash = await hashPassword(PASSWORD);

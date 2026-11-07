@@ -3,16 +3,19 @@ import { useSession } from "./auth/session";
 import { RequirePermission, Shell } from "./components/shell";
 import { AdminPage } from "./pages/admin";
 import { AttendanceDayPage, AttendanceSheetPage } from "./pages/attendance";
+import { AutomationsPage } from "./pages/automations";
 import { CashPage } from "./pages/cash";
 import { StudiesPage, TrainingPage, TrainingsPage } from "./pages/catalogue";
 import { DashboardPage } from "./pages/dashboard";
 import { EnrolmentWizardPage } from "./pages/enrolment";
 import { GroupCreatePage, GroupPage, GroupsPage } from "./pages/groups";
 import { InstructorPage, InstructorsPage } from "./pages/instructors";
+import { IntegrationsPage } from "./pages/integrations";
 import { LoginPage } from "./pages/login";
 import { PaymentsPage } from "./pages/payments";
 import { InstructorPayPage, PayrollPage } from "./pages/payroll";
 import { PlanningPage } from "./pages/planning";
+import { ProposalsPage } from "./pages/proposals";
 import { coworkingRoutes } from "./pages/coworking/routes";
 import { coworkingSettingsRoutes } from "./pages/coworking-settings/routes";
 import { ReceiptPage, ReceiptsPage } from "./pages/receipts";
@@ -85,6 +88,9 @@ export const router = createBrowserRouter([
       { path: "/caisse", element: guard("cash:read", <CashPage />) },
       { path: "/rapports", element: <ReportsPage /> },
       { path: "/administration", element: guard("centre:read", <AdminPage />) },
+      { path: "/integrations", element: guard("centre:manage", <IntegrationsPage />) },
+      { path: "/automatisations", element: guard("centre:manage", <AutomationsPage />) },
+      { path: "/propositions", element: <ProposalsPage /> },
       { path: "/parametres", element: <SettingsPage /> },
       ...coworkingRoutes,
       ...coworkingSettingsRoutes,

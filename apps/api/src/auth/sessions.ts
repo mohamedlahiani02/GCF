@@ -15,6 +15,8 @@ export interface SessionUser {
   fullName: string;
   role: Role;
   modules: Module[];
+  /** Set when the request is authenticated by an access token rather than a signed-in person. */
+  apiToken: { id: string; name: string; readOnly: boolean } | null;
 }
 
 function hashToken(token: string): Buffer {
@@ -77,6 +79,7 @@ export async function resolveSession(db: Kysely<Database>, token: string, policy
     fullName: row.fullName,
     role: row.role,
     modules: row.modules,
+    apiToken: null,
   };
 }
 

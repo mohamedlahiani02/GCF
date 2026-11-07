@@ -29,6 +29,12 @@ const schema = z.object({
   PORTAL_DIST_DIR: z.string().min(1).optional(),
   MEMBER_SESSION_IDLE_MINUTES: z.coerce.number().int().min(5).default(10080),
   MEMBER_SESSION_ABSOLUTE_HOURS: z.coerce.number().int().min(1).default(720),
+  /** How often queued webhook deliveries are sent. */
+  WEBHOOK_DISPATCH_SECONDS: z.coerce.number().int().min(1).max(3600).default(15),
+  /** How long a receiver has to answer before the attempt counts as failed. */
+  WEBHOOK_TIMEOUT_SECONDS: z.coerce.number().int().min(1).max(60).default(10),
+  /** Delivered and failed deliveries are kept this long for the delivery log, then deleted. */
+  WEBHOOK_RETENTION_DAYS: z.coerce.number().int().min(1).max(3650).default(30),
 });
 
 export interface Config {
@@ -48,6 +54,7 @@ export interface Config {
   portalDistDir: string | null;
   memberSessionIdleMinutes: number;
   memberSessionAbsoluteHours: number;
+  webhooks: { dispatchSeconds: number; timeoutMs: number; retentionDays: number };
 }
 
 export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
@@ -79,5 +86,6 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     portalDistDir: e.PORTAL_DIST_DIR ?? null,
     memberSessionIdleMinutes: e.MEMBER_SESSION_IDLE_MINUTES,
     memberSessionAbsoluteHours: e.MEMBER_SESSION_ABSOLUTE_HOURS,
+    webhooks: { dispatchSeconds: e.WEBHOOK_DISPATCH_SECONDS, timeoutMs: e.WEBHOOK_TIMEOUT_SECONDS * 1000, retentionDays: e.WEBHOOK_RETENTION_DAYS },
   };
 }

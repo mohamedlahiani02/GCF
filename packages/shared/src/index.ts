@@ -6,3 +6,4 @@ export * from "./schedule.js";
 export * from "./floorPlan.js";
 export * from "./coworking.js";
 export * from "./siteSections.js";
+export * from "./automation.js";

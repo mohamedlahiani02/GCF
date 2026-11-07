@@ -92,7 +92,40 @@ l'enregistrer.
 Les réglages et leurs valeurs par défaut sont décrits dans `docs/hypotheses-a-valider.md`, section « Valeurs par
 défaut du coworking ».
 
-## 5. Modules
+## 5. Automatisations (Paramètres > Automatisations)
+
+Chaque tâche répétitive a trois modes au plus : **Désactivé** (défaut), **À confirmer** (le travail est préparé et
+attend dans **Propositions**, une personne le confirme ou le refuse) et **Automatique** (fait sans confirmation, tracé
+au journal d'audit sans nom d'utilisateur). Les heures sont celles du centre. Activer une tâche ne la lance jamais tout
+de suite : si son heure est déjà passée dans la période en cours, elle part à la période suivante.
+
+| Tâche                     | Modes                        | Réglages et défauts                                                                           |
+| ------------------------- | ---------------------------- | --------------------------------------------------------------------------------------------- |
+| Relances d'impayés        | Désactivé, À confirmer, Auto | Lundi 09:00 ; pas de nouvelle relance avant 7 jours ; montant dû minimum 0                    |
+| Paie du mois              | Désactivé, À confirmer, Auto | Le 2 du mois à 07:00, pour le mois précédent ; résumé par e-mail aux rôles Admin et Comptable |
+| Programme du lendemain    | Désactivé, Auto              | 18:00 ; envoyé aux rôles Admin et Secrétariat                                                 |
+| Avis de courrier (cowork) | Désactivé, Auto              | Aucun : l'avis part à l'enregistrement du courrier                                            |
+
+Précisions :
+
+- **Relances** : un élève est relancé s'il a une échéance en retard au-delà du délai de grâce, une adresse e-mail
+  (reçu, tuteur d'un mineur ou élève), et s'il n'a pas reçu de relance depuis le nombre de jours choisi. Les montants
+  sont relus au moment de l'envoi : un élève qui a payé entre la proposition et la confirmation ne reçoit rien. Seul
+  un rôle qui peut envoyer des relances (Secrétariat, Admin) voit et confirme la proposition.
+- **Paie** : à confirmer, rien n'est enregistré avant la confirmation par la comptabilité ; en automatique, les
+  éléments sont calculés. Dans les deux cas, la **validation** des éléments reste une décision de la comptabilité.
+  Le résumé signale l'intervenant sans règle et la séance tenue dont la feuille n'est pas validée.
+- **Propositions** : une proposition expire au bout de 7 jours ; une nouvelle proposition du même type remplace celle
+  qui attend encore.
+- **Acceptation des réservations du coworking** : ce n'est pas une automatisation, c'est déjà un réglage du coworking
+  (mode d'approbation : aucune, visiteurs seulement, toutes ; et « approbation requise » par type de ressource).
+  Une demande qui respecte les règles et n'exige pas d'approbation est confirmée d'office.
+- Les e-mails exigent un serveur d'envoi configuré (`SMTP_HOST`). Sans lui, une exécution qui doit envoyer est
+  marquée « Échec » avec la raison, visible sous la tâche.
+- Chaque exécution figure sous sa tâche, avec son résultat. Les événements `reminders.sent`, `proposal.*`,
+  `automation.*` et `cw_mail_item.notified` peuvent être relayés vers n8n (voir `docs/integrations-n8n.md`).
+
+## 6. Modules
 
 Les modules formation, coworking et site web s'activent avec la commande `modules`, réservée à l'éditeur du
 logiciel et journalisée.

@@ -16,7 +16,11 @@ export const auditRoutes: FastifyPluginAsync = async (app) => {
 
   app.get("/", { preHandler: app.requirePermission("audit:read") }, async (request) => {
     const query = listQuery.parse(request.query);
-    let base = db.selectFrom("audit_log").leftJoin("users", "users.id", "audit_log.user_id").where("audit_log.centre_id", "=", request.user!.centreId);
+    let base = db
+      .selectFrom("audit_log")
+      .leftJoin("users", "users.id", "audit_log.user_id")
+      .leftJoin("api_tokens", "api_tokens.id", "audit_log.api_token_id")
+      .where("audit_log.centre_id", "=", request.user!.centreId);
     if (query.userId) base = base.where("audit_log.user_id", "=", query.userId);
     if (query.objectType) base = base.where("audit_log.object_type", "=", query.objectType);
     if (query.objectId) base = base.where("audit_log.object_id", "=", query.objectId);
@@ -28,6 +32,7 @@ export const auditRoutes: FastifyPluginAsync = async (app) => {
         "audit_log.at",
         "audit_log.user_id as userId",
         "users.full_name as userName",
+        "api_tokens.name as apiTokenName",
         "audit_log.action",
         "audit_log.object_type as objectType",
         "audit_log.object_id as objectId",

@@ -74,6 +74,7 @@ export interface AuditLogTable {
   before: Json;
   after: Json;
   reason: string | null;
+  api_token_id: OptionalRef;
 }
 
 export interface StudentsTable {
@@ -663,6 +664,109 @@ export interface Database extends CoworkingTables, WebsiteTables {
   member_sessions: MemberSessionsTable;
   member_tokens: MemberTokensTable;
   media_files: MediaFilesTable;
+  api_tokens: ApiTokensTable;
+  webhook_endpoints: WebhookEndpointsTable;
+  webhook_deliveries: WebhookDeliveriesTable;
+  automation_settings: AutomationSettingsTable;
+  automation_runs: AutomationRunsTable;
+  proposals: ProposalsTable;
+}
+
+export type AutomationKey = "overdue_reminders" | "payroll_month" | "daily_digest" | "mail_item_notice";
+export type AutomationMode = "off" | "propose" | "auto";
+
+export interface AutomationSettingsTable {
+  centre_id: string;
+  key: AutomationKey;
+  mode: AutomationMode;
+  params: ColumnType<unknown, string | undefined, string>;
+  updated_by: OptionalRef;
+  updated_at: Timestamp;
+}
+
+export interface AutomationRunsTable {
+  id: Generated<string>;
+  centre_id: string;
+  key: AutomationKey;
+  period_key: string;
+  mode: "propose" | "auto";
+  status: Generated<"running" | "done" | "failed" | "skipped">;
+  started_at: Timestamp;
+  finished_at: NullableTimestamp;
+  summary: Json;
+  error: string | null;
+}
+
+export type ProposalKind = "reminders.send" | "payroll.calculate";
+export type ProposalStatus = "pending" | "confirmed" | "rejected" | "expired" | "failed";
+
+export interface ProposalsTable {
+  id: Generated<string>;
+  centre_id: string;
+  kind: ProposalKind;
+  title: string;
+  summary: ColumnType<unknown, string, string>;
+  payload: ColumnType<unknown, string, string>;
+  status: Generated<ProposalStatus>;
+  run_id: OptionalRef;
+  created_at: Timestamp;
+  expires_at: Date | string;
+  decided_by: OptionalRef;
+  decided_at: NullableTimestamp;
+  decision_note: string | null;
+  result: Json;
+  error: string | null;
+}
+
+/** Roles an access token may carry; admin is never one of them. */
+export type ApiTokenRole = "secretariat" | "accountant" | "editor";
+
+export interface ApiTokensTable {
+  id: Generated<string>;
+  centre_id: string;
+  name: string;
+  role: ApiTokenRole;
+  read_only: Generated<boolean>;
+  token_hash: Buffer;
+  token_prefix: string;
+  created_by: string;
+  created_at: Timestamp;
+  expires_at: NullableTimestamp;
+  last_used_at: NullableTimestamp;
+  revoked_at: NullableTimestamp;
+  revoked_by: OptionalRef;
+}
+
+export interface WebhookEndpointsTable {
+  id: Generated<string>;
+  centre_id: string;
+  name: string;
+  url: string;
+  secret: string;
+  events: string[];
+  active: Generated<boolean>;
+  max_attempts: Generated<number>;
+  created_by: OptionalRef;
+  created_at: Timestamp;
+  updated_at: Timestamp;
+}
+
+export type WebhookDeliveryStatus = "pending" | "delivered" | "failed";
+
+export interface WebhookDeliveriesTable {
+  id: Generated<string>;
+  centre_id: string;
+  endpoint_id: string;
+  audit_id: number | null;
+  event_type: string;
+  status: Generated<WebhookDeliveryStatus>;
+  attempts: Generated<number>;
+  next_attempt_at: Timestamp;
+  last_attempt_at: NullableTimestamp;
+  last_status_code: number | null;
+  last_error: string | null;
+  delivered_at: NullableTimestamp;
+  created_at: Timestamp;
 }
 
 export interface CompaniesTable {
