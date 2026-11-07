@@ -74,6 +74,7 @@ export interface AuditLogTable {
   before: Json;
   after: Json;
   reason: string | null;
+  api_token_id: OptionalRef;
 }
 
 export interface StudentsTable {
@@ -663,6 +664,60 @@ export interface Database extends CoworkingTables, WebsiteTables {
   member_sessions: MemberSessionsTable;
   member_tokens: MemberTokensTable;
   media_files: MediaFilesTable;
+  api_tokens: ApiTokensTable;
+  webhook_endpoints: WebhookEndpointsTable;
+  webhook_deliveries: WebhookDeliveriesTable;
+}
+
+/** Roles an access token may carry; admin is never one of them. */
+export type ApiTokenRole = "secretariat" | "accountant" | "editor";
+
+export interface ApiTokensTable {
+  id: Generated<string>;
+  centre_id: string;
+  name: string;
+  role: ApiTokenRole;
+  read_only: Generated<boolean>;
+  token_hash: Buffer;
+  token_prefix: string;
+  created_by: string;
+  created_at: Timestamp;
+  expires_at: NullableTimestamp;
+  last_used_at: NullableTimestamp;
+  revoked_at: NullableTimestamp;
+  revoked_by: OptionalRef;
+}
+
+export interface WebhookEndpointsTable {
+  id: Generated<string>;
+  centre_id: string;
+  name: string;
+  url: string;
+  secret: string;
+  events: string[];
+  active: Generated<boolean>;
+  max_attempts: Generated<number>;
+  created_by: OptionalRef;
+  created_at: Timestamp;
+  updated_at: Timestamp;
+}
+
+export type WebhookDeliveryStatus = "pending" | "delivered" | "failed";
+
+export interface WebhookDeliveriesTable {
+  id: Generated<string>;
+  centre_id: string;
+  endpoint_id: string;
+  audit_id: number | null;
+  event_type: string;
+  status: Generated<WebhookDeliveryStatus>;
+  attempts: Generated<number>;
+  next_attempt_at: Timestamp;
+  last_attempt_at: NullableTimestamp;
+  last_status_code: number | null;
+  last_error: string | null;
+  delivered_at: NullableTimestamp;
+  created_at: Timestamp;
 }
 
 export interface CompaniesTable {

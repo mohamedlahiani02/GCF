@@ -82,6 +82,12 @@ export const SETTINGS_LINKS: { to: string; title: string; text: string; permissi
     text: "Informations du centre, utilisateurs et rôles, modules activés et journal d'audit.",
     permission: ["audit:read", "users:manage"],
   },
+  {
+    to: "/integrations",
+    title: "Intégrations",
+    text: "Jetons d'accès à l'API et webhooks pour relier GCF à n8n, à la messagerie ou à un agent.",
+    permission: "centre:manage",
+  },
 ];
 const SETTINGS_PERMISSIONS = [...new Set(SETTINGS_LINKS.flatMap((l) => (Array.isArray(l.permission) ? l.permission : [l.permission])))];
 

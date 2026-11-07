@@ -8,11 +8,13 @@ import type { Kysely } from "kysely";
 import { ZodError } from "zod";
 import { can, type Permission } from "./auth/permissions.js";
 import { resolveMemberSession, type MemberSession } from "./auth/memberSessions.js";
+import { resolveApiToken } from "./auth/apiTokens.js";
 import { resolveSession, type SessionUser } from "./auth/sessions.js";
 import type { Config } from "./config.js";
 import type { Database } from "./db/types.js";
 import { createMailer, type Mailer } from "./mail.js";
 import { forbidden, HttpError, unauthenticated } from "./errors.js";
+import { runWithApiToken } from "./requestContext.js";
 import { accountRoutes } from "./routes/accounts.js";
 import { auditRoutes } from "./routes/audit.js";
 import { authRoutes } from "./routes/auth.js";
@@ -30,6 +32,7 @@ import { dashboardRoutes } from "./routes/dashboard.js";
 import { enrolmentRoutes } from "./routes/enrolments.js";
 import { groupRoutes } from "./routes/groups.js";
 import { instructorRoutes } from "./routes/instructors.js";
+import { integrationRoutes } from "./routes/integrations.js";
 import { paymentRoutes } from "./routes/payments.js";
 import { payrollRoutes } from "./routes/payroll.js";
 import { receiptRoutes } from "./routes/receipts.js";
@@ -71,6 +74,24 @@ const UNSAFE_METHODS = new Set(["POST", "PUT", "PATCH", "DELETE"]);
 /** API areas called by the public surface (portal and website forms) instead of the back-office. */
 const isPublicApi = (url: string) => url.startsWith("/api/portal/") || url.startsWith("/api/public/");
 
+/**
+ * Areas an access token can never reach, whatever its role: signing in and passwords, user accounts, and the
+ * integration settings themselves (a token cannot create or widen tokens). The current identity stays readable.
+ */
+const isClosedToTokens = (method: string, url: string) => {
+  const path = url.split("?")[0]!;
+  if (method === "GET" && path === "/api/auth/session") return false;
+  return ["/api/auth", "/api/users", "/api/integrations"].some((area) => path === area || path.startsWith(`${area}/`));
+};
+
+/** The token of an "Authorization: Bearer <token>" header; null without the header, undefined when it is malformed. */
+function bearerToken(request: FastifyRequest): string | null | undefined {
+  const header = request.headers.authorization;
+  if (header === undefined) return null;
+  const match = /^Bearer ([A-Za-z0-9_-]{20,200})$/.exec(header);
+  return match ? match[1] : undefined;
+}
+
 /** Maps PostgreSQL integrity errors to client errors; everything else is a 500 that is logged. */
 function mapDatabaseError(error: unknown): HttpError | undefined {
   if (typeof error !== "object" || error === null || !("code" in error)) return undefined;
@@ -86,7 +107,7 @@ function mapDatabaseError(error: unknown): HttpError | undefined {
 export async function buildApp(options: AppOptions): Promise<FastifyInstance> {
   const { config, db } = options;
   const app = Fastify({
-    logger: config.logLevel === "silent" ? false : { level: config.logLevel, redact: ["req.headers.cookie", "body.password"] },
+    logger: config.logLevel === "silent" ? false : { level: config.logLevel, redact: ["req.headers.cookie", "req.headers.authorization", "body.password"] },
     trustProxy: true,
   });
 
@@ -101,9 +122,11 @@ export async function buildApp(options: AppOptions): Promise<FastifyInstance> {
   if (options.rateLimit !== false) await app.register(rateLimit, { max: 300, timeWindow: "1 minute" });
 
   // CSRF defence in depth: SameSite=Strict cookies plus an Origin check on every state-changing request. The
-  // portal and the website forms are called from the public origin, everything else from the back-office.
+  // portal and the website forms are called from the public origin, everything else from the back-office. A
+  // request that carries an access token and no cookie cannot be forged by a browser, so it needs no Origin.
   app.addHook("onRequest", async (request) => {
     if (!UNSAFE_METHODS.has(request.method)) return;
+    if (request.headers.authorization !== undefined && request.headers.cookie === undefined && !isPublicApi(request.url)) return;
     const expected = isPublicApi(request.url) ? config.publicOrigin : config.webOrigin;
     if (!expected || request.headers.origin !== expected) throw new HttpError(403, "bad_origin", "request origin is not allowed");
   });
@@ -120,6 +143,18 @@ export async function buildApp(options: AppOptions): Promise<FastifyInstance> {
       }
       return;
     }
+    const bearer = bearerToken(request);
+    if (bearer !== null) {
+      if (!request.url.startsWith("/api/") || isPublicApi(request.url)) return;
+      if (bearer === undefined) throw unauthenticated();
+      if (request.cookies[SESSION_COOKIE]) throw new HttpError(400, "ambiguous_credentials", "send either a session cookie or an access token, not both");
+      const user = await resolveApiToken(db, bearer);
+      if (!user) throw unauthenticated();
+      if (isClosedToTokens(request.method, request.url)) throw new HttpError(403, "token_not_allowed", "access tokens cannot use this area");
+      if (user.apiToken?.readOnly && UNSAFE_METHODS.has(request.method)) throw new HttpError(403, "read_only_token", "this access token can only read");
+      request.user = user;
+      return;
+    }
     const token = request.cookies[SESSION_COOKIE];
     if (!token) return;
     request.user =
@@ -127,6 +162,11 @@ export async function buildApp(options: AppOptions): Promise<FastifyInstance> {
         idleMinutes: config.sessionIdleMinutes,
         absoluteHours: config.sessionAbsoluteHours,
       })) ?? null;
+  });
+
+  // Route hooks and handlers run with the token of the request, so the audit rows they write name it.
+  app.addHook("preHandler", (request, _reply, done) => {
+    runWithApiToken(request.user?.apiToken?.id ?? null, done);
   });
 
   app.decorate("requirePermission", (permission: Permission) => async (request: FastifyRequest) => {
@@ -178,6 +218,7 @@ export async function buildApp(options: AppOptions): Promise<FastifyInstance> {
   await app.register(reportRoutes, { prefix: "/api/reports" });
   await app.register(dashboardRoutes, { prefix: "/api/dashboard" });
   await app.register(searchRoutes, { prefix: "/api/search" });
+  await app.register(integrationRoutes, { prefix: "/api/integrations" });
   await app.register(mediaRoutes, { prefix: "/api/media" });
   await app.register(coworkingConfigRoutes, { prefix: "/api/coworking" });
   await app.register(coworkingMemberRoutes, { prefix: "/api/coworking" });

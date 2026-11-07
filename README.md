@@ -110,6 +110,10 @@ Un seul centre peut exploiter la surface publique d'une installation. Placer un 
 devant le port de l'API, pour les deux noms d'hôte. Après une nouvelle construction des interfaces, redémarrer l'API.
 Les variables sont décrites dans `apps/api/.env.example` ; aucun secret n'est versionné.
 
+Intégrations (n8n, messagerie, agents) : jetons d'accès à l'API et webhooks signés, réglés dans **Paramètres >
+Intégrations**. Mise en place, format des événements, vérification de la signature et recettes :
+`docs/integrations-n8n.md` ; `deploy/n8n/` contient un `docker-compose.yml` prêt à l'emploi.
+
 ## Tests
 
 ```bash

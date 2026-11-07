@@ -36,6 +36,7 @@ beforeAll(async () => {
     portalDistDir: null,
     memberSessionIdleMinutes: 10080,
     memberSessionAbsoluteHours: 720,
+    webhooks: { dispatchSeconds: 15, timeoutMs: 2_000, retentionDays: 30 },
   };
   app = await buildApp({ config, db, rateLimit: false, mailer: null });
 });

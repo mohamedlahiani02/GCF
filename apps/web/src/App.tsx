@@ -9,6 +9,7 @@ import { DashboardPage } from "./pages/dashboard";
 import { EnrolmentWizardPage } from "./pages/enrolment";
 import { GroupCreatePage, GroupPage, GroupsPage } from "./pages/groups";
 import { InstructorPage, InstructorsPage } from "./pages/instructors";
+import { IntegrationsPage } from "./pages/integrations";
 import { LoginPage } from "./pages/login";
 import { PaymentsPage } from "./pages/payments";
 import { InstructorPayPage, PayrollPage } from "./pages/payroll";
@@ -85,6 +86,7 @@ export const router = createBrowserRouter([
       { path: "/caisse", element: guard("cash:read", <CashPage />) },
       { path: "/rapports", element: <ReportsPage /> },
       { path: "/administration", element: guard("centre:read", <AdminPage />) },
+      { path: "/integrations", element: guard("centre:manage", <IntegrationsPage />) },
       { path: "/parametres", element: <SettingsPage /> },
       ...coworkingRoutes,
       ...coworkingSettingsRoutes,

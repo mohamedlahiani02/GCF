@@ -40,6 +40,7 @@ interface AuditRow {
   id: string;
   at: string;
   userName: string | null;
+  apiTokenName: string | null;
   action: string;
   objectType: string;
   objectId: string;
@@ -435,6 +436,9 @@ const OBJECT_TYPES: Record<string, string> = {
   user: "Utilisateur",
   centre: "Centre",
   report: "Rapport",
+  api_token: "Jeton d'accès",
+  webhook_endpoint: "Webhook",
+  webhook_delivery: "Envoi de webhook",
 };
 
 function AuditLog() {
@@ -495,7 +499,10 @@ function AuditLog() {
               {log.data?.items.map((a) => (
                 <tr key={a.id}>
                   <td>{frDateTime(a.at)}</td>
-                  <td>{a.userName ?? "Système"}</td>
+                  <td>
+                    {a.userName ?? "Système"}
+                    {a.apiTokenName ? <div className="cap">via le jeton « {a.apiTokenName} »</div> : null}
+                  </td>
                   <td>
                     <code>{a.action}</code>
                   </td>

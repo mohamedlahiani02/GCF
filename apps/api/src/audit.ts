@@ -1,5 +1,6 @@
 import type { Kysely, Transaction } from "kysely";
 import type { Database } from "./db/types.js";
+import { currentApiTokenId } from "./requestContext.js";
 
 export interface AuditEntry {
   centreId: string;
@@ -12,7 +13,10 @@ export interface AuditEntry {
   reason?: string | null;
 }
 
-/** Writes one audit row. Call it with the same transaction as the change it records. */
+/**
+ * Writes one audit row. Call it with the same transaction as the change it records. A change made through an
+ * access token is attributed to that token as well as to the administrator it acts for.
+ */
 export async function writeAudit(db: Kysely<Database> | Transaction<Database>, entry: AuditEntry): Promise<void> {
   await db
     .insertInto("audit_log")
@@ -25,6 +29,7 @@ export async function writeAudit(db: Kysely<Database> | Transaction<Database>, e
       before: entry.before === undefined ? null : JSON.stringify(entry.before),
       after: entry.after === undefined ? null : JSON.stringify(entry.after),
       reason: entry.reason ?? null,
+      api_token_id: entry.userId === null ? null : currentApiTokenId(),
     })
     .execute();
 }

@@ -1,0 +1,26 @@
+# n8n next to GCF. Values come from .env (copy .env.example). Local use: n8n is reachable on 127.0.0.1 only.
+# In production put a reverse proxy with HTTPS in front of it and set N8N_HOST, N8N_PROTOCOL and WEBHOOK_URL.
+services:
+  n8n:
+    image: docker.n8n.io/n8nio/n8n:${N8N_VERSION:?set N8N_VERSION in .env}
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:${N8N_PORT:-5678}:5678"
+    environment:
+      N8N_ENCRYPTION_KEY: ${N8N_ENCRYPTION_KEY:?set N8N_ENCRYPTION_KEY in .env}
+      GENERIC_TIMEZONE: ${TIMEZONE:-Africa/Tunis}
+      TZ: ${TIMEZONE:-Africa/Tunis}
+      # The Code node that checks the GCF signature needs the crypto module.
+      NODE_FUNCTION_ALLOW_BUILTIN: crypto
+      # Read by workflows as $env.GCF_API_URL and $env.GCF_WEBHOOK_SECRET.
+      GCF_API_URL: ${GCF_API_URL:?set GCF_API_URL in .env}
+      GCF_WEBHOOK_SECRET: ${GCF_WEBHOOK_SECRET:?set GCF_WEBHOOK_SECRET in .env}
+      N8N_BLOCK_ENV_ACCESS_IN_NODE: "false"
+    extra_hosts:
+      # Lets n8n reach a GCF API that runs on the host (http://host.docker.internal:3000).
+      - "host.docker.internal:host-gateway"
+    volumes:
+      - n8n_data:/home/node/.n8n
+
+volumes:
+  n8n_data:
