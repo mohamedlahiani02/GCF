@@ -4,7 +4,7 @@ Version de cadrage : 1.3 — 10 novembre 2026. Mise à jour après la refonte UX
 
 Statut : proposition de produit et de séquencement. Ce document ne lance aucun développement et ne constitue pas une certification fiscale.
 
-La vision mini-ERP est conservée comme chantier distinct. Les PR #12/#13 ont été testées localement sur `82220bb` dans un checkout et une base séparés. L’état GitHub décrit dans le bilan est celui du 7 novembre ; il n’a pas été revérifié le 10 novembre. La branche locale `feat/billing-schedules` ajoute les évolutions UX et facturation. Aucune fusion dans `main` n’a été réalisée pendant ces travaux. Voir la [passation de branche](passation-branche-ux-facturation.md), l’[audit métier initial](audit-metier-produit-2026-11-10.md) et le [bilan n8n](validation-n8n-automatisations.md).
+La vision mini-ERP est conservée comme chantier distinct. Les PR #12/#13 ont été testées localement sur `82220bb` dans un checkout et une base séparés. L’état GitHub décrit dans le bilan est celui du 7 novembre ; il n’a pas été revérifié le 10 novembre. La branche de revue `feat/enrolment-proration` reprend les évolutions UX et facturation de `feat/billing-schedules` et y ajoute le prorata mensuel au commit `3b43a70`. Voir la [passation de branche](passation-branche-ux-facturation.md), l’[audit métier initial](audit-metier-produit-2026-11-10.md) et le [bilan n8n](validation-n8n-automatisations.md).
 
 ## 1. Vision et périmètre
 
@@ -552,6 +552,6 @@ La réussite se mesure par le temps de configuration d’un dossier, les tâches
 
 Le porteur du projet valide les décisions R01 à R09 du registre d’audit. R02 précise le prorata par défaut, que seuls un administrateur ou la personne ayant créé la fiche élève peuvent désactiver à l’inscription. R04 confirme qu’un abandon ne restitue aucun paiement automatiquement et ne supprime aucune opération.
 
-Le premier incrément applique R02 et vérifie la conservation des avances de R04. Le montant d’une période partielle se calcule en jours calendaires sur le cycle convenu ; la date de paiement demeure celle de la formule. Les anciennes inscriptions et pièces sont conservées. La passation est appendue à chaque branche dédiée, avec la recette et les migrations correspondantes.
+Le premier incrément applique R02 et vérifie la conservation des avances de R04. Le montant d’une période partielle se calcule en jours calendaires sur le cycle convenu ; la date de paiement demeure celle de la formule. Les anciennes inscriptions et pièces sont conservées. La passation consigne la recette et la migration `0020_enrolment_proration` pour la revue de ce lot.
 
 Le prochain lot d’ERP-00 doit transformer les décisions validées en exemples chiffrés et matrices de transitions. La disponibilité des salles partagées, l’idempotence et les reprises après interruption restent des travaux de stabilisation identifiés. Les modules d’ERP et les nouveaux contrats comptables suivent les lots de la section 19, chacun sur une branche de revue dédiée ; aucun travail directement sur `main`.

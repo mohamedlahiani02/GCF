@@ -1,18 +1,18 @@
 # Passation développeur — branche UX, facturation et accueil coworking
 
-Date : 10 novembre 2026. Destinataire : agent développeur chargé de diagnostiquer les changements et de préparer le merge. Ce document est le point d’entrée ; aucune fusion ni publication n’est effectuée par sa création.
+Cette passation accompagne la revue développeur de la branche `feat/enrolment-proration`. Les résultats de recette datent du 10 novembre 2026.
 
 ## 1. Versions et périmètre
 
 - Worktree : `C:/Users/haith/OneDrive/Bureau/GCF/gcf-n8n-review`.
-- Branche de travail actuelle : `feat/billing-schedules`.
+- Branche à récupérer sur `origin` pour la revue : `feat/enrolment-proration`. Elle reprend `feat/billing-schedules` à partir de `db83189` et ajoute le prorata au commit `3b43a70`.
 - Base fonctionnelle de la refonte : `82220bb` (`test/n8n-automations`), intégrations et automatisations incluses.
 - Branche UX précédente : `feat/ux-launchpad`. Ses trois commits sont ancêtres de la branche actuelle :
   - `fff0ef1` : navigation, espaces, raccourcis, vocabulaire et première version du zoom ;
   - `fd1ca71` : zoom corrigé, déplacement et vue agrandie ;
   - `2bbc0d2` : tableau de bord, notifications, validation des comptes et pied du tiroir d’encaissement.
 - Les changements de facturation, sélection sur plan et les documents de passation sont ajoutés après `2bbc0d2` ; voir `git log` et les inventaires en fin de document pour les commits finaux.
-- Le checkout `C:/Users/haith/OneDrive/Bureau/GCF/gcf` et son `main` restent séparés. Aucun merge, push, reset ou remplacement de ce checkout n’est inclus.
+- Le checkout local de `main` se trouve dans `C:/Users/haith/OneDrive/Bureau/GCF/gcf`. La revue se fait depuis la branche dédiée.
 - Les fonctionnalités n8n et automatisations proviennent de la base. Elles ne sont pas réécrites dans cette refonte. Leur bilan historique est dans [validation-n8n-automatisations.md](validation-n8n-automatisations.md).
 
 Ce dossier couvre tous les changements locaux de la refonte depuis `82220bb`, pas seulement le nom de la branche courante. Ne pas prendre une différence contre `main` pour la seule refonte : elle contient aussi les PR d’intégration héritées.
@@ -224,7 +224,7 @@ Le nouveau chantier ne consiste pas à commencer simultanément tous les modules
 
 ### Prompt prêt à transmettre à Claude Code
 
-> Lis `docs/passation-branche-ux-facturation.md`, `docs/audit-metier-produit-2026-11-10.md` et `docs/roadmap-mini-erp.md`. Examine `feat/billing-schedules`, y compris les trois commits UX ancêtres après `82220bb`, sans confondre la refonte avec les PR n8n déjà héritées. Vérifie la branche cible réelle, les collisions de migrations, les contrats `due/future/totalRemaining/asOf`, l’isolation du payeur, le calendrier choisi à l’inscription, les périodes de service lors d’un abandon/transfert et la sélection sur plan coworking. Reproduis les scénarios critiques sur une base jetable, indique ce qui est vérifié et ce qui reste une hypothèse, puis propose les corrections et la PR de merge avec une recette explicite. Préserve les paiements, pièces et relations historiques ; aucun écrasement de base ou reset destructif. Après stabilisation, utilise les lots ERP-00 à ERP-10 comme backlog de cadrage et fais arbitrer les règles métier ouvertes avant les nouvelles abstractions.
+> Lis `docs/passation-branche-ux-facturation.md`, `docs/audit-metier-produit-2026-11-10.md` et `docs/roadmap-mini-erp.md`. Examine `origin/feat/enrolment-proration`, y compris les trois commits UX ancêtres après `82220bb` et le lot de prorata `3b43a70`, sans confondre la refonte avec les PR n8n déjà héritées. Vérifie la branche cible réelle, les collisions de migrations, les contrats `due/future/totalRemaining/asOf`, l’isolation du payeur, le calendrier choisi à l’inscription, les périodes de service lors d’un abandon ou transfert, les droits de désactivation du prorata et la sélection sur plan coworking. Reproduis les scénarios critiques sur une base jetable, indique ce qui est vérifié et ce qui reste une hypothèse, puis propose les corrections et la PR de merge avec une recette explicite. Préserve les paiements, pièces et relations historiques ; aucun écrasement de base ou reset destructif. Après stabilisation, prends les lots ERP-00 à ERP-10 comme backlog de cadrage et les décisions R01 à R09 comme critères de recette.
 
 ## 12. Résultats finaux et inventaire de revue
 
@@ -316,7 +316,7 @@ Dernier parcours navigateur : choix du dossier de démonstration Hamza Feki, Mat
 
 Captures supplémentaires : `formules-debut-fin-mois.jpg`, `inscription-choix-formule.jpg` et `inscription-echeances-fin-mois.jpg` dans le dossier local de recette. Elles illustrent la configuration et l’aperçu, sans créer de nouvelle dette dans la base de revue.
 
-Aucun push ni merge n’a été effectué. Le code de revue tourne sur 3010 / 3012 ; les migrations locales `0018` et `0019` sont appliquées uniquement sur sa base dédiée. Les sources, secrets et données du poste ne sont pas transmis à Claude ou à un service externe par cette passation : l’utilisateur choisit les documents et la branche à lui présenter.
+Lors de cette recette, les migrations `0018` et `0019` ont été appliquées à la base locale dédiée. L’interface de revue utilisait le port 3010 et l’API le port 3012.
 
 ## 14. Addendum — GO métier et prorata des inscriptions mensuelles
 
@@ -345,4 +345,4 @@ Une période entamée reste au montant déjà convenu, éventuellement proratis�
 
 - Recette navigateur avec Admin sur Maths Bac A : démarrage le 10 novembre, formule de fin de mois à 80 TND. L’option est cochée par défaut ; novembre affiche 21 jours sur 30 et 56 TND, puis 80 TND quand la case est décochée, à la même date d’exigibilité. L’option a été réactivée dans l’aperçu laissé ouvert. Aucune inscription ni aucun paiement n’a été enregistré par cette recette. Captures locales : `review-ux/inscription-prorata-option.jpg` et `review-ux/inscription-prorata-novembre.jpg`.
 - Résultats consolidés : 205 tests réussis dans les 19 autres fichiers de la suite PostgreSQL, puis 38 tests réussis lors de la relance des trois fichiers ajustés (`catalogue`, `payments`, `cash-reports`) : 243 tests couverts sur l’état final. Le scénario d’encaissement au tarif complet désactive explicitement le prorata ; le rapport et le catalogue vérifient les montants proratisés. Typage et compilation web réussis.
-- Revue : `git diff db83189...HEAD`. Vérifier la séquence de migrations de la branche distante avant toute intégration. Branche locale uniquement, sans push ni merge.
+- Pour récupérer le lot, exécuter `git fetch origin feat/enrolment-proration`, puis `git diff db83189...FETCH_HEAD`. Examiner la migration `0020_enrolment_proration` avec la séquence de migrations de la branche cible.

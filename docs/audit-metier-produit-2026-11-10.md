@@ -1,6 +1,6 @@
 # Audit initial du produit et des règles métier — GCF vers ERP
 
-Date : 10 novembre 2026. Version examinée : branche `feat/billing-schedules`, descendante de `82220bb`, avec les évolutions UX et facturation locales décrites dans [la passation](passation-branche-ux-facturation.md).
+L’audit du 10 novembre 2026 porte sur `feat/billing-schedules`, issue de `82220bb`. Les décisions validées et leur premier lot de mise en œuvre sont repris sur `feat/enrolment-proration` au commit `3b43a70`. Voir [la passation](passation-branche-ux-facturation.md).
 
 ## Conclusion de cadrage
 
