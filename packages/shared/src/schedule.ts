@@ -59,6 +59,36 @@ export function monthlyDueDates(firstDue: string, lastDate: string): string[] {
   return dates;
 }
 
+export type MonthlyDueKind = "anniversary" | "month_start" | "month_end" | "day_of_month";
+export interface BillingTiming {
+  monthlyDueKind: MonthlyDueKind;
+  monthlyDueDay: number | null;
+  dueOffsetDays: number;
+}
+
+/** Calendar months are service periods: a final partial month is included even when its due date is later. */
+export function monthlyBillingDates(start: string, end: string, rule: BillingTiming): { month: string; dueDate: string }[] {
+  parts(start);
+  parts(end);
+  if (end < start) return [];
+  if (!Number.isInteger(rule.dueOffsetDays) || rule.dueOffsetDays < 0 || rule.dueOffsetDays > 365) throw new ScheduleError("invalid payment delay");
+  if (rule.monthlyDueKind === "day_of_month" && (!Number.isInteger(rule.monthlyDueDay) || rule.monthlyDueDay! < 1 || rule.monthlyDueDay! > 31))
+    throw new ScheduleError("choose a day between 1 and 31");
+  if (rule.monthlyDueKind === "anniversary") return monthlyDueDates(start, end).map((d) => ({ month: d.slice(0, 7), dueDate: addDays(d, rule.dueOffsetDays) }));
+  const first = start.slice(0, 8) + "01";
+  const result: { month: string; dueDate: string }[] = [];
+  for (let i = 0; i <= 600; i++) {
+    const month = addMonthsClamped(first, i, 1);
+    if (month.slice(0, 7) > end.slice(0, 7)) return result;
+    const [y, m] = parts(month);
+    const day =
+      rule.monthlyDueKind === "month_end" ? daysInMonth(y, m) : rule.monthlyDueKind === "day_of_month" ? Math.min(rule.monthlyDueDay!, daysInMonth(y, m)) : 1;
+    const scheduled = addDays(format(y, m, day), rule.dueOffsetDays);
+    result.push({ month: month.slice(0, 7), dueDate: scheduled < start ? start : scheduled });
+  }
+  throw new ScheduleError("schedule longer than 50 years");
+}
+
 export interface PlanItemInput {
   label: string;
   valueKind: "percent" | "amount";

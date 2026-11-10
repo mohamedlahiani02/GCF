@@ -6,7 +6,7 @@ import { useSession } from "../auth/session";
 import { useToast } from "../components/toasts";
 import { Drawer, ErrorBanner, Field, Segmented, StateBadge } from "../components/ui";
 import { errorMessage } from "../lib/errors";
-import { frDate, tnd, tryParseTnd } from "../lib/format";
+import { frDate, tnd, tryParseTnd, todayIso } from "../lib/format";
 
 type Method = "cash" | "transfer" | "cheque" | "card";
 /** Who pays: a student, a room renter or a coworking member (exactly one). */
@@ -19,7 +19,7 @@ interface Preview {
   before: Totals;
   lines: { installmentId: string; label: string; dueDate: string; amount: number }[];
   advance: number;
-  after: { due: number; credit: number };
+  after: Totals;
 }
 export interface Created {
   paymentId: string;
@@ -148,6 +148,9 @@ export function CollectDrawer({ payer: initial, onClose, onPaid }: { payer: Paye
     if (account.data?.member) setPayerName([account.data.member.firstName, account.data.member.lastName].filter(Boolean).join(" "));
   }, [account.data]);
   const open = useMemo(() => (account.data?.installments ?? []).filter((i) => i.kind === "charge" && i.status === "open" && i.remaining > 0), [account.data]);
+  const asOf = account.data?.totals.asOf ?? todayIso();
+  const payable = open.filter((i) => i.dueDate <= asOf);
+  const upcoming = open.filter((i) => i.dueDate > asOf);
   const amount = tryParseTnd(amountText);
   const selectedTotal = open.filter((i) => selected.includes(i.id)).reduce((s, i) => s + i.remaining, 0);
 
@@ -265,9 +268,10 @@ export function CollectDrawer({ payer: initial, onClose, onPaid }: { payer: Paye
               <span>{tnd(done.advance)} TND déposés en avance, imputés automatiquement aux prochaines échéances.</span>
             </div>
           ) : null}
+          {done.after.future > 0 ? <p className="cap">Échéances futures non exigibles : {tnd(done.after.future)} TND.</p> : null}
           <div className="grid2">
             <div className="card kpi">
-              <div className="lab">Reste à payer</div>
+              <div className="lab">Reste exigible aujourd’hui</div>
               <div className="amt">{tnd(done.after.due)}</div>
               <div className="cap">TND</div>
             </div>
@@ -294,7 +298,7 @@ export function CollectDrawer({ payer: initial, onClose, onPaid }: { payer: Paye
           <ErrorBanner error={account.error} />
           <div className="grid2">
             <div className="card kpi" style={{ background: "var(--soft)" }}>
-              <div className="lab">Reste à payer</div>
+              <div className="lab">Reste exigible aujourd’hui</div>
               <div className="amt">{tnd(account.data?.totals.due ?? 0)}</div>
               <div className="cap">TND</div>
             </div>
@@ -307,7 +311,7 @@ export function CollectDrawer({ payer: initial, onClose, onPaid }: { payer: Paye
 
           <div>
             <div className="lab" style={{ marginBottom: 6 }}>
-              2. Échéances ouvertes (cochez celles à régler en priorité)
+              2. Échéances exigibles (à régler maintenant)
             </div>
             <div className="card xs">
               <table className="tbl">
@@ -320,7 +324,7 @@ export function CollectDrawer({ payer: initial, onClose, onPaid }: { payer: Paye
                   </tr>
                 </thead>
                 <tbody>
-                  {open.map((i) => (
+                  {payable.map((i) => (
                     <tr key={i.id} className={selected.includes(i.id) ? "sel" : ""}>
                       <td>
                         <input
@@ -342,10 +346,10 @@ export function CollectDrawer({ payer: initial, onClose, onPaid }: { payer: Paye
                       <td className="num">{tnd(i.remaining)}</td>
                     </tr>
                   ))}
-                  {open.length === 0 ? (
+                  {payable.length === 0 ? (
                     <tr>
                       <td colSpan={4} className="cap">
-                        Aucune échéance ouverte : un paiement sera enregistré comme avance.
+                        Aucune échéance exigible aujourd’hui. Les périodes futures sont présentées séparément ci-dessous.
                       </td>
                     </tr>
                   ) : null}
@@ -362,6 +366,52 @@ export function CollectDrawer({ payer: initial, onClose, onPaid }: { payer: Paye
               </table>
             </div>
           </div>
+
+          {upcoming.length ? (
+            <details className="future-schedule">
+              <summary>
+                Échéancier prévisionnel : {tnd(upcoming.reduce((sum, row) => sum + row.remaining, 0))} TND à venir ({upcoming.length} échéances)
+              </summary>
+              <p className="cap">Ces périodes ne sont pas encore exigibles. Vous pouvez les sélectionner pour un règlement anticipé.</p>
+              <div className="card xs">
+                <table className="tbl">
+                  <thead>
+                    <tr>
+                      <th />
+                      <th>Période / exigibilité</th>
+                      <th className="num">Projection (TND)</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {upcoming.map((row) => (
+                      <tr key={row.id}>
+                        <td>
+                          <input
+                            type="checkbox"
+                            className="chk"
+                            aria-label={`Règlement anticipé : ${row.label}`}
+                            checked={selected.includes(row.id)}
+                            onChange={(event) => setSelected((list) => (event.target.checked ? [...list, row.id] : list.filter((id) => id !== row.id)))}
+                          />
+                        </td>
+                        <td>
+                          {row.label}
+                          <div className="cap">Exigible le {frDate(row.dueDate)}</div>
+                        </td>
+                        <td className="num">{tnd(row.remaining)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </details>
+          ) : null}
+          {preview.data?.lines.some((line) => line.dueDate > asOf) ? (
+            <div className="ban ban-blue">
+              <strong>Règlement anticipé</strong>
+              <span>Une partie du montant sera affectée à des échéances futures. Le détail est affiché dans l’aperçu du règlement.</span>
+            </div>
+          ) : null}
 
           <Field label="3. Montant reçu (TND)" error={amountText && amount === null ? "Montant invalide (3 décimales au plus)" : null}>
             <input
@@ -440,7 +490,7 @@ export function CollectDrawer({ payer: initial, onClose, onPaid }: { payer: Paye
                   </tbody>
                   <tfoot>
                     <tr>
-                      <td>Reste à payer après paiement</td>
+                      <td>Reste exigible aujourd’hui après paiement</td>
                       <td className="num">{tnd(preview.data.after.due)}</td>
                     </tr>
                   </tfoot>

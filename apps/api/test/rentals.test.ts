@@ -146,7 +146,7 @@ describe("rentals", () => {
   it("collects a renter payment with its own receipt", async () => {
     const res = await h.call("POST", "/api/payments", secretariat, { renterId: ids.medis, amount: 18_000, method: "cash" });
     expect(res.status).toBe(201);
-    expect(res.body.after).toEqual({ due: 18_000, credit: 0, pendingDiscounts: 0 });
+    expect(res.body.after).toMatchObject({ due: 0, future: 18_000, totalRemaining: 18_000, credit: 0, pendingDiscounts: 0 });
     const receipt = await h.call("GET", `/api/receipts/${res.body.receipt.id}`, secretariat);
     expect(receipt.body.snapshot.payer.name).toBe("Société Medis (Medis SARL)");
     const detail = await h.call("GET", `/api/rentals/${ids.hourly}`, accountant);
@@ -166,7 +166,7 @@ describe("rentals", () => {
     expect(free.status).toBe(409);
     expect(free.body.details.conflicts.map((c: { type: string }) => c.type)).toEqual(["group"]);
     const totals = (await h.call("GET", `/api/rentals/${ids.hourly}`, accountant)).body.renterTotals;
-    expect(totals).toEqual({ due: 0, credit: 0, pendingDiscounts: 0 });
+    expect(totals).toMatchObject({ due: 0, credit: 0, pendingDiscounts: 0 });
   });
 
   it("shows sessions and rentals together in the planning", async () => {

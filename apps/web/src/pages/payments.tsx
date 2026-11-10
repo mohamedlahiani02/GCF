@@ -1,6 +1,6 @@
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
-import { Link } from "react-router";
+import { Link, useSearchParams } from "react-router";
 import { api } from "../api/client";
 import { useSession } from "../auth/session";
 import { usePage, useCollect } from "../components/shell";
@@ -53,7 +53,7 @@ interface Approvals {
   }[];
 }
 
-type Tab = "journal" | "reminders" | "approvals";
+type Tab = "journal" | "overdue" | "reminders" | "approvals";
 
 function Journal() {
   const [from, setFrom] = useState(todayIso().slice(0, 8) + "01");
@@ -135,6 +135,82 @@ function Journal() {
                     )}
                   </td>
                   <td>{p.createdBy ?? ""}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </Card>
+  );
+}
+
+function Overdue() {
+  const collect = useCollect();
+  const { can } = useSession();
+  const [page, setPage] = useState(1);
+  const list = useQuery({
+    queryKey: ["overdue", page],
+    queryFn: () =>
+      api.get<{
+        asOf: string;
+        items: {
+          id: string;
+          payerName: string;
+          studentId: string | null;
+          renterId: string | null;
+          memberId: string | null;
+          label: string;
+          dueDate: string;
+          remaining: number;
+        }[];
+        hasMore: boolean;
+      }>("/payments/overdue", { page }),
+    refetchInterval: 60_000,
+  });
+  return (
+    <Card title="Impayés" footer={list.data ? <Pagination page={page} hasMore={list.data.hasMore} onPage={setPage} /> : undefined}>
+      <div className="card-b cap">Échéances exigibles en retard, après le délai de grâce. Les mois futurs sont exclus.</div>
+      <ErrorBanner error={list.error} retry={() => list.refetch()} />
+      {list.isPending ? (
+        <Loading />
+      ) : list.data?.items.length === 0 ? (
+        <Empty title="Aucun impayé" />
+      ) : (
+        <div className="xs">
+          <table className="tbl">
+            <thead>
+              <tr>
+                <th>Payeur</th>
+                <th>Échéance</th>
+                <th>Date d’exigibilité</th>
+                <th className="num">Reste exigible (TND)</th>
+                <th />
+              </tr>
+            </thead>
+            <tbody>
+              {list.data?.items.map((row) => (
+                <tr key={row.id}>
+                  <td>
+                    {row.payerName}
+                    <div className="cap">{row.studentId ? "Élève" : row.memberId ? "Coworking" : "Location"}</div>
+                  </td>
+                  <td>{row.label}</td>
+                  <td>{frDate(row.dueDate)}</td>
+                  <td className="num">{tnd(row.remaining)}</td>
+                  <td>
+                    {can("payments:write") ? (
+                      <button
+                        type="button"
+                        className="btn btn-p"
+                        onClick={() =>
+                          collect(row.studentId ? { studentId: row.studentId } : row.memberId ? { memberId: row.memberId } : { renterId: row.renterId! })
+                        }
+                      >
+                        Encaisser
+                      </button>
+                    ) : null}
+                  </td>
                 </tr>
               ))}
             </tbody>
@@ -384,7 +460,11 @@ export function PaymentsPage() {
   usePage(["Encaissements"]);
   const { can } = useSession();
   const collect = useCollect();
-  const [tab, setTab] = useState<Tab>("journal");
+  const [params, setParams] = useSearchParams();
+  const selected = params.get("onglet");
+  const tab: Tab = selected === "impayes" ? "overdue" : selected === "relances" ? "reminders" : selected === "validations" ? "approvals" : "journal";
+  const setTab = (value: Tab) =>
+    setParams({ onglet: value === "overdue" ? "impayes" : value === "reminders" ? "relances" : value === "approvals" ? "validations" : "paiements" });
   return (
     <>
       <PageHeader
@@ -402,11 +482,12 @@ export function PaymentsPage() {
         onChange={setTab}
         tabs={[
           { value: "journal", label: "Paiements" },
+          { value: "overdue", label: "Impayés" },
           { value: "reminders", label: "Relances" },
           { value: "approvals", label: "Validations" },
         ]}
       />
-      {tab === "journal" ? <Journal /> : tab === "reminders" ? <Reminders /> : <ApprovalsList />}
+      {tab === "journal" ? <Journal /> : tab === "overdue" ? <Overdue /> : tab === "reminders" ? <Reminders /> : <ApprovalsList />}
     </>
   );
 }

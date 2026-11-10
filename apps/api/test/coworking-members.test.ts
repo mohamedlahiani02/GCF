@@ -216,7 +216,7 @@ describe("coworking members", () => {
     expect(payment.status).toBe(201);
     const account = await h.call("GET", `/api/coworking/members/${ids.amira}/account`, accountant);
     expect(account.status).toBe(200);
-    expect(account.body.totals).toEqual({ due: 70_000, credit: 0, pendingDiscounts: 0 });
+    expect(account.body.totals).toMatchObject({ due: 70_000, credit: 0, pendingDiscounts: 0 });
     expect(account.body.installments.map((i: Instalment) => [i.amount, i.state])).toEqual([[120_000, "partial"]]);
     expect(account.body.payments).toEqual([expect.objectContaining({ amount: 50_000, method: "cash", receiptNumber: expect.any(String) })]);
     const refused = await h.call("POST", `/api/coworking/subscriptions/${ids.domSub}/cancel`, secretariat, { reason: "Erreur" });

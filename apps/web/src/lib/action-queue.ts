@@ -109,7 +109,7 @@ export function useActionQueue() {
         count: o.todo.overdueInstallments.count,
         title: countLabel(o.todo.overdueInstallments.count, "Échéance en retard", "Échéances en retard"),
         text: `${tnd(o.todo.overdueInstallments.total)} TND restent à encaisser.`,
-        to: "/encaissements",
+        to: "/encaissements?onglet=impayes",
         action: "Voir les impayés",
       });
     else if (!o && f?.unpaidPayers)
@@ -119,7 +119,7 @@ export function useActionQueue() {
         count: f.unpaidPayers,
         title: countLabel(f.unpaidPayers, "Payeur en retard", "Payeurs en retard"),
         text: `${tnd(f.unpaidTotal)} TND restent à encaisser.`,
-        to: "/encaissements",
+        to: "/encaissements?onglet=impayes",
         action: "Voir les impayés",
       });
   }

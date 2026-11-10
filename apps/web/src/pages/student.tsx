@@ -64,7 +64,7 @@ function TransferModal({ enrolment, onClose }: { enrolment: EnrolmentRow; onClos
   const [effectiveDate, setEffectiveDate] = useState(todayIso());
   const [mode, setMode] = useState<"keep" | "reprice">("keep");
   const [reason, setReason] = useState("");
-  const monthly = enrolment.paymentMode === "monthly";
+  const monthly = enrolment.paymentMode === "monthly" && enrolment.kind === "study" && !enrolment.planId;
   const transfer = useMutation({
     mutationFn: () =>
       api.post<{ movedInstallments: number; cancelledTotal: number; issuedTotal: number }>(`/enrolments/${enrolment.id}/transfer`, {
@@ -518,9 +518,9 @@ export function StudentPage() {
       {totals ? (
         <div className="grid4">
           <Kpi
-            label="Reste à payer"
+            label="Exigible aujourd’hui"
             value={<span className="num">{tnd(totals.due)}</span>}
-            sub="TND"
+            sub={`TND · Prévisionnel à venir : ${tnd(totals.future)} TND`}
             tone={installments.some((i) => i.state === "overdue") ? "red" : undefined}
           />
           <Kpi label="Solde créditeur" value={<span className="num">{tnd(totals.credit)}</span>} sub="TND, imputé aux prochaines échéances" />

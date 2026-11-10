@@ -226,6 +226,9 @@ export function ZoomableFloorPlan(props: FloorPlanViewProps) {
         ref={dialog}
         className="cw-plan-dialog"
         aria-label={props.title}
+        onKeyDown={(event) => {
+          if (event.key === "Escape") event.stopPropagation();
+        }}
         onCancel={(event) => {
           event.preventDefault();
           setExpanded(false);

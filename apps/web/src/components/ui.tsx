@@ -198,7 +198,7 @@ export function Tabs<T extends string>({ value, tabs, onChange }: { value: T; ta
 function useEscape(onClose: () => void) {
   useEffect(() => {
     const handler = (event: KeyboardEvent) => {
-      if (event.key === "Escape") onClose();
+      if (event.key === "Escape" && !event.defaultPrevented && !document.querySelector("dialog[open]")) onClose();
     };
     window.addEventListener("keydown", handler);
     return () => window.removeEventListener("keydown", handler);

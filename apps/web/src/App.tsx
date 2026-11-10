@@ -4,7 +4,7 @@ import { AdminPage } from "./pages/admin";
 import { AttendanceDayPage, AttendanceSheetPage } from "./pages/attendance";
 import { AutomationsPage } from "./pages/automations";
 import { CashPage } from "./pages/cash";
-import { StudiesPage, TrainingPage, TrainingsPage } from "./pages/catalogue";
+import { StudyFormulasPage, StudiesPage, TrainingPage, TrainingsPage } from "./pages/catalogue";
 import { LaunchpadPage, WorkspacePage } from "./pages/launchpad";
 import { DashboardPage } from "./pages/dashboard";
 import { EnrolmentWizardPage } from "./pages/enrolment";
@@ -56,6 +56,7 @@ export const router = createBrowserRouter([
       { path: "/intervenants", element: guard("instructors:read", <InstructorsPage />) },
       { path: "/intervenants/:id", element: guard("instructors:read", <InstructorPage />) },
       { path: "/cours-particuliers", element: guard("catalogue:read", <StudiesPage />) },
+      { path: "/cours-particuliers/:id/formules", element: guard("catalogue:read", <StudyFormulasPage />) },
       { path: "/formations", element: guard("catalogue:read", <TrainingsPage />) },
       { path: "/formations/:id", element: guard("catalogue:read", <TrainingPage />) },
       { path: "/groupes", element: guard("catalogue:read", <GroupsPage />) },

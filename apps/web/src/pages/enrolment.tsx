@@ -2,7 +2,7 @@ import { useMutation, useQuery } from "@tanstack/react-query";
 import { useCallback, useEffect, useState } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router";
 import { api } from "../api/client";
-import type { GroupDetail, GroupRow, StudentRow, Study, TrainingDetail } from "../api/types";
+import type { GroupDetail, GroupRow, StudentRow, Study, StudyDetail, TrainingDetail } from "../api/types";
 import { useSession } from "../auth/session";
 import { usePage, useCollect } from "../components/shell";
 import { useToast } from "../components/toasts";
@@ -278,7 +278,13 @@ export function EnrolmentWizardPage() {
     queryFn: () => api.get<TrainingDetail>(`/catalogue/trainings/${(offer as { training: TrainingRow }).training.id}`),
     enabled: offer?.kind === "training",
   });
-  const plans = (training.data?.plans ?? []).filter((p) => p.status === "active");
+  const study = useQuery({
+    queryKey: ["study", offer?.kind === "study" ? offer.study.id : null],
+    queryFn: () => api.get<StudyDetail>(`/catalogue/studies/${offer?.kind === "study" ? offer.study.id : ""}`),
+    enabled: offer?.kind === "study",
+  });
+  const offerDetail = offer?.kind === "study" ? study : training;
+  const plans = (offerDetail.data?.plans ?? []).filter((p) => p.status === "active");
   const selectedPlan = plans.find((p) => p.id === planId);
 
   const discountValue = (() => {
@@ -295,8 +301,10 @@ export function EnrolmentWizardPage() {
           studentId: student.id,
           groupId: group.id,
           effectiveDate,
-          ...(group.kind === "training" ? (planId ? { planId } : {}) : { paymentMode }),
-          ...(firstDueDate && (paymentMode === "monthly" || paymentMode === "full") ? { firstDueDate } : {}),
+          ...(planId ? { planId } : { paymentMode }),
+          ...(firstDueDate && (!selectedPlan || selectedPlan.monthlyDueKind === "anniversary") && (paymentMode === "monthly" || paymentMode === "full")
+            ? { firstDueDate }
+            : {}),
           ...(withDiscount && discountValue && discountReason.trim()
             ? { discount: { kind: discountKind, value: discountValue, reason: discountReason.trim() } }
             : {}),
@@ -305,7 +313,7 @@ export function EnrolmentWizardPage() {
   const preview = useQuery({
     queryKey: ["enrolment-preview", body],
     queryFn: () => api.post<PreviewResult>("/enrolments/preview", body),
-    enabled: !!body && step >= 3 && (group?.kind !== "training" || !!planId),
+    enabled: !!body && step >= 3 && offerDetail.isSuccess && ((group?.kind === "study" && plans.length === 0) || !!planId),
   });
   const create = useMutation({
     mutationFn: () => api.post<{ id: string }>("/enrolments", body),
@@ -335,7 +343,7 @@ export function EnrolmentWizardPage() {
 
   // A training is enrolled under one of its formulas; the default formula is preselected.
   useEffect(() => {
-    if (group?.kind !== "training" || planId || plans.length === 0) return;
+    if (!group || planId || plans.length === 0) return;
     const chosen = plans.find((p) => p.isDefault) ?? plans[0]!;
     setPlanId(chosen.id);
     setPaymentMode(chosen.kind);
@@ -344,6 +352,7 @@ export function EnrolmentWizardPage() {
   const choosePlan = (id: string) => {
     const plan = plans.find((p) => p.id === id);
     setPlanId(id);
+    setFirstDueDate("");
     if (plan) {
       setPaymentMode(plan.kind);
       if (plan.kind === "per_session") setWithDiscount(false);
@@ -388,7 +397,7 @@ export function EnrolmentWizardPage() {
                     onChange={(e) => setEffectiveDate(e.target.value)}
                   />
                 </Field>
-                {group.kind === "study" ? (
+                {group.kind === "study" && offerDetail.isSuccess && plans.length === 0 ? (
                   <div>
                     <div className="lab" style={{ marginBottom: 6 }}>
                       Mode de paiement
@@ -400,7 +409,7 @@ export function EnrolmentWizardPage() {
                       </div>
                     ) : null}
                   </div>
-                ) : training.isPending ? (
+                ) : offerDetail.isPending ? (
                   <Loading />
                 ) : plans.length === 0 ? (
                   <div className="ban ban-amber">
@@ -419,14 +428,14 @@ export function EnrolmentWizardPage() {
                         <input type="radio" name="formula" checked={planId === p.id} onChange={() => choosePlan(p.id)} />
                         <span>
                           <strong>{p.name}</strong> <Badge tone="gray">{FORMULA[p.kind]}</Badge> {p.isDefault ? <Badge tone="blue">Par défaut</Badge> : null}
-                          <div className="cap">{formulaText(p, training.data?.price ?? group.effective.price)}</div>
+                          <div className="cap">{formulaText(p, offerDetail.data?.price ?? group.effective.price)}</div>
                         </span>
                       </label>
                     ))}
                     {planId ? <div className="cap">{FORMULA_HELP[paymentMode]}</div> : null}
                   </fieldset>
                 )}
-                {paymentMode === "monthly" || paymentMode === "full" ? (
+                {(paymentMode === "monthly" || paymentMode === "full") && (!selectedPlan || selectedPlan.monthlyDueKind === "anniversary") ? (
                   <Field label="Première échéance" hint="Par défaut, la date d'effet.">
                     <input className="input" type="date" value={firstDueDate} onChange={(e) => setFirstDueDate(e.target.value)} />
                   </Field>
@@ -467,7 +476,7 @@ export function EnrolmentWizardPage() {
                     ) : null}
                   </div>
                 ) : null}
-                <ErrorBanner error={preview.error} />
+                <ErrorBanner error={preview.error ?? offerDetail.error} />
               </>
             ) : null}
             {step === 4 && preview.data ? (
@@ -480,7 +489,7 @@ export function EnrolmentWizardPage() {
                       <thead>
                         <tr>
                           <th>Échéance</th>
-                          <th>Date</th>
+                          <th>Date d’exigibilité</th>
                           <th className="num">Montant (TND)</th>
                         </tr>
                       </thead>
@@ -488,7 +497,9 @@ export function EnrolmentWizardPage() {
                         {preview.data.lines.map((l, i) => (
                           <tr key={i}>
                             <td>{l.label}</td>
-                            <td>{frDate(l.dueDate)}</td>
+                            <td>
+                              {frDate(l.dueDate)} {l.dueDate > todayIso() ? <Badge tone="gray">Prévisionnel</Badge> : <Badge tone="amber">Exigible</Badge>}
+                            </td>
                             <td className="num">{tnd(l.amount)}</td>
                           </tr>
                         ))}
@@ -543,7 +554,11 @@ export function EnrolmentWizardPage() {
                 <button
                   type="button"
                   className="btn btn-p"
-                  disabled={!preview.data || (group?.kind === "training" && !planId) || (withDiscount && (!discountValue || !discountReason.trim()))}
+                  disabled={
+                    !preview.data ||
+                    ((group?.kind === "training" || plans.length > 0) && !planId) ||
+                    (withDiscount && (!discountValue || !discountReason.trim()))
+                  }
                   onClick={() => setStep(4)}
                 >
                   Voir le récapitulatif
@@ -576,10 +591,10 @@ export function EnrolmentWizardPage() {
                     {group.instructorLastName}
                   </div>
                   <div className="cap">
-                    {group.kind === "study"
-                      ? `Tarif : ${tnd(group.effective.price)} TND ${group.billingMode === "monthly" ? "par mois" : "par séance"}`
-                      : selectedPlan
-                        ? `Formule : ${selectedPlan.name}, ${formulaText(selectedPlan, group.effective.price)}`
+                    {selectedPlan
+                      ? `Formule : ${selectedPlan.name}, ${formulaText(selectedPlan, group.effective.price)}`
+                      : group.kind === "study"
+                        ? `Tarif : ${tnd(group.effective.price)} TND ${group.billingMode === "monthly" ? "par mois" : "par séance"}`
                         : `Prix de la formation : ${tnd(group.effective.price)} TND`}
                   </div>
                 </>

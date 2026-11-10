@@ -138,6 +138,7 @@ export const studentRoutes: FastifyPluginAsync = async (app) => {
             "installments.id",
           )
           .select(["enrolments.student_id as studentId", sql<number>`sum(installments.amount - coalesce(p.paid, 0))::bigint`.as("due")])
+          .where(sql<boolean>`installments.due_date <= (select (now() at time zone timezone)::date from centres where id = ${request.user!.centreId})`)
           .where("enrolments.student_id", "in", ids)
           .where("installments.kind", "=", "charge")
           .where("installments.status", "=", "open")

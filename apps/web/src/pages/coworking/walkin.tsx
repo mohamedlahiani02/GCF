@@ -1,13 +1,17 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { ZoomableFloorPlan } from "../../components/zoomable-floor-plan";
 import { useEffect, useState } from "react";
 import { api } from "../../api/client";
 import { useSession } from "../../auth/session";
 import { useToast } from "../../components/toasts";
-import { ErrorBanner, Field, Loading, Modal } from "../../components/ui";
+import { ErrorBanner, Field, Loading, Modal, Tabs } from "../../components/ui";
 import { errorMessage } from "../../lib/errors";
 import { tnd, todayIso } from "../../lib/format";
 import {
   CATEGORY,
+  PLAN_STATE,
+  floorImage,
+  useFloorDetail,
   durationLabel,
   memberName,
   useFloors,
@@ -69,14 +73,21 @@ function SeatStep({ onPick }: { onPick: (seat: Seat) => void }) {
       const states = await Promise.all(
         floors.data!.map((f) => api.get<FloorState>(`/coworking/floors/${f.id}/state`, { date, startTime: slot!.startTime, endTime: slot!.endTime })),
       );
-      return states.flatMap((s) =>
-        s.resources.filter((r) => r.typeId === type!.id && r.state === "free" && r.status === "active").map((r) => ({ ...r, floorName: s.floor.name })),
-      );
+      return states;
     },
     enabled: !!type && !!slot && !!floors.data?.length,
     staleTime: 0,
+    refetchInterval: 30_000,
   });
 
+  const [chosenFloor, setChosenFloor] = useState<string | null>(null);
+  const canPick = (r: FloorState["resources"][number]) => r.typeId === type?.id && r.state === "free" && r.status === "active";
+  const states = free.data ?? [];
+  const activeFloor = states.find((s) => s.floor.id === chosenFloor) ?? states.find((s) => s.resources.some(canPick)) ?? states[0];
+  const floor = useFloorDetail(activeFloor?.floor.id ?? null);
+  const resources = new Map(activeFloor?.resources.map((r) => [r.resourceId, r]) ?? []);
+  const placed = new Set(floor.data?.layout.items.map((i) => i.resourceId) ?? []);
+  const unplaced = activeFloor?.resources.filter((r) => canPick(r) && !placed.has(r.resourceId)).length ?? 0;
   if (types.isPending || formats.isPending || floors.isPending) return <Loading />;
   if (!bookableTypes.length) {
     return (
@@ -137,26 +148,86 @@ function SeatStep({ onPick }: { onPick: (seat: Seat) => void }) {
           </select>
         </Field>
       </div>
-      <ErrorBanner error={slots.error ?? free.error} />
-      <div>
-        <div className="lab" style={{ marginBottom: 6 }}>
-          Ressources libres
-        </div>
-        {free.isPending && slot ? (
-          <span className="cap">Recherche des ressources libres…</span>
-        ) : free.data?.length ? (
-          <div className="cw-seat-list" role="list" aria-label="Ressources libres">
-            {free.data.map((r, i) => (
-              <button key={r.resourceId} type="button" role="listitem" className="btn" autoFocus={i === 0} onClick={() => pick(r)}>
-                <strong>{r.code}</strong>
-                <span className="cap">{r.floorName}</span>
-              </button>
-            ))}
+      <ErrorBanner error={types.error ?? formats.error ?? floors.error ?? slots.error ?? free.error ?? floor.error} retry={() => free.refetch()} />
+      {slot ? (
+        <section className="cw-walkin-plan stack" aria-label="Choisir une place sur le plan">
+          <div>
+            <strong>Choisissez la place directement sur le plan</strong>
+            <p className="cap">
+              {slot.startTime}–{slot.endTime} · Les places du type choisi, libres sur tout le créneau, sont sélectionnables. Cliquez sur une place pour
+              continuer vers le prix.
+            </p>
           </div>
-        ) : slot ? (
-          <span className="cap">Aucune ressource de ce type n'est libre sur ce créneau.</span>
-        ) : null}
-      </div>
+          {free.isPending ? (
+            <Loading />
+          ) : (
+            <>
+              <Tabs
+                value={activeFloor?.floor.id ?? ""}
+                onChange={setChosenFloor}
+                tabs={states.map((s) => ({ value: s.floor.id, label: `${s.floor.name} (${s.resources.filter(canPick).length} libres)` }))}
+              />
+              <div className="fp-legend" aria-label="Légende des places">
+                <span>
+                  <i className="free" aria-hidden="true" />
+                  Libre et sélectionnable
+                </span>
+                <span>Autres places : indisponibles ou d’un autre type</span>
+              </div>
+              {!activeFloor ? (
+                <p className="cap">Aucun étage actif avec un plan disponible. Configurez les étages dans les paramètres coworking.</p>
+              ) : floor.isPending ? (
+                <Loading />
+              ) : floor.data && floor.data.layout.items.length ? (
+                <ZoomableFloorPlan
+                  key={floor.data.id}
+                  layout={floor.data.layout}
+                  image={floorImage(floor.data)}
+                  zones={floor.data.zones}
+                  title={`Choisir une place — ${floor.data.name}`}
+                  onSelect={(id) => {
+                    const r = resources.get(id);
+                    if (r && canPick(r) && !free.isFetching) pick(r);
+                  }}
+                  appearance={(id) => {
+                    const r = resources.get(id);
+                    if (!r) return undefined;
+                    const selectable = canPick(r) && !free.isFetching;
+                    return {
+                      label: r.code,
+                      title: `${r.code}, ${r.typeName} : ${selectable ? "libre, choisir cette place" : r.typeId !== type?.id ? "autre type de ressource" : PLAN_STATE[r.state]}`,
+                      state: r.state,
+                      disabled: !selectable,
+                      category: r.category,
+                      capacity: r.capacity,
+                    };
+                  }}
+                />
+              ) : floor.isError ? null : (
+                <div className="ban ban-amber">
+                  <span>
+                    Le plan de cet étage n’est pas encore configuré. Placez les ressources sur le plan dans les paramètres coworking pour permettre la sélection
+                    visuelle.
+                  </span>
+                </div>
+              )}
+              {!activeFloor?.resources.some(canPick) ? (
+                <p className="cap">Aucune place de ce type n’est disponible à cet étage pour ce créneau. Essayez un autre étage ou créneau.</p>
+              ) : null}
+              {unplaced > 0 && floor.isSuccess ? (
+                <p className="cap">
+                  {unplaced} place(s) libre(s) ne sont pas encore positionnées sur ce plan. Leur emplacement doit être configuré avant la sélection.
+                </p>
+              ) : null}
+              {free.isFetching ? (
+                <p className="cap" role="status">
+                  Actualisation des disponibilités…
+                </p>
+              ) : null}
+            </>
+          )}
+        </section>
+      ) : null}
     </div>
   );
 }

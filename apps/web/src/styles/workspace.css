@@ -793,3 +793,14 @@
     display: none;
   }
 }
+
+/* The reception flow selects seats visually; non-selectable resources remain spatial context. */
+.cw-walkin-plan .fp-res:not(.fp-interactive) {
+  opacity: 0.35;
+}
+.cw-walkin-plan .cw-plan-viewport {
+  height: clamp(260px, 38dvh, 430px);
+}
+.cw-walkin-plan .cw-plan-expanded .cw-plan-viewport {
+  height: auto;
+}

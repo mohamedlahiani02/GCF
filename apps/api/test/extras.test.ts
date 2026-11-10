@@ -88,7 +88,7 @@ describe("centre settings", () => {
 describe("lists and search", () => {
   it("shows active groups, amount due and last payment in the student list", async () => {
     const res = await h.call("GET", "/api/students", secretariat);
-    expect(res.body.items[0]).toMatchObject({ lastName: "Chebbi", activeGroups: ["Anglais A"], due: 90_000 });
+    expect(res.body.items[0]).toMatchObject({ lastName: "Chebbi", activeGroups: ["Anglais A"], due: 10_000 });
     expect(res.body.items[0].lastPaymentAt).not.toBeNull();
   });
 

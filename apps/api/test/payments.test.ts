@@ -107,7 +107,7 @@ afterAll(async () => {
 describe("collecting a payment", () => {
   it("shows the schedule with the amount due and no credit", async () => {
     const a = await account(ids.amira);
-    expect(a.totals).toEqual({ due: 160_000, credit: 0, pendingDiscounts: 0 });
+    expect(a.totals).toEqual({ due: 80_000, future: 80_000, totalRemaining: 160_000, asOf: "2026-10-20", credit: 0, pendingDiscounts: 0 });
     expect(a.installments.map((i: { state: string }) => i.state)).toEqual(["overdue", "overdue", "upcoming", "upcoming"]);
   });
 
@@ -128,7 +128,7 @@ describe("collecting a payment", () => {
     const res = await h.call("POST", "/api/payments", secretariat, { studentId: ids.amira, amount: 50_000, method: "cash", installmentIds: [octobre.id] });
     expect(res.status).toBe(201);
     expect(res.body.receipt.number).toBe("REC-2026-000001");
-    expect(res.body.after).toEqual({ due: 110_000, credit: 0, pendingDiscounts: 0 });
+    expect(res.body.after).toMatchObject({ due: 30_000, future: 80_000, totalRemaining: 110_000, credit: 0, pendingDiscounts: 0 });
     ids.paymentA = res.body.paymentId;
     ids.receiptA = res.body.receipt.id;
   });
@@ -137,7 +137,7 @@ describe("collecting a payment", () => {
     const res = await h.call("POST", "/api/payments", secretariat, { studentId: ids.amira, amount: 150_000, method: "transfer", reference: "VIR-123" });
     expect(res.status).toBe(201);
     expect(res.body.advance).toBe(40_000);
-    expect(res.body.after).toEqual({ due: 0, credit: 40_000, pendingDiscounts: 0 });
+    expect(res.body.after).toMatchObject({ due: 0, future: 0, totalRemaining: 0, credit: 40_000, pendingDiscounts: 0 });
     expect(res.body.receipt.number).toBe("REC-2026-000002");
   });
 
@@ -149,7 +149,7 @@ describe("collecting a payment", () => {
       planId: ids.fullPlan,
     });
     expect(res.status).toBe(201);
-    expect((await account(ids.amira)).totals).toEqual({ due: 60_000, credit: 0, pendingDiscounts: 0 });
+    expect((await account(ids.amira)).totals).toMatchObject({ due: 60_000, credit: 0, pendingDiscounts: 0 });
   });
 
   it("re-opens what a bounced cheque had paid", async () => {

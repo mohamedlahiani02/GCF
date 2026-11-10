@@ -235,7 +235,7 @@ export function StudentsPage() {
                   <th>Nom</th>
                   <th>Contact</th>
                   <th>Groupes actifs</th>
-                  <th className="num">Reste à payer (TND)</th>
+                  <th className="num">Exigible (TND)</th>
                   <th>Dernier paiement</th>
                 </tr>
               </thead>
