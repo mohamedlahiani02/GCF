@@ -34,9 +34,11 @@ Les raccourcis sont stockés par identifiant utilisateur dans ce navigateur (`gc
 
 ## Plan coworking
 
-Le plan en direct dispose de boutons − / +, d’un pourcentage, d’une taille réelle à 100 % et d’un ajustement à l’écran. L’ajustement tient compte de la largeur et de la hauteur restante sous les contrôles. Le zoom manuel va de 10 % à 400 % ; un plan agrandi se parcourt avec les barres de défilement et le clavier.
+Le plan en direct dispose de boutons − / +, d’un pourcentage, d’une « Vue d’ensemble » et d’une « Vue agrandie ». La zone du plan garde une hauteur stable, indépendante de sa position dans la page. Le niveau 100 % correspond à la vue d’ensemble ajustée à cette zone ; les boutons progressent par pas de 25 points, entre 50 % et 400 %. Le zoom conserve le point regardé au centre, y compris après déplacement du plan.
 
-Le zoom est propre à la consultation : coordonnées, réservations, plans publiés, portail public et éditeur ne sont pas modifiés. Changer d’étage rétablit l’ajustement ; le rafraîchissement périodique conserve le zoom choisi. Dans la zone du plan, + et − zooment ; 0 ajuste. Les raccourcis de zoom du navigateur restent disponibles avec Ctrl / Cmd.
+Un plan agrandi se parcourt en glissant à la souris, par défilement tactile, avec les barres de défilement ou avec les flèches lorsque sa zone a le focus. Glisser depuis une ressource ne déclenche pas sa réservation. « Agrandir la vue » ouvre le plan dans une fenêtre dédiée avec gestion native du focus et fermeture par Échap ; sélectionner une place ferme cette fenêtre et ouvre sa fiche habituelle.
+
+Le zoom est propre à la consultation : coordonnées, réservations, plans publiés, portail public et éditeur ne sont pas modifiés. Changer d’étage rétablit la vue d’ensemble ; le rafraîchissement périodique conserve le zoom choisi. Dans la zone du plan, + et − zooment ; 0 rétablit la vue d’ensemble. Les raccourcis de zoom du navigateur restent disponibles avec Ctrl / Cmd.
 
 ## Vérification locale
 
@@ -54,6 +56,13 @@ Contrôles réalisés dans le navigateur connecté au centre de démonstration :
 - À 100 %, sélectionner D-01 ouvre le tiroir de la bonne ressource.
 - Carte d’occupation : les 13 ressources sont toujours affichées avec leur coloration.
 - Plan à 390 px : dessin contenu dans la zone ajustée, sans débordement horizontal de la page.
+- Correction après retour utilisateur : abandon de la hauteur calculée à partir du défilement de la page, qui rendait le plan trop petit et instable.
+- Zoom en vue normale : hauteur intérieure stable à 474 px et défilement de page inchangé entre deux agrandissements (149 px).
+- En vue agrandie, déplacement à la souris de 150 px horizontalement ; aucune fiche ne s’ouvre pendant le glissement.
+- Le centre de la zone regardée reste aux mêmes coordonnées du plan après zoom, à moins de 0,1 % près sur le parcours vérifié.
+- Raccourcis clavier : limites de 50 % et 400 % respectées, boutons correspondants désactivés ; 0 revient à 100 % et recentre.
+- Vue agrandie à 390 × 844 px : fenêtre entièrement contenue dans l’écran ; Échap ferme et remet le focus sur son bouton.
+- Sélection de D-01 depuis la vue agrandie : fiche habituelle accessible et focus dans son formulaire.
 
 TypeScript et compilation du front vérifiés. Cette vérification ne constitue pas une certification WCAG ni un test avec lecteur d’écran. Les parcours authentifiés ont été essayés avec le compte administrateur de démonstration ; les permissions serveur ne sont pas modifiées.
 
