@@ -1,12 +1,13 @@
 import type { FastifyPluginAsync } from "fastify";
 import { z } from "zod";
 import { writeAudit } from "../audit.js";
-import { can } from "../auth/permissions.js";
+import { can, canChangeProration } from "../auth/permissions.js";
+import type { SessionUser } from "../auth/sessions.js";
 import { buildSchedule, discountAmount, loadGroupBilling, resolveTerms, type EnrolmentTerms, type ScheduleLine } from "../domain/enrolmentSchedule.js";
 import { dropEnrolment, transferEnrolment } from "../domain/enrolmentChanges.js";
 import { recordFinancialEvents } from "../domain/financialEvents.js";
 import { lockStudent, settleStudent } from "../domain/ledger.js";
-import { conflict, notFound, unprocessable } from "../errors.js";
+import { conflict, HttpError, notFound, unprocessable } from "../errors.js";
 import { basisPoints, idParam, isoDate, millimes, reason, uuid } from "../validation.js";
 
 const discount = z.discriminatedUnion("kind", [
@@ -22,6 +23,7 @@ const enrolmentBody = z
     paymentMode: z.enum(["full", "installments", "monthly", "per_session"]).optional(),
     planId: uuid.optional(),
     firstDueDate: isoDate.optional(),
+    proratePartialMonths: z.boolean().optional(),
     discount: discount.optional(),
   })
   .strict();
@@ -33,6 +35,7 @@ const listQuery = z.object({ studentId: uuid.optional(), groupId: uuid.optional(
 
 interface Preview {
   terms: EnrolmentTerms;
+  proratePartialMonths: boolean;
   lines: ScheduleLine[];
   discount: { amount: number; reason: string } | null;
   total: number;
@@ -42,35 +45,41 @@ export const enrolmentRoutes: FastifyPluginAsync = async (app) => {
   const { db } = app;
   const write = app.requirePermission("enrolments:write");
 
-  const preview = async (body: z.infer<typeof enrolmentBody>, centreId: string): Promise<Preview & { group: Awaited<ReturnType<typeof loadGroupBilling>> }> => {
-    const group = await loadGroupBilling(db, body.groupId, centreId);
+  const preview = async (
+    body: z.infer<typeof enrolmentBody>,
+    actor: SessionUser,
+  ): Promise<Preview & { group: Awaited<ReturnType<typeof loadGroupBilling>> }> => {
+    const { centreId } = actor;
+    const [student, group] = await Promise.all([
+      db.selectFrom("students").select(["status", "created_by"]).where("id", "=", body.studentId).where("centre_id", "=", centreId).executeTakeFirst(),
+      loadGroupBilling(db, body.groupId, centreId),
+    ]);
+    if (!student) throw notFound("student");
+    if (student.status !== "active") throw unprocessable("student_archived", "the student is archived");
     if (group.status !== "active") throw unprocessable("group_archived", "the group is archived");
     if (body.effectiveDate > group.endDate) throw unprocessable("after_group_end", "the enrolment starts after the end of the group");
-    const { terms } = await resolveTerms(db, group, body, centreId);
-    const lines = await buildSchedule(db, group, body, centreId);
-    const charges = lines.reduce((s, l) => s + l.amount, 0);
+    const resolved = await resolveTerms(db, group, body, centreId);
+    const monthly = resolved.terms.paymentMode === "monthly";
+    if (monthly && body.proratePartialMonths === false && !canChangeProration(actor, student.created_by)) {
+      throw new HttpError(403, "proration_override_forbidden", "only an administrator or the creator of the student may disable prorating");
+    }
+    const proratePartialMonths = monthly && body.proratePartialMonths !== false;
+    const lines = await buildSchedule(db, group, body, resolved, proratePartialMonths);
+    const charges = lines.reduce((sum, line) => sum + line.amount, 0);
     const discountValue = body.discount ? { amount: discountAmount(lines, body.discount), reason: body.discount.reason } : null;
-    return { group, terms, lines, discount: discountValue, total: charges - (discountValue?.amount ?? 0) };
+    return { group, terms: resolved.terms, proratePartialMonths, lines, discount: discountValue, total: charges - (discountValue?.amount ?? 0) };
   };
 
   app.post("/preview", { preHandler: write }, async (request) => {
     const body = enrolmentBody.parse(request.body);
-    const { terms, lines, discount: d, total } = await preview(body, request.user!.centreId);
-    return { paymentMode: terms.paymentMode, sessionPrice: terms.sessionPrice, lines, discount: d, total };
+    const { terms, proratePartialMonths, lines, discount: d, total } = await preview(body, request.user!);
+    return { paymentMode: terms.paymentMode, proratePartialMonths, sessionPrice: terms.sessionPrice, lines, discount: d, total };
   });
 
   app.post("/", { preHandler: write }, async (request, reply) => {
     const actor = request.user!;
     const body = enrolmentBody.parse(request.body);
-    const student = await db
-      .selectFrom("students")
-      .select(["id", "status"])
-      .where("id", "=", body.studentId)
-      .where("centre_id", "=", actor.centreId)
-      .executeTakeFirst();
-    if (!student) throw notFound("student");
-    if (student.status !== "active") throw unprocessable("student_archived", "the student is archived");
-    const { group, terms, lines, discount: d } = await preview(body, actor.centreId);
+    const { group, terms, proratePartialMonths, lines, discount: d } = await preview(body, actor);
     const canApprove = can(actor, "discounts:approve");
 
     const enrolment = await db.transaction().execute(async (trx) => {
@@ -94,6 +103,7 @@ export const enrolmentRoutes: FastifyPluginAsync = async (app) => {
           effective_date: body.effectiveDate,
           payment_mode: terms.paymentMode,
           plan_id: terms.planId,
+          prorate_partial_months: proratePartialMonths,
           monthly_due_kind: terms.monthlyDueKind,
           monthly_due_day: terms.monthlyDueDay,
           due_offset_days: terms.dueOffsetDays,
@@ -101,7 +111,7 @@ export const enrolmentRoutes: FastifyPluginAsync = async (app) => {
           session_absence_billed: terms.sessionAbsenceBilled,
           created_by: actor.userId,
         })
-        .returning(["id", "effective_date as effectiveDate", "payment_mode as paymentMode", "status"])
+        .returning(["id", "effective_date as effectiveDate", "payment_mode as paymentMode", "prorate_partial_months as proratePartialMonths", "status"])
         .executeTakeFirstOrThrow();
 
       const charges = lines.length
@@ -180,7 +190,7 @@ export const enrolmentRoutes: FastifyPluginAsync = async (app) => {
         action: "enrolment.created",
         objectType: "enrolment",
         objectId: created.id,
-        after: { ...body, lines, discount: d },
+        after: { ...body, proratePartialMonths, lines, discount: d },
       });
       // Credit the student already holds pays the new schedule straight away.
       await settleStudent(trx, actor.centreId, body.studentId, actor.userId);
@@ -213,6 +223,7 @@ export const enrolmentRoutes: FastifyPluginAsync = async (app) => {
         "enrolments.end_date as endDate",
         "enrolments.status",
         "enrolments.payment_mode as paymentMode",
+        "enrolments.prorate_partial_months as proratePartialMonths",
         "enrolments.plan_id as planId",
         "enrolments.transferred_from_id as transferredFromId",
         "enrolments.ended_reason as endedReason",

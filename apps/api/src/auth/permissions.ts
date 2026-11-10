@@ -1,4 +1,5 @@
 import type { Module, Role } from "../db/types.js";
+import type { SessionUser } from "./sessions.js";
 
 /**
  * Permissions follow the role matrix of the specification (section 7). Areas that a role cannot use are
@@ -135,4 +136,9 @@ export function can(actor: Actor, permission: Permission): boolean {
 
 export function permissionsOf(actor: Actor): Permission[] {
   return PERMISSIONS.filter((p) => can(actor, p));
+}
+
+/** The choice belongs to an administrator or to the person who created the student's file. */
+export function canChangeProration(actor: Actor & Pick<SessionUser, "userId" | "apiToken">, studentCreatedBy: string | null): boolean {
+  return actor.apiToken === null && can(actor, "enrolments:write") && (actor.role === "admin" || actor.userId === studentCreatedBy);
 }

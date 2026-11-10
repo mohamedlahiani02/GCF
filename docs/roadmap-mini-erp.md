@@ -1,6 +1,6 @@
 # Roadmap produit — ERP modulaire tunisien, gestion commerciale et framework d'intégration
 
-Version de cadrage : 1.2 — 10 novembre 2026. Mise à jour après la refonte UX, les échéanciers configurables et l’audit métier initial.
+Version de cadrage : 1.3 — 10 novembre 2026. Mise à jour après la refonte UX, les échéanciers configurables et l’audit métier initial.
 
 Statut : proposition de produit et de séquencement. Ce document ne lance aucun développement et ne constitue pas une certification fiscale.
 
@@ -463,7 +463,7 @@ Cette mise à jour évite de refaire les composants déjà présents. Elle ne ju
 | ------------------------------------------------------- | ---------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------ |
 | Espaces métier et raccourcis                            | Navigation adaptée aux modules et aux tâches de chaque rôle            | Packs de menus versionnés, recette par rôle et personnalisation partagée si nécessaire                       |
 | Tableau de bord et cloche                               | Suivi des actions et liens vers les dossiers                           | Seuils d’urgence, affectation et historique si requis ; le polling agrégé n’est pas un journal exhaustif     |
-| Formules de paiement                                    | Conditions proposées au client et choisies à l’inscription             | Conditions commerciales réutilisables par les documents génériques, contrats versionnés et règle de prorata  |
+| Formules de paiement                                    | Conditions proposées au client et choisies à l’inscription             | Conditions commerciales réutilisables par les documents génériques et contrats versionnés                    |
 | Exigible / futur / crédit                               | Présentation cohérente des sommes à encaisser                          | Sous-livre client, factures, avoirs et rapprochement comptable ; une projection n’est pas un produit reconnu |
 | Périodes de service                                     | Rattachement des nouvelles mensualités et protection lors d’un abandon | Règles d’abonnement, produits constatés d’avance et ventilation analytique à définir avec le comptable       |
 | Plans coworking                                         | Sélection spatiale à l’accueil, zoom, étages et états                  | Unifier les disponibilités de salles partagées et poursuivre la recette sur mobile                           |
@@ -479,7 +479,7 @@ Le lot immédiat est une stabilisation métier et une revue de branche, estimée
 
 1. Relire les migrations `0018` et `0019`, les nouveaux contrats de totaux et l’absence de reprise silencieuse de l’historique ; tester la migration depuis la branche cible réelle.
 2. Corriger ou circonscrire pour le pilote les divergences de disponibilité des salles partagées.
-3. Arrêter les décisions de prorata, abandon, avances, prix du groupe et assiette de rémunération ; produire les exemples attendus avant de coder de nouvelles règles.
+3. Appliquer les décisions R01–R09 validées aux cas de recette chiffrés. L’assiette explicite de rémunération reste à concevoir dans le lot paie et comptabilité.
 4. Établir les commandes idempotentes et la reprise des propositions / runs interrompus.
 5. Constituer un jeu de référence signé fonctionnellement : données initiales, opération, état final, montant et pièces attendues, résultat après rejeu.
 
@@ -489,7 +489,7 @@ La revue et le merge restent au développeur responsable. Ne pas appliquer autom
 
 | Lot / PR suggérée                  | Résultat concret                                                                                                          | Critères de sortie                                                                                                           |
 | ---------------------------------- | ------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------- |
-| ERP-00 — audit et décisions        | Glossaire : engagement, prestation, exigibilité, retard, acompte, facture, encaissement, revenu ; matrice des cas actuels | Cas R01–R09 arbitrés pour le premier pack ; incertitudes restantes nommées                                                   |
+| ERP-00 — audit et décisions        | Glossaire : engagement, prestation, exigibilité, retard, acompte, facture, encaissement, revenu ; matrice des cas actuels | Décisions R01–R09 traduites en cas de recette du premier pack ; incertitudes d’implémentation nommées                        |
 | ERP-01 — fiabilité des commandes   | Idempotence de l’encaissement, reprises des propositions et jobs, corrélation des échanges                                | Double requête et arrêt après commit sans double effet ; erreurs et reprise visibles                                         |
 | ERP-02 — frontières d’organisation | Tenant, société juridique, établissement, domaine public et droits par périmètre                                          | Deux dossiers pilotes isolés ; restauration et résolution de domaine vérifiées                                               |
 | ERP-03 — registre et packs         | Manifestes de modules, dépendances, paramètres typés, pack Formation et pack Coworking                                    | Installation vide reproductible ; désactivation contrôlée et historique lisible                                              |
@@ -547,3 +547,11 @@ Conserver l’enveloppe initiale de 12 à 18 mois pour une V1 large, sous les hy
 Le premier livrable commercial peut être plus restreint : un pack de services ou un centre configuré et fiable, avec facturation répondant aux obligations réellement applicables à ce dossier. Ne pas annoncer « mini-Odoo complet » pour ce premier jalon.
 
 La réussite se mesure par le temps de configuration d’un dossier, les tâches quotidiennes terminées sans aide, les écarts de rapprochement, les doublons au rejeu et la capacité à restaurer. Les valeurs de référence et seuils restent à mesurer et à faire approuver ; aucune cible arbitraire n’est annoncée comme déjà atteinte.
+
+## 20. GO produit et premier incrément
+
+Le porteur du projet valide les décisions R01 à R09 du registre d’audit. R02 précise le prorata par défaut, que seuls un administrateur ou la personne ayant créé la fiche élève peuvent désactiver à l’inscription. R04 confirme qu’un abandon ne restitue aucun paiement automatiquement et ne supprime aucune opération.
+
+Le premier incrément applique R02 et vérifie la conservation des avances de R04. Le montant d’une période partielle se calcule en jours calendaires sur le cycle convenu ; la date de paiement demeure celle de la formule. Les anciennes inscriptions et pièces sont conservées. La passation est appendue à chaque branche dédiée, avec la recette et les migrations correspondantes.
+
+Le prochain lot d’ERP-00 doit transformer les décisions validées en exemples chiffrés et matrices de transitions. La disponibilité des salles partagées, l’idempotence et les reprises après interruption restent des travaux de stabilisation identifiés. Les modules d’ERP et les nouveaux contrats comptables suivent les lots de la section 19, chacun sur une branche de revue dédiée ; aucun travail directement sur `main`.

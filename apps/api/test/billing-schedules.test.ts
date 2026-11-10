@@ -1,11 +1,13 @@
 import { sql } from "kysely";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { monthlySchedule } from "../src/domain/enrolmentSchedule.js";
 import { createHarness, type Harness } from "./harness.js";
 
 let h: Harness;
 let admin: string;
 let sec: string;
 let editor: string;
+let otherSec: string;
 const ids: Record<string, string> = {};
 const monthly = (name: string, monthlyDueKind: string) => ({ name, kind: "monthly", amount: 40_000, isDefault: false, monthlyDueKind });
 const enrollment = (planId: string) => ({ studentId: ids.student, groupId: ids.group, effectiveDate: "2026-09-15", planId });
@@ -14,9 +16,11 @@ beforeAll(async () => {
   await h.createUser("admin", "admin@x.tn");
   await h.createUser("secretariat", "sec@x.tn");
   await h.createUser("editor", "ed@x.tn");
+  await h.createUser("secretariat", "other-sec@x.tn");
   admin = await h.login("admin@x.tn");
   sec = await h.login("sec@x.tn");
   editor = await h.login("ed@x.tn");
+  otherSec = await h.login("other-sec@x.tn");
   const subject = (await h.call("POST", "/api/catalogue/subjects", admin, { name: "Maths" })).body.id;
   ids.study = (
     await h.call("POST", "/api/catalogue/studies", admin, {
@@ -89,28 +93,28 @@ describe("billing choices and projections", () => {
     expect(result.status).toBe(201);
     ids.enrolment = result.body.id;
     const account = await h.call("GET", `/api/students/${ids.student}/account`, sec);
-    expect(account.body.totals).toEqual({ due: 40_000, future: 120_000, totalRemaining: 160_000, asOf: "2026-10-20", credit: 0, pendingDiscounts: 0 });
+    expect(account.body.totals).toEqual({ due: 21_333, future: 99_355, totalRemaining: 120_688, asOf: "2026-10-20", credit: 0, pendingDiscounts: 0 });
     const future = account.body.installments.find((l: { dueDate: string }) => l.dueDate === "2026-11-30");
     const preview = await h.call("POST", "/api/payments/preview", sec, { studentId: ids.student, amount: 50_000, installmentIds: [future.id] });
     expect(preview.status).toBe(200);
-    expect(preview.body.after).toMatchObject({ due: 30_000, future: 80_000, totalRemaining: 110_000, credit: 0 });
+    expect(preview.body.after).toMatchObject({ due: 11_333, future: 59_355, totalRemaining: 70_688, credit: 0 });
     expect(await h.db.selectFrom("payments").select("id").execute()).toHaveLength(0);
     const list = await h.call("GET", "/api/payments/overdue", sec);
     expect(list.status).toBe(200);
     expect(list.body.items).toHaveLength(1);
-    expect(list.body.items[0]).toMatchObject({ studentId: ids.student, dueDate: "2026-09-30", remaining: 40_000 });
+    expect(list.body.items[0]).toMatchObject({ studentId: ids.student, dueDate: "2026-09-30", remaining: 21_333 });
     expect((await h.call("GET", "/api/payments/overdue", editor)).status).toBe(403);
     const studentList = await h.call("GET", "/api/students", sec);
-    expect(studentList.body.items[0].due).toBe(40_000);
+    expect(studentList.body.items[0].due).toBe(21_333);
   });
   it("preserves snapshots and existing dates when a formula changes", async () => {
     expect((await h.call("PUT", `/api/catalogue/plans/${ids.end}`, admin, monthly("Fin modifiée", "month_start"))).status).toBe(200);
     const stored = await h.db
       .selectFrom("enrolments")
-      .select(["monthly_due_kind", "due_offset_days"])
+      .select(["monthly_due_kind", "due_offset_days", "prorate_partial_months"])
       .where("id", "=", ids.enrolment!)
       .executeTakeFirstOrThrow();
-    expect(stored).toEqual({ monthly_due_kind: "month_end", due_offset_days: 0 });
+    expect(stored).toEqual({ monthly_due_kind: "month_end", due_offset_days: 0, prorate_partial_months: true });
     const lines = await h.db.selectFrom("installments").select("due_date").where("enrolment_id", "=", ids.enrolment!).orderBy("due_date").execute();
     expect(lines.map((l) => l.due_date)).toEqual(["2026-09-30", "2026-10-31", "2026-11-30", "2026-12-31"]);
   });
@@ -216,6 +220,9 @@ it("retains the started month at dropout and moves only future service periods a
   });
   expect(transfer.status).toBe(200);
   expect(transfer.body.movedInstallments).toBe(2);
+  expect(await h.db.selectFrom("enrolments").select("prorate_partial_months").where("id", "=", transfer.body.newEnrolmentId).executeTakeFirst()).toEqual({
+    prorate_partial_months: true,
+  });
   const moved = await h.db
     .selectFrom("installments")
     .select(["due_date", "service_period_start", "service_period_end"])
@@ -237,4 +244,82 @@ it("never discloses another centre’s payer credit in a preview without selecte
   const denied = await h.call("POST", "/api/payments/preview", sec, { studentId: foreign.rows[0]!.id, amount: 1000, installmentIds: [] });
   expect(denied.status).toBe(404);
   expect(denied.body).not.toHaveProperty("before");
+});
+
+it("prorates partial calendar months by default and preserves the agreed deadlines", async () => {
+  const plan = await h.call("POST", `/api/catalogue/studies/${ids.study}/plans`, admin, { ...monthly("Fin à 80 TND", "month_end"), amount: 80_000 });
+  expect(plan.status).toBe(201);
+  const student = await h.call("POST", "/api/students", sec, { firstName: "Novembre", lastName: "Prorata", isMinor: false });
+  const body = { ...enrollment(plan.body.id), studentId: student.body.id, effectiveDate: "2026-11-16" };
+  const preview = await h.call("POST", "/api/enrolments/preview", sec, body);
+  expect(preview.status).toBe(200);
+  expect(preview.body).toMatchObject({
+    proratePartialMonths: true,
+    total: 78_710,
+    lines: [
+      { amount: 40_000, dueDate: "2026-11-30", servicePeriodStart: "2026-11-16", proration: { coveredDays: 15, periodDays: 30, monthlyAmount: 80_000 } },
+      { amount: 38_710, dueDate: "2026-12-31", servicePeriodEnd: "2026-12-15", proration: { coveredDays: 15, periodDays: 31, monthlyAmount: 80_000 } },
+    ],
+  });
+  const created = await h.call("POST", "/api/enrolments", sec, body);
+  expect(created.body).toMatchObject({ proratePartialMonths: true });
+  const charges = await h.db.selectFrom("installments").select("amount").where("enrolment_id", "=", created.body.id).orderBy("due_date").execute();
+  expect(charges.map((c) => c.amount)).toEqual([40_000, 38_710]);
+});
+
+it("lets only the creator or an administrator disable proration, including on direct API calls", async () => {
+  const owner = await h.call("POST", "/api/students", sec, { firstName: "Créateur", lastName: "Prorata", isMinor: false });
+  const second = await h.call("POST", "/api/students", sec, { firstName: "Admin", lastName: "Prorata", isMinor: false });
+  const input = { ...enrollment(ids.start!), studentId: owner.body.id };
+  expect(owner.body.canChangeProration).toBe(true);
+  expect((await h.call("GET", `/api/students/${owner.body.id}`, otherSec)).body.canChangeProration).toBe(false);
+  const deniedPreview = await h.call("POST", "/api/enrolments/preview", otherSec, { ...input, proratePartialMonths: false });
+  expect(deniedPreview).toMatchObject({ status: 403, body: { code: "proration_override_forbidden" } });
+  const deniedCreate = await h.call("POST", "/api/enrolments", otherSec, { ...input, proratePartialMonths: false });
+  expect(deniedCreate.status).toBe(403);
+  expect((await h.call("POST", "/api/enrolments/preview", otherSec, input)).body.proratePartialMonths).toBe(true);
+  for (const [actor, studentId] of [
+    [sec, owner.body.id],
+    [admin, second.body.id],
+  ]) {
+    const request = { ...input, studentId, proratePartialMonths: false };
+    const preview = await h.call("POST", "/api/enrolments/preview", actor!, request);
+    expect(preview.body).toMatchObject({ total: 160_000, proratePartialMonths: false });
+    const created = await h.call("POST", "/api/enrolments", actor!, request);
+    expect(created).toMatchObject({ status: 201, body: { proratePartialMonths: false } });
+  }
+});
+
+it("uses the actual anniversary cycle even when a short month clips the anchor", () => {
+  const timing = { monthlyDueKind: "anniversary", monthlyDueDay: null, dueOffsetDays: 2 } as const;
+  const lines = monthlySchedule("Cours", 80_000, "2028-01-31", "2028-02-29", timing, { proratePartialMonths: true });
+  expect(lines).toMatchObject([
+    { dueDate: "2028-02-02", amount: 80_000, servicePeriodEnd: "2028-02-28" },
+    { dueDate: "2028-03-02", amount: 2_581, servicePeriodStart: "2028-02-29", proration: { coveredDays: 1, periodDays: 31 } },
+  ]);
+  expect(monthlySchedule("Cours", 1, "2028-02-29", "2028-02-29", { ...timing, monthlyDueKind: "month_end" }, { proratePartialMonths: true })).toEqual([]);
+});
+
+it("preserves an advance on a future period at dropout without refunding or changing its amount", async () => {
+  const student = await h.call("POST", "/api/students", sec, { firstName: "Avance", lastName: "Prorata", isMinor: false });
+  const enrolment = await h.call("POST", "/api/enrolments", sec, { ...enrollment(ids.start!), studentId: student.body.id });
+  expect(enrolment.status).toBe(201);
+  const future = await h.db
+    .selectFrom("installments")
+    .select(["id", "amount"])
+    .where("enrolment_id", "=", enrolment.body.id)
+    .where("service_period_start", "=", "2026-12-01")
+    .executeTakeFirstOrThrow();
+  expect(future.amount).toBe(19_355);
+  const payment = await h.call("POST", "/api/payments", sec, { studentId: student.body.id, amount: 1_000, method: "cash", installmentIds: [future.id] });
+  expect(payment.status).toBe(201);
+  expect((await h.call("POST", `/api/enrolments/${enrolment.body.id}/drop`, sec, { date: "2026-10-20", reason: "Arrêt avec avance" })).status).toBe(200);
+  const account = await h.call("GET", `/api/students/${student.body.id}/account`, sec);
+  expect(account.body.installments.find((i: { id: string }) => i.id === future.id)).toMatchObject({
+    status: "open",
+    amount: 19_355,
+    paid: 1_000,
+    remaining: 18_355,
+  });
+  expect(account.body.payments).toHaveLength(1);
 });

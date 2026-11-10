@@ -26,12 +26,12 @@ La volumétrie de production, l’équipe de maintenance, le budget et les temps
 
 ### A01 — Période consommée et date d’exigibilité doivent être différentes
 
-**Priorité P0 — correction livrée pour les nouvelles mensualités ; règle de prorata encore à décider.**
+**Priorité P0 — correction livrée pour les nouvelles mensualités ; décision de prorata confirmée et implémentée sur `feat/enrolment-proration`.**
 
 - Preuves : `domain/enrolmentSchedule.ts`, `domain/enrolmentChanges.ts`, migrations `0018` et `0019`, test `billing-schedules.test.ts`.
 - Ancien raisonnement : une échéance future est annulable lors d’un abandon. Avec une mensualité payable le 31 octobre, un abandon le 20 octobre pouvait annuler le mois commencé.
 - Correction : les nouvelles mensualités portent leur période de service ; le mois commencé reste dû, les périodes futures non touchées sont annulées ou transférées. Les données anciennes restent inchangées.
-- Limite : pas de prorata automatique ; premier et dernier mois partiels facturés au montant prévu. Les forfaits et tranches personnalisées restent des engagements à dates convenues, sans ventilation de service automatique.
+- Prorata : activé par défaut à la nouvelle inscription mensuelle. Un administrateur ou la personne qui a créé la fiche élève peut le décocher. Les forfaits et tranches personnalisées restent à leur montant convenu. Les anciennes échéances ne sont pas recalculées.
 - Recette complémentaire : abandon le premier jour du mois, fin de groupe en milieu de mois, échéance reportée, mensualité partiellement réglée, acompte sur période future.
 
 ### A02 — Aperçu d’encaissement : contrôler le centre du payeur même sans sélection
@@ -132,19 +132,21 @@ La volumétrie de production, l’équipe de maintenance, le budget et les temps
 - À compléter : focus piégé et restitué sur tous les anciens composants modaux, lecteur d’écran, contrastes, erreurs de formulaire et rôles autres qu’Admin. La fenêtre agrandie du plan utilise un dialogue natif ; les anciens modaux ne le font pas tous.
 - Ne pas annoncer une conformité WCAG sur la seule base des contrôles de types ou des tests de logique.
 
-## 3. Registre des règles à faire décider
+## 3. Registre des décisions métier validées
 
-| ID  | Question métier                                                                      | Proposition de départ                                                                          | Validation attendue                                          |
-| --- | ------------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------- | ------------------------------------------------------------ |
-| R01 | Qui choisit début / fin de mois ?                                                    | Le client choisit parmi les formules proposées ; l’accueil enregistre le choix à l’inscription | Choix utilisateur déjà exprimé ; parcours démo disponible    |
-| R02 | Un mois partiellement suivi est-il complet ou proratisé ?                            | Montant mensuel complet dans cette branche, sans prorata automatique                           | Décision produit avant diffusion générale                    |
-| R03 | Quel mois reste dû à l’abandon ?                                                     | Mois commencé conservé pour les nouvelles périodes, suivantes annulées si intactes             | Recette avec exemples et conditions du contrat               |
-| R04 | Que faire des avances et mensualités déjà partiellement réglées à l’abandon ?        | Aucune restitution automatique ni suppression de paiement                                      | Avoir / remboursement à concevoir avec droits et audit       |
-| R05 | Quel prix prime entre formule et surcharge du groupe ?                               | Formule choisie explicite ; tarif du groupe pour le mode historique sans formule               | Confirmer et afficher l’origine du prix partout              |
-| R06 | Une assiette de rémunération « facturé » suit-elle facture, service ou exigibilité ? | Décision explicite par règle ; ne pas utiliser implicitement l’échéance comme date économique  | Responsable + comptable                                      |
-| R07 | Quelles urgences méritent une alerte immédiate ?                                     | Échéance réellement en retard, expiration proche, incident opérationnel                        | Seuils, délai, responsable et répétition à valider sur usage |
-| R08 | Qu’est-ce qu’un document validé et comment le corriger ?                             | États métier, facturation, livraison et règlement distincts                                    | Matrice des transitions et droits                            |
-| R09 | Quelle organisation vend quoi ?                                                      | Tenant, société juridique et établissement distincts dans la cible                             | Premier dossier pilote et périmètre légal                    |
+Le porteur du projet a donné son GO pour R01 à R09, avec précision sur R02 et confirmation explicite de R04. Une décision validée fixe le comportement cible ; les actions de recette et les chantiers de conception restent identifiés séparément.
+
+| ID  | Décision validée                                                                                                                                                      | État et suite                                                                                                                                    |
+| --- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------ |
+| R01 | Le client choisit début ou fin de mois parmi les formules proposées ; l’accueil enregistre le choix à l’inscription.                                                  | Disponible dans la démo Maths Bac.                                                                                                               |
+| R02 | Prorata par défaut pour les périodes mensuelles partielles. Un administrateur ou la personne qui a créé la fiche élève peut décocher l’option pour cette inscription. | Implémenté sur `feat/enrolment-proration` : jours calendaires couverts, arrondi au millime, choix conservé.                                      |
+| R03 | À l’abandon, la période commencée reste due au montant de l’échéancier signé ; les périodes futures intactes sont annulées.                                           | Conserver la distinction période de service / exigibilité et vérifier les limites de dates en recette.                                           |
+| R04 | Aucune restitution automatique et aucun paiement supprimé pour les avances et mensualités déjà partiellement réglées.                                                 | Confirmé et couvert par un test d’abandon avec avance. L’avoir ou remboursement reste une action dédiée avec droits et audit.                    |
+| R05 | La formule explicite prime ; sans prix propre à la formule, le tarif effectif du groupe sert de référence.                                                            | Continuer à montrer la source du prix dans la recette commerciale.                                                                               |
+| R06 | L’assiette de rémunération doit préciser par règle si la période suit facture, service ou exigibilité.                                                                | Principe validé. Le mode historique « facturé » utilise toujours la date d’exigibilité ; implémentation à traiter avec le lot paie/comptabilité. |
+| R07 | Échéance réellement en retard, expiration proche et incident opérationnel peuvent mériter une alerte immédiate.                                                       | Principe validé. Calibrer seuils, responsables et répétition sur l’usage réel.                                                                   |
+| R08 | Validation métier, facturation, livraison et règlement ont des états distincts.                                                                                       | Principe validé pour les nouveaux documents. Définir transitions, corrections et droits dans le lot commercial.                                  |
+| R09 | Séparer tenant, société juridique et établissement.                                                                                                                   | Principe validé pour le socle ; le premier dossier pilote doit définir les entités, droits et domaines réels.                                    |
 
 ## 4. Plan de recette métier
 
@@ -181,7 +183,7 @@ Un incident d’isolation ou une incohérence de solde bloque la mise en product
 ## 6. Prochain lot recommandé
 
 1. Faire relire la branche et ses migrations par l’agent développeur à l’aide de la passation ; résoudre A03 ou accepter explicitement la limite du pilote.
-2. Faire approuver les exemples R02 à R06 et le vocabulaire financier ; mettre en place un registre de décisions.
+2. Transformer les décisions R01–R09 validées en cas de recette chiffrés ; documenter le vocabulaire financier et la sémantique du mode de paie historique.
 3. Écrire les scénarios d’idempotence et de reprise A04 à A06, puis les implémenter par petits lots.
 4. Spécifier les frontières Tenant / Société / Établissement / Contact et un premier pack Formation ou Coworking.
 5. Démarrer la tranche commerciale Services : devis → facture → paiement → correction, avec base fiscale cadrée dès la conception.

@@ -23,6 +23,7 @@ const MESSAGES: Record<string, string> = {
   group_full: "Le groupe est complet.",
   payment_mode_not_allowed: "Ce mode de paiement n'est pas autorisé pour cette offre.",
   plan_required: "Choisissez une formule.",
+  proration_override_forbidden: "Seuls un administrateur ou la personne qui a créé la fiche élève peuvent décocher le prorata.",
   invalid_logo: "Le logo doit être une image PNG, JPEG ou WebP.",
   logo_too_large: "Le logo ne doit pas dépasser 512 Ko.",
   plan_total_mismatch: "Le total des tranches doit être égal au prix.",

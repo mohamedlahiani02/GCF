@@ -317,3 +317,32 @@ Dernier parcours navigateur : choix du dossier de démonstration Hamza Feki, Mat
 Captures supplémentaires : `formules-debut-fin-mois.jpg`, `inscription-choix-formule.jpg` et `inscription-echeances-fin-mois.jpg` dans le dossier local de recette. Elles illustrent la configuration et l’aperçu, sans créer de nouvelle dette dans la base de revue.
 
 Aucun push ni merge n’a été effectué. Le code de revue tourne sur 3010 / 3012 ; les migrations locales `0018` et `0019` sont appliquées uniquement sur sa base dédiée. Les sources, secrets et données du poste ne sont pas transmis à Claude ou à un service externe par cette passation : l’utilisateur choisit les documents et la branche à lui présenter.
+
+## 14. Addendum — GO métier et prorata des inscriptions mensuelles
+
+**Branche** : `feat/enrolment-proration`, créée depuis `feat/billing-schedules` (`db83189`). L’addendum complète la passation historique ; la règle sans prorata décrite aux sections 7 et 13 correspondait à la version précédente. Aucun changement sur `main`.
+
+Le porteur du projet confirme les décisions R01 à R09. Voir [le registre validé](audit-metier-produit-2026-11-10.md#3-registre-des-décisions-métier-validées) et [le GO dans la roadmap](roadmap-mini-erp.md#20-go-produit-et-premier-incrément). Les décisions de conception ERP ne sont pas annoncées comme des modules déjà livrés.
+
+### R02 — comportement livré
+
+- Nouvelle inscription mensuelle : « Calculer les mois partiels au prorata » est coché par défaut. Un administrateur ou la personne qui a créé la fiche élève peut décocher. Les autres utilisateurs habilités à inscrire gardent le prorata. Les jetons ne peuvent pas décider de l’exception à la place d’une personne.
+- L’autorisation est vérifiée côté serveur sur l’aperçu et sur l’enregistrement. Les endpoints élèves exposent la capacité pour l’interface, sans divulguer l’identité du créateur.
+- Prix = tarif du cycle × jours couverts / jours du cycle, dates incluses, arrondi au millime. Début, fin et jour personnalisé utilisent les mois calendaires ; une formule anniversaire utilise ses cycles anniversaire et conserve l’ancre dans les mois courts. Une date de première échéance explicite fixe le premier cycle anniversaire facturé. Un cycle entier garde son tarif.
+- Exemple : du 16 au 30 novembre inclus, au tarif de 80 TND, la mensualité est de 40 TND avec prorata et 80 TND si l’option est décochée. Le récapitulatif montre le nombre de jours et le tarif de référence. Les dates d’exigibilité restent celles de la formule.
+- Les modes intégral, par tranches et à la séance ne sont pas proratisés. Une mensualité dont le résultat arrondi est nul n’émet pas de ligne comptable opérationnelle à zéro.
+- `0020_enrolment_proration` ajoute `enrolments.prorate_partial_months`. La valeur d’historique reste `false` ; l’API enregistre le défaut `true` pour les nouvelles inscriptions mensuelles. Le choix et les calculs figurent dans l’audit. Les transferts gardent ce choix et les échéances reprises conservent leurs montants.
+
+### R03–R04 — abandon et avances
+
+Une période entamée reste au montant déjà convenu, éventuellement proratisé selon les dates initiales. Les échéances des périodes futures intactes peuvent être annulées comme auparavant. Une échéance déjà touchée par une avance ou un paiement partiel et le paiement associé sont conservés. Le prorata à l’inscription ne déclenche aucun recalcul rétroactif ni remboursement lors d’un abandon.
+
+### Vérifications et environnement
+
+- Suite ciblée : 12 tests réussis, dont défaut actif, droits API et capacité exposée à l’interface, jours calendaires, ancre en année bissextile, arrondi au millime, transfert et abandon avec paiement anticipé.
+- Migration appliquée uniquement sur `gcf_pr12_review`, après sauvegarde PostgreSQL locale dans `review-ux/gcf-review-before-proration-20261110-234503.dump`. Les empreintes des anciennes échéances, des paiements et des reçus sont identiques avant et après la migration.
+- UI de revue : `http://localhost:3010`, API de revue : `http://127.0.0.1:3012`. La vérification d’un aperçu n’enregistre ni inscription ni paiement.
+
+- Recette navigateur avec Admin sur Maths Bac A : démarrage le 10 novembre, formule de fin de mois à 80 TND. L’option est cochée par défaut ; novembre affiche 21 jours sur 30 et 56 TND, puis 80 TND quand la case est décochée, à la même date d’exigibilité. L’option a été réactivée dans l’aperçu laissé ouvert. Aucune inscription ni aucun paiement n’a été enregistré par cette recette. Captures locales : `review-ux/inscription-prorata-option.jpg` et `review-ux/inscription-prorata-novembre.jpg`.
+- Résultats consolidés : 205 tests réussis dans les 19 autres fichiers de la suite PostgreSQL, puis 38 tests réussis lors de la relance des trois fichiers ajustés (`catalogue`, `payments`, `cash-reports`) : 243 tests couverts sur l’état final. Le scénario d’encaissement au tarif complet désactive explicitement le prorata ; le rapport et le catalogue vérifient les montants proratisés. Typage et compilation web réussis.
+- Revue : `git diff db83189...HEAD`. Vérifier la séquence de migrations de la branche distante avant toute intégration. Branche locale uniquement, sans push ni merge.

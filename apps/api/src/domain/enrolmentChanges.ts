@@ -115,6 +115,7 @@ export async function transferEnrolment(trx: Transaction<Database>, actor: Actor
       group_id: to.groupId,
       effective_date: input.effectiveDate,
       payment_mode: old.payment_mode,
+      prorate_partial_months: old.prorate_partial_months,
       plan_id: old.plan_id,
       monthly_due_kind: old.monthly_due_kind,
       monthly_due_day: old.monthly_due_day,
@@ -164,11 +165,18 @@ export async function transferEnrolment(trx: Transaction<Database>, actor: Actor
     }
   } else if (moving.length) {
     // Existing legacy enrollments keep working even after new formulas are added to their offer.
-    const lines = monthlySchedule(to.label, to.price, moving[0]!.dueDate, to.endDate, {
-      monthlyDueKind: old.monthly_due_kind,
-      monthlyDueDay: old.monthly_due_day,
-      dueOffsetDays: old.due_offset_days,
-    });
+    const lines = monthlySchedule(
+      to.label,
+      to.price,
+      moving[0]!.dueDate,
+      to.endDate,
+      {
+        monthlyDueKind: old.monthly_due_kind,
+        monthlyDueDay: old.monthly_due_day,
+        dueOffsetDays: old.due_offset_days,
+      },
+      { proratePartialMonths: old.prorate_partial_months },
+    );
     if (lines.length) {
       issued = await trx
         .insertInto("installments")

@@ -24,6 +24,7 @@ export interface StudentRow {
   notes: string | null;
   status: "active" | "archived";
   activeGroups?: string[];
+  canChangeProration?: boolean;
   due?: number;
   lastPaymentAt?: string | null;
 }

@@ -22,7 +22,8 @@ interface TrainingRow {
   openSessions: number;
 }
 interface PreviewResult {
-  lines: { label: string; amount: number; dueDate: string }[];
+  lines: { label: string; amount: number; dueDate: string; proration?: { coveredDays: number; periodDays: number; monthlyAmount: number } }[];
+  proratePartialMonths: boolean;
   discount: { amount: number; reason: string } | null;
   total: number;
 }
@@ -243,6 +244,7 @@ export function EnrolmentWizardPage() {
   const [paymentMode, setPaymentMode] = useState<PaymentMode>("monthly");
   const [planId, setPlanId] = useState("");
   const [firstDueDate, setFirstDueDate] = useState("");
+  const [proratePartialMonths, setProratePartialMonths] = useState(true);
   const [withDiscount, setWithDiscount] = useState(false);
   const [discountKind, setDiscountKind] = useState<"percent" | "amount">("percent");
   const [discountText, setDiscountText] = useState("");
@@ -286,6 +288,8 @@ export function EnrolmentWizardPage() {
   const offerDetail = offer?.kind === "study" ? study : training;
   const plans = (offerDetail.data?.plans ?? []).filter((p) => p.status === "active");
   const selectedPlan = plans.find((p) => p.id === planId);
+  const showProration = offerDetail.isSuccess && (selectedPlan?.kind === "monthly" || (group?.kind === "study" && !plans.length && paymentMode === "monthly"));
+  const canChangeProration = student?.canChangeProration === true;
 
   const discountValue = (() => {
     if (!withDiscount) return null;
@@ -302,6 +306,7 @@ export function EnrolmentWizardPage() {
           groupId: group.id,
           effectiveDate,
           ...(planId ? { planId } : { paymentMode }),
+          ...(showProration && canChangeProration ? { proratePartialMonths } : {}),
           ...(firstDueDate && (!selectedPlan || selectedPlan.monthlyDueKind === "anniversary") && (paymentMode === "monthly" || paymentMode === "full")
             ? { firstDueDate }
             : {}),
@@ -329,6 +334,8 @@ export function EnrolmentWizardPage() {
   const pickGroup = useCallback((g: GroupDetail) => {
     setGroup(g);
     setPlanId("");
+    setFirstDueDate("");
+    setProratePartialMonths(true);
     if (g.kind === "study") setPaymentMode(g.billingMode ?? "monthly");
     setEffectiveDate((d) => (g.startDate > d ? g.startDate : d));
     setStep(3);
@@ -436,9 +443,36 @@ export function EnrolmentWizardPage() {
                   </fieldset>
                 )}
                 {(paymentMode === "monthly" || paymentMode === "full") && (!selectedPlan || selectedPlan.monthlyDueKind === "anniversary") ? (
-                  <Field label="Première échéance" hint="Par défaut, la date d'effet.">
+                  <Field
+                    label="Première échéance"
+                    hint={
+                      paymentMode === "monthly"
+                        ? "Cette date sert de point de départ au cycle mensuel. Par défaut : date d’effet."
+                        : "Par défaut : date d’effet."
+                    }
+                  >
                     <input className="input" type="date" value={firstDueDate} onChange={(e) => setFirstDueDate(e.target.value)} />
                   </Field>
+                ) : null}
+                {showProration ? (
+                  <div>
+                    <label className="row center" style={{ gap: 8 }}>
+                      <input
+                        type="checkbox"
+                        className="chk"
+                        checked={!canChangeProration || proratePartialMonths}
+                        disabled={!canChangeProration}
+                        aria-describedby="enrolment-proration-help"
+                        onChange={(event) => setProratePartialMonths(event.target.checked)}
+                      />
+                      Calculer les mois partiels au prorata
+                    </label>
+                    <p className="cap" id="enrolment-proration-help">
+                      {canChangeProration
+                        ? "Facture les jours couverts dans chaque période partielle. Décochez pour appliquer le tarif mensuel complet."
+                        : "Les périodes partielles sont calculées au prorata. Seuls un administrateur ou la personne qui a créé la fiche élève peuvent changer ce choix."}
+                    </p>
+                  </div>
                 ) : null}
                 {paymentMode !== "per_session" ? (
                   <label className="row center" style={{ gap: 8 }}>
@@ -482,7 +516,9 @@ export function EnrolmentWizardPage() {
             {step === 4 && preview.data ? (
               <>
                 {preview.data.lines.length === 0 ? (
-                  <div className="cap">Facturation à la séance : aucune échéance n'est créée à l'avance.</div>
+                  <div className="cap">
+                    {paymentMode === "per_session" ? "Facturation à la séance : aucune échéance n’est créée à l’avance." : "Aucune échéance à créer."}
+                  </div>
                 ) : (
                   <div className="card xs">
                     <table className="tbl">
@@ -496,7 +532,14 @@ export function EnrolmentWizardPage() {
                       <tbody>
                         {preview.data.lines.map((l, i) => (
                           <tr key={i}>
-                            <td>{l.label}</td>
+                            <td>
+                              {l.label}
+                              {l.proration ? (
+                                <div className="cap">
+                                  Prorata : {l.proration.coveredDays} / {l.proration.periodDays} jours · Tarif mensuel : {tnd(l.proration.monthlyAmount)} TND
+                                </div>
+                              ) : null}
+                            </td>
                             <td>
                               {frDate(l.dueDate)} {l.dueDate > todayIso() ? <Badge tone="gray">Prévisionnel</Badge> : <Badge tone="amber">Exigible</Badge>}
                             </td>
@@ -564,7 +607,7 @@ export function EnrolmentWizardPage() {
                   Voir le récapitulatif
                 </button>
               ) : step === 4 ? (
-                <button type="button" className="btn btn-p" disabled={create.isPending} onClick={() => create.mutate()}>
+                <button type="button" className="btn btn-p" disabled={create.isPending || !preview.data || preview.isError} onClick={() => create.mutate()}>
                   Confirmer l'inscription
                 </button>
               ) : null}
@@ -606,6 +649,7 @@ export function EnrolmentWizardPage() {
               <div>
                 <div className="lab">Total de l'échéancier</div>
                 <strong className="num">{tnd(preview.data.total)} TND</strong>
+                {showProration ? <div className="cap">Prorata : {preview.data.proratePartialMonths ? "activé" : "désactivé"}</div> : null}
               </div>
             ) : null}
           </div>

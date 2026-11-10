@@ -96,6 +96,7 @@ beforeAll(async () => {
       effectiveDate: "2026-09-01",
       paymentMode: "monthly",
       firstDueDate: "2026-09-05",
+      proratePartialMonths: false, // This collection and transfer scenario uses four full monthly charges.
     });
   }
 });

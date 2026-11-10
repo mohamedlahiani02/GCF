@@ -257,6 +257,7 @@ export type EnrolmentStatus = "active" | "transferred" | "dropped" | "completed"
 export type PaymentMode = "full" | "installments" | "monthly" | "per_session";
 
 export interface EnrolmentsTable {
+  prorate_partial_months: Generated<boolean>;
   monthly_due_kind: Generated<MonthlyDueKind>;
   monthly_due_day: Generated<number | null>;
   due_offset_days: Generated<number>;

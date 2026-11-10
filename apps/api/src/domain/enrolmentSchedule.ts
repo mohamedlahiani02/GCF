@@ -1,4 +1,14 @@
-import { addDays, addMonthsClamped, monthlyBillingDates, type BillingTiming, percentOf, planLines, ScheduleError, type PlanItemInput } from "@gcf/shared";
+import {
+  addDays,
+  addMonthsClamped,
+  monthlyBillingDates,
+  mulDivRound,
+  type BillingTiming,
+  percentOf,
+  planLines,
+  ScheduleError,
+  type PlanItemInput,
+} from "@gcf/shared";
 import type { Kysely, Transaction } from "kysely";
 import type { Database, PaymentMode, PlanKind } from "../db/types.js";
 import { notFound, unprocessable } from "../errors.js";
@@ -78,6 +88,7 @@ export interface ScheduleLine {
   dueDate: string;
   servicePeriodStart?: string;
   servicePeriodEnd?: string;
+  proration?: { coveredDays: number; periodDays: number; monthlyAmount: number };
 }
 
 const MONTHS_FR = ["janvier", "février", "mars", "avril", "mai", "juin", "juillet", "août", "septembre", "octobre", "novembre", "décembre"];
@@ -193,26 +204,48 @@ export async function resolveTerms(
   };
 }
 
-/** Calendar months describe service periods, independently of the date at which payment is due. */
-export function monthlySchedule(label: string, amount: number, firstDue: string, endDate: string, timing: BillingTiming): ScheduleLine[] {
+/** Date-only intervals use UTC so daylight saving and the server's timezone cannot change the number of days. */
+function inclusiveDays(start: string, end: string): number {
+  return (Date.parse(`${end}T00:00:00Z`) - Date.parse(`${start}T00:00:00Z`)) / 86_400_000 + 1;
+}
+
+/** A contractual cycle is separate from the payment deadline. Only the covered portion can be prorated. */
+export function monthlySchedule(
+  label: string,
+  amount: number,
+  firstDue: string,
+  endDate: string,
+  timing: BillingTiming,
+  policy: { proratePartialMonths: boolean; effectiveDate?: string },
+): ScheduleLine[] {
   try {
     const dates = monthlyBillingDates(firstDue, endDate, timing);
-    return dates.map(({ month, dueDate }, index) => {
-      const start = timing.monthlyDueKind === "anniversary" ? addDays(dueDate, -timing.dueOffsetDays) : `${month}-01`;
-      const end =
-        timing.monthlyDueKind === "anniversary"
-          ? dates[index + 1]
-            ? addDays(dates[index + 1]!.dueDate, -timing.dueOffsetDays - 1)
-            : endDate
-          : addDays(addMonthsClamped(`${month}-01`, 1), -1);
-      return {
+    const anniversary = timing.monthlyDueKind === "anniversary";
+    const serviceFrom = policy.effectiveDate && policy.effectiveDate > firstDue ? policy.effectiveDate : firstDue;
+    const lines: ScheduleLine[] = [];
+    for (const [index, { month, dueDate }] of dates.entries()) {
+      const periodStart = anniversary ? addDays(dueDate, -timing.dueOffsetDays) : `${month}-01`;
+      // Use the original anchor for every cycle (e.g. Jan 31 → Feb 28 → Mar 31).
+      const nextStart = anniversary ? addMonthsClamped(firstDue, index + 1, Number(firstDue.slice(8, 10))) : addMonthsClamped(periodStart, 1);
+      const periodEnd = addDays(nextStart, -1);
+      const servicePeriodStart = periodStart < serviceFrom ? serviceFrom : periodStart;
+      const servicePeriodEnd = periodEnd > endDate ? endDate : periodEnd;
+      if (servicePeriodStart > servicePeriodEnd) continue;
+      const periodDays = inclusiveDays(periodStart, periodEnd);
+      const coveredDays = inclusiveDays(servicePeriodStart, servicePeriodEnd);
+      const prorated = policy.proratePartialMonths && coveredDays < periodDays;
+      const billed = prorated ? mulDivRound(amount, coveredDays, periodDays) : amount;
+      if (billed === 0) continue; // The ledger only stores positive charges.
+      lines.push({
         label: `${label}, ${MONTHS_FR[Number(month.slice(5, 7)) - 1]} ${month.slice(0, 4)}`,
-        amount,
+        amount: billed,
         dueDate,
-        servicePeriodStart: start < firstDue ? firstDue : start,
-        servicePeriodEnd: end > endDate ? endDate : end,
-      };
-    });
+        servicePeriodStart,
+        servicePeriodEnd,
+        ...(prorated ? { proration: { coveredDays, periodDays, monthlyAmount: amount } } : {}),
+      });
+    }
+    return lines;
   } catch (error) {
     if (error instanceof ScheduleError) throw unprocessable("invalid_schedule", error.message);
     throw error;
@@ -224,9 +257,9 @@ export async function buildSchedule(
   db: Kysely<Database> | Transaction<Database>,
   group: GroupBilling,
   request: ScheduleRequest,
-  centreId: string,
+  { terms, plan }: Awaited<ReturnType<typeof resolveTerms>>,
+  proratePartialMonths: boolean,
 ): Promise<ScheduleLine[]> {
-  const { terms, plan } = await resolveTerms(db, group, request, centreId);
   if (request.firstDueDate && terms.monthlyDueKind !== "anniversary")
     throw unprocessable("due_date_from_formula", "the chosen formula determines the monthly due date");
   const firstDue = request.firstDueDate ?? request.effectiveDate;
@@ -234,7 +267,10 @@ export async function buildSchedule(
     case "per_session":
       return [];
     case "monthly":
-      return monthlySchedule(group.label, plan?.amount ?? group.price, firstDue, group.endDate, terms);
+      return monthlySchedule(group.label, plan?.amount ?? group.price, firstDue, group.endDate, terms, {
+        proratePartialMonths,
+        effectiveDate: request.effectiveDate,
+      });
     case "full":
       return [
         {

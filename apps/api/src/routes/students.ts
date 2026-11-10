@@ -3,6 +3,7 @@ import type { FastifyPluginAsync, FastifyRequest } from "fastify";
 import { sql, type Kysely, type Transaction } from "kysely";
 import { z } from "zod";
 import { writeAudit } from "../audit.js";
+import { canChangeProration } from "../auth/permissions.js";
 import type { Database, Student } from "../db/types.js";
 import { notFound, unprocessable } from "../errors.js";
 
@@ -158,6 +159,7 @@ export const studentRoutes: FastifyPluginAsync = async (app) => {
     return {
       items: rows.map((r) => ({
         ...present(r),
+        canChangeProration: canChangeProration(request.user!, r.created_by),
         activeGroups: groups.filter((g) => g.studentId === r.id).map((g) => g.name),
         due: Number(due.find((d) => d.studentId === r.id)?.due ?? 0),
         lastPaymentAt: lastPayments.find((p) => p.studentId === r.id)?.at ?? null,
@@ -172,7 +174,7 @@ export const studentRoutes: FastifyPluginAsync = async (app) => {
     const { id } = idParam.parse(request.params);
     const row = await db.selectFrom("students").selectAll().where("id", "=", id).where("centre_id", "=", request.user!.centreId).executeTakeFirst();
     if (!row) throw notFound("student");
-    return present(row);
+    return { ...present(row), canChangeProration: canChangeProration(request.user!, row.created_by) };
   });
 
   app.post("/", { preHandler: app.requirePermission("students:write") }, async (request, reply) => {
@@ -214,7 +216,7 @@ export const studentRoutes: FastifyPluginAsync = async (app) => {
       });
       return row;
     });
-    return reply.status(201).send(present(created));
+    return reply.status(201).send({ ...present(created), canChangeProration: canChangeProration(actor, created.created_by) });
   });
 
   app.patch("/:id", { preHandler: app.requirePermission("students:write") }, async (request) => {
