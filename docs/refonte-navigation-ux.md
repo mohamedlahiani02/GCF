@@ -12,7 +12,8 @@ Une liste de sous-menus repliables aurait conservé une longue navigation une fo
 
 ## Structure
 
-- Accueil : huit raccourcis personnalisables, recherche d’actions et accès aux espaces.
+- Tableau de bord : priorités, KPI et agenda, à `/`.
+- Mes raccourcis : huit raccourcis personnalisables, recherche d’actions et accès aux espaces, à `/raccourcis`.
 - Formation et cours : inscriptions, groupes, présences et planning ; dossiers des élèves, profs / formateurs, cours, formations et salles.
 - Coworking : plan en direct, accueil client, demandes et planning ; clients, abonnements, courrier et statistiques.
 - Finances : encaisser, suivre les échéances, paie, caisse, reçus, tableau de bord et rapports.
@@ -20,7 +21,7 @@ Une liste de sous-menus repliables aurait conservé une longue navigation une fo
 - À traiter : propositions des automatisations, avec le compteur existant.
 - Paramètres, en bas : administration, réglages des modules, automatisations et intégrations.
 
-Les espaces, liens, résultats de recherche et raccourcis sont filtrés avec les permissions existantes. Les routes métier et leurs gardes sont conservées ; le tableau de bord historique est déplacé à `/tableau-de-bord`. Les identifiants, URL et paramètres techniques relatifs aux intervenants restent identiques. Seul leur affichage devient « Prof / Formateur ».
+Les espaces, liens, résultats de recherche et raccourcis sont filtrés avec les permissions existantes. Les routes métier et leurs gardes sont conservées ; le chemin `/tableau-de-bord` redirige maintenant vers `/`. Les identifiants, URL et paramètres techniques relatifs aux intervenants restent identiques. Seul leur affichage devient « Prof / Formateur ».
 
 Les raccourcis sont stockés par identifiant utilisateur dans ce navigateur (`gcf.shortcuts.v1.<userId>`). Ils ne sont pas synchronisés entre appareils. Si le stockage est refusé, le choix reste valable pour la visite.
 
@@ -71,3 +72,5 @@ TypeScript et compilation du front vérifiés. Cette vérification ne constitue 
 Skills installés à la demande depuis Anthropics, Vercel Labs, Bencium et AccessLint. Les principes de réduction, de divulgation progressive, de navigation au clavier et de contrôle du repli ont guidé cette version. Les composants et styles existants sont conservés pour éviter d’introduire une deuxième bibliothèque d’interface.
 
 Référence de revue : [Web Interface Guidelines](https://github.com/vercel-labs/web-interface-guidelines).
+
+État final et évolutions financières : voir [la passation du 10 novembre](passation-branche-ux-facturation.md). Le présent document conserve aussi les vérifications historiques des commits de navigation et de zoom.
