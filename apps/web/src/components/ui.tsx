@@ -132,7 +132,7 @@ export function Empty({ title, text, action }: { title: string; text?: string; a
 
 export function ConflictBanner({ conflicts }: { conflicts: ConflictItem[] }) {
   if (!conflicts.length) return null;
-  const TYPE = { room: "Salle occupée", instructor: "Intervenant déjà pris", group: "Groupe déjà en séance" };
+  const TYPE = { room: "Salle occupée", instructor: "Prof / Formateur déjà pris", group: "Groupe déjà en séance" };
   return (
     <div className="ban ban-red" role="alert" style={{ flexDirection: "column", alignItems: "flex-start" }}>
       <strong>Conflit de planning</strong>

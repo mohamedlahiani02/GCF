@@ -93,7 +93,7 @@ function PayrollDetail({ summary }: { summary: PayrollSummary }) {
         <table className="tbl">
           <thead>
             <tr>
-              <th>Intervenant</th>
+              <th>Prof / Formateur</th>
               <th>Éléments</th>
               <th style={{ textAlign: "right" }}>Montant</th>
             </tr>

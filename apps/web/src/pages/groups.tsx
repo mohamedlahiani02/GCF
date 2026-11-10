@@ -314,7 +314,7 @@ export function GroupsPage() {
         <Card>
           <Empty
             title={category === "cours" ? "Aucun groupe de cours particulier" : "Aucun groupe de formation"}
-            text="Un groupe réunit des élèves autour d'un intervenant, avec ses propres séances."
+            text="Un groupe réunit des élèves autour d'un prof / formateur, avec ses propres séances."
             action={
               can("groups:write") ? (
                 <Link className="btn btn-p" to={newGroupLink}>
@@ -376,7 +376,7 @@ export function AddSessionModal({ group, onClose }: { group: Pick<GroupRow, "id"
       onClose={onClose}
       footer={
         <>
-          <span className="cap">Les conflits de salle et d'intervenant sont vérifiés à l'enregistrement</span>
+          <span className="cap">Les conflits de salle et de prof / formateur sont vérifiés à l'enregistrement</span>
           <div className="row" style={{ gap: 8 }}>
             <button type="button" className="btn" onClick={onClose}>
               Annuler
@@ -400,14 +400,14 @@ export function AddSessionModal({ group, onClose }: { group: Pick<GroupRow, "id"
         </Field>
       </div>
       <div className="grid2">
-        <Field label="Intervenant">
+        <Field label="Prof / Formateur">
           <select className="input" value={instructorId} onChange={(e) => setInstructorId(e.target.value)}>
             {(instructors.data ?? [])
               .filter((i) => i.status === "active" || i.id === group.instructorId)
               .map((i) => (
                 <option key={i.id} value={i.id}>
                   {i.lastName} {i.firstName}
-                  {i.id === group.instructorId ? " (intervenant du groupe)" : ""}
+                  {i.id === group.instructorId ? " (prof / formateur du groupe)" : ""}
                 </option>
               ))}
           </select>
@@ -521,7 +521,7 @@ export function GroupCreatePage() {
           title="Définition du groupe"
           footer={
             <>
-              <span className="cap">Les conflits de salle et d'intervenant sont vérifiés en direct</span>
+              <span className="cap">Les conflits de salle et de prof / formateur sont vérifiés en direct</span>
               <button type="button" className="btn btn-p" disabled={!canCreate} onClick={() => create.mutate()}>
                 Créer le groupe
               </button>
@@ -583,7 +583,7 @@ export function GroupCreatePage() {
               <Field label="Nom du groupe *">
                 <input className="input" value={name} onChange={(e) => setName(e.target.value)} />
               </Field>
-              <Field label="Intervenant *">
+              <Field label="Prof / Formateur *">
                 <select className="input" value={instructorId} onChange={(e) => setInstructorId(e.target.value)}>
                   <option value="">Choisir</option>
                   {(instructors.data ?? [])
@@ -635,7 +635,7 @@ export function GroupCreatePage() {
         <Card title="Contrôle du planning">
           <div className="card-b stack">
             {!ready ? (
-              <span className="cap">Renseignez l'intervenant, les dates et les créneaux pour vérifier les conflits.</span>
+              <span className="cap">Renseignez le prof / formateur, les dates et les créneaux pour vérifier les conflits.</span>
             ) : check.isFetching ? (
               <span className="cap">Vérification…</span>
             ) : conflicts.length ? (
@@ -782,7 +782,7 @@ function EditGroupModal({ group, onClose }: { group: GroupDetail; onClose: () =>
       }),
     onSuccess: async () => {
       await client.invalidateQueries();
-      toast("Groupe mis à jour. Les séances déjà planifiées gardent leur intervenant et leur salle.");
+      toast("Groupe mis à jour. Les séances déjà planifiées gardent leur prof / formateur et leur salle.");
       onClose();
     },
   });
@@ -814,7 +814,7 @@ function EditGroupModal({ group, onClose }: { group: GroupDetail; onClose: () =>
         <Field label="Nom">
           <input className="input" value={name} onChange={(e) => setName(e.target.value)} />
         </Field>
-        <Field label="Intervenant">
+        <Field label="Prof / Formateur">
           <select className="input" value={instructorId} onChange={(e) => setInstructorId(e.target.value)}>
             {(instructors.data ?? [])
               .filter((i) => i.status === "active" || i.id === group.instructorId)
@@ -960,7 +960,7 @@ export function MoveSessionModal({ item, groupInstructorId, onClose }: { item: P
         </Field>
         <Field label="Remplaçant (facultatif)">
           <select className="input" value={instructorId} onChange={(e) => setInstructorId(e.target.value)}>
-            <option value="">Intervenant actuel</option>
+            <option value="">Prof / Formateur actuel</option>
             {(instructors.data ?? [])
               .filter((i) => i.status === "active" && i.id !== groupInstructorId)
               .map((i) => (
@@ -1126,7 +1126,7 @@ function PlanningTab({ group }: { group: GroupDetail }) {
                   <th>Date</th>
                   <th>Horaire</th>
                   <th>Salle</th>
-                  <th>Intervenant</th>
+                  <th>Prof / Formateur</th>
                   <th>Feuille</th>
                   <th />
                 </tr>
@@ -1180,7 +1180,7 @@ function PlanningTab({ group }: { group: GroupDetail }) {
         <ReasonDialog
           title="Annuler la séance"
           danger
-          explanation={`Séance du ${frDateTime(cancelling.startsAt)}. Une séance annulée n'est ni due ni payée à l'intervenant, et n'est pas facturée.`}
+          explanation={`Séance du ${frDateTime(cancelling.startsAt)}. Une séance annulée n'est ni due ni payée au prof / formateur, et n'est pas facturée.`}
           confirmLabel="Annuler la séance"
           onClose={() => setCancelling(null)}
           onConfirm={async (reason) => {
@@ -1347,7 +1347,7 @@ function PayTab({ group }: { group: GroupDetail }) {
         <>
           <span className="cap">Estimation sur les séances tenues et validées, sans rien enregistrer</span>
           <Link className="btn" to={`/paie/intervenants/${group.instructorId}?mois=${month}`}>
-            Paie de l'intervenant
+            Paie du prof / formateur
           </Link>
         </>
       }

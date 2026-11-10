@@ -92,7 +92,7 @@ const MESSAGES: Record<string, string> = {
   student_archived: "L'élève est archivé.",
   too_many_slots: "Une location compte au plus 400 créneaux.",
   unknown_installment: "Une échéance choisie n'est pas une échéance ouverte de ce payeur.",
-  unknown_instructor: "L'intervenant n'existe pas ou est archivé.",
+  unknown_instructor: "L'prof / formateur n'existe pas ou est archivé.",
   unknown_plan: "La formule n'appartient pas à cette formation ou est archivée.",
   unknown_room: "La salle n'existe pas ou est archivée.",
   unknown_study: "Le cours particulier n'existe pas ou est archivé.",

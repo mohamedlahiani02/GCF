@@ -66,7 +66,7 @@ function InstructorModal({ instructor, onClose, onSaved }: { instructor: Instruc
   return (
     <Modal
       wide
-      title={instructor ? "Modifier l'intervenant" : "Nouvel intervenant"}
+      title={instructor ? "Modifier le prof / formateur" : "Nouveau prof / formateur"}
       onClose={onClose}
       footer={
         <>
@@ -223,7 +223,7 @@ function InstructorModal({ instructor, onClose, onSaved }: { instructor: Instruc
 }
 
 export function InstructorsPage() {
-  usePage(["Référentiels", "Intervenants"]);
+  usePage(["Référentiels", "Profs / Formateurs"]);
   const { can } = useSession();
   const navigate = useNavigate();
   const [creating, setCreating] = useState(false);
@@ -233,11 +233,11 @@ export function InstructorsPage() {
   return (
     <>
       <PageHeader
-        title="Intervenants"
+        title="Profs / Formateurs"
         actions={
           can("instructors:write") ? (
             <button type="button" className="btn btn-p" onClick={() => setCreating(true)}>
-              + Nouvel intervenant
+              + Nouveau prof / formateur
             </button>
           ) : null
         }
@@ -253,7 +253,7 @@ export function InstructorsPage() {
         {list.isPending ? (
           <Loading />
         ) : rows.length === 0 ? (
-          <Empty title="Aucun intervenant" />
+          <Empty title="Aucun prof / formateur" />
         ) : (
           <div className="xs">
             <table className="tbl">
@@ -300,8 +300,8 @@ export function InstructorPage() {
   const [archiving, setArchiving] = useState(false);
   const instructor = useQuery({ queryKey: ["instructor", id], queryFn: () => api.get<InstructorDetail>(`/instructors/${id}`) });
   const groups = useQuery({ queryKey: ["groups", "all"], queryFn: () => api.get<GroupRow[]>("/groups", { status: "all" }) });
-  const name = instructor.data ? `${instructor.data.firstName} ${instructor.data.lastName}` : "Intervenant";
-  usePage(["Référentiels", "Intervenants", name]);
+  const name = instructor.data ? `${instructor.data.firstName} ${instructor.data.lastName}` : "Prof / Formateur";
+  usePage(["Référentiels", "Profs / Formateurs", name]);
   if (instructor.isPending) return <Loading />;
   if (instructor.error) return <ErrorBanner error={instructor.error} retry={() => instructor.refetch()} />;
   const i = instructor.data;
@@ -402,20 +402,20 @@ export function InstructorPage() {
           onClose={() => setEditing(false)}
           onSaved={() => {
             setEditing(false);
-            toast("Intervenant mis à jour.");
+            toast("Prof / Formateur mis à jour.");
           }}
         />
       ) : null}
       {archiving ? (
         <ReasonDialog
-          title="Archiver l'intervenant"
+          title="Archiver le prof / formateur"
           explanation="Ses groupes actifs doivent d'abord être archivés ou réaffectés. Son historique et sa paie restent consultables."
           confirmLabel="Archiver"
           onClose={() => setArchiving(false)}
           onConfirm={async (reason) => {
             await api.post(`/instructors/${id}/archive`, { reason });
             await client.invalidateQueries();
-            toast("Intervenant archivé.");
+            toast("Prof / Formateur archivé.");
           }}
         />
       ) : null}

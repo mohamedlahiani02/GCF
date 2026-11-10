@@ -195,7 +195,7 @@ export function DashboardPage() {
             />
             {f.payroll.toPay > 0 || f.payroll.toValidate > 0 ? (
               <Kpi
-                label="Paie des intervenants à régler"
+                label="Paie des profs / formateurs à régler"
                 value={<span className="num">{tnd(f.payroll.toPay)}</span>}
                 sub={`TND validés ; ${tnd(f.payroll.toValidate)} TND calculés à valider`}
                 tone={f.payroll.toPay > 0 ? "amber" : undefined}
@@ -222,7 +222,7 @@ export function DashboardPage() {
                   <tr>
                     <th>Heure</th>
                     <th>Activité</th>
-                    <th>Intervenant</th>
+                    <th>Prof / Formateur</th>
                     <th>Salle</th>
                     <th>Feuille</th>
                   </tr>

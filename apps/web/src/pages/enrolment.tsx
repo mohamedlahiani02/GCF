@@ -197,7 +197,7 @@ function GroupStep({ offer, onPick }: { offer: Offer; onPick: (g: GroupDetail) =
             <thead>
               <tr>
                 <th>Groupe</th>
-                <th>Intervenant</th>
+                <th>Prof / Formateur</th>
                 <th>Salle</th>
                 <th>Période</th>
                 <th>Places</th>

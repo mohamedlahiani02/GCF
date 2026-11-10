@@ -100,7 +100,7 @@ export function PlanningPage() {
               onChange={(v) => update({ vue: v })}
               options={[
                 { value: "room", label: "Salle" },
-                { value: "instructor", label: "Intervenant" },
+                { value: "instructor", label: "Prof / Formateur" },
                 { value: "group", label: "Groupe" },
               ]}
             />
