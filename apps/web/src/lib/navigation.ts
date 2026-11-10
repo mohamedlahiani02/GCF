@@ -242,8 +242,8 @@ export const WORKSPACES: Workspace[] = [
       {
         id: "requests",
         to: "/coworking/demandes",
-        label: "Traiter les demandes",
-        text: "Accepter ou refuser une réservation",
+        label: "Demandes et inscriptions",
+        text: "Valider les comptes et les réservations",
         icon: ICONS.inbox,
         permission: "coworking:write",
         section: "Au quotidien",
@@ -357,7 +357,7 @@ export const WORKSPACES: Workspace[] = [
         label: "Tableau de bord",
         text: "Indicateurs, alertes et activité du centre",
         icon: ICONS.dashboard,
-        permission: "students:read",
+        permission: ["dashboard:operational", "dashboard:financial"],
         section: "Suivi et analyse",
       },
       {

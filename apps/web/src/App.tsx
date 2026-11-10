@@ -1,4 +1,4 @@
-import { createBrowserRouter, Link } from "react-router";
+import { createBrowserRouter, Link, Navigate } from "react-router";
 import { RequirePermission, Shell } from "./components/shell";
 import { AdminPage } from "./pages/admin";
 import { AttendanceDayPage, AttendanceSheetPage } from "./pages/attendance";
@@ -46,9 +46,10 @@ export const router = createBrowserRouter([
   {
     element: <Shell />,
     children: [
-      { path: "/", element: <LaunchpadPage /> },
+      { path: "/", element: <DashboardPage /> },
+      { path: "/raccourcis", element: <LaunchpadPage /> },
       { path: "/espaces/:slug", element: <WorkspacePage /> },
-      { path: "/tableau-de-bord", element: guard("students:read", <DashboardPage />) },
+      { path: "/tableau-de-bord", element: <Navigate to="/" replace /> },
       { path: "/eleves", element: guard("students:read", <StudentsPage />) },
       { path: "/eleves/:id", element: guard("students:read", <StudentPage />) },
       { path: "/inscriptions/nouvelle", element: guard("enrolments:write", <EnrolmentWizardPage />) },

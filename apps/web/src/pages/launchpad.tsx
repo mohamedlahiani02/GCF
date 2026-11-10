@@ -204,7 +204,7 @@ function Shortcuts({ userId }: { userId: string }) {
 }
 
 export function LaunchpadPage() {
-  usePage(["Accueil"]);
+  usePage(["Mes raccourcis"]);
   const { session } = useSession();
   return (
     <div className="launchpad">
@@ -234,7 +234,7 @@ export function WorkspacePage() {
   const items = workspace.items.filter((i) => permitted(i.permission, can));
   return (
     <div className="launchpad workspace-page">
-      <Link to="/" className="launch-back">
+      <Link to="/raccourcis" className="launch-back">
         ‹ Tous les espaces
       </Link>
       <header className="launch-heading">

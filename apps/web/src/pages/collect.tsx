@@ -207,6 +207,7 @@ export function CollectDrawer({ payer: initial, onClose, onPaid }: { payer: Paye
 
   return (
     <Drawer
+      className="collect-drawer"
       title="Encaisser un paiement"
       onClose={onClose}
       footer={
@@ -220,17 +221,28 @@ export function CollectDrawer({ payer: initial, onClose, onPaid }: { payer: Paye
             </button>
           </>
         ) : (
-          <>
-            <button type="button" className="btn btn-p btn-l" disabled={!canSubmit} onClick={() => submit("print")}>
-              Enregistrer et imprimer le reçu
+          <div className="collect-actions">
+            <p className="cap" role="status">
+              {!hasPayer
+                ? "Choisissez un payeur pour continuer."
+                : !amount || amount <= 0
+                  ? "Renseignez le montant reçu pour activer la validation."
+                  : !chequeOk
+                    ? "Renseignez le numéro de chèque et la banque."
+                    : create.isPending
+                      ? "Enregistrement du paiement…"
+                      : `Montant reçu : ${tnd(amount)} TND`}
+            </p>
+            <button type="button" className="btn btn-p btn-l" disabled={!canSubmit} onClick={() => submit("none")}>
+              {create.isPending ? "Enregistrement…" : "Valider l’encaissement"}
             </button>
-            <button type="button" className="btn btn-l" disabled={!canSubmit} onClick={() => submit("mail")}>
-              Enregistrer et envoyer par e-mail
+            <button type="button" className="btn" disabled={!canSubmit} onClick={() => submit("print")}>
+              Valider et imprimer
             </button>
-            <button type="button" className="btn btn-l" disabled={!canSubmit} onClick={() => submit("none")}>
-              Enregistrer
+            <button type="button" className="btn" disabled={!canSubmit} onClick={() => submit("mail")}>
+              Valider et envoyer
             </button>
-          </>
+          </div>
         )
       }
     >

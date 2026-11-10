@@ -1,47 +1,16 @@
-import { useQuery } from "@tanstack/react-query";
+import { keepPreviousData, useQuery } from "@tanstack/react-query";
 import { useState } from "react";
 import { Link } from "react-router";
 import { api } from "../api/client";
 import { useSession } from "../auth/session";
 import { usePage } from "../components/shell";
-import { Badge, Card, Empty, ErrorBanner, Kpi, Loading, PageHeader, Segmented } from "../components/ui";
-import { frDate, frTime, monthLabel, percent, tnd } from "../lib/format";
-import { SHEET } from "../lib/labels";
+import { Card, Empty, ErrorBanner, Kpi, Segmented } from "../components/ui";
+import { frDate, frTime, percent, tnd, todayIso } from "../lib/format";
+import { useActionQueue } from "../lib/action-queue";
+import { ActionNotices } from "../components/notifications";
+import type { PlanningDay } from "./coworking/api";
 
-type Granularity = "day" | "week" | "month";
-interface Dashboard {
-  today: string;
-  sections: { financial: boolean; operational: boolean };
-  financial?: {
-    collectionsToday: number;
-    collectionsMonth: number;
-    unpaidTotal: number;
-    unpaidPayers: number;
-    postponedInstallments: number;
-    payroll: { toValidate: number; toPay: number };
-    series: { bucket: string; total: number }[];
-  };
-  operational?: {
-    attendanceRateBasisPoints: number | null;
-    roomOccupancyBasisPoints: number | null;
-    todo: {
-      sessionsWithoutSheet: { id: string; groupName: string; startsAt: string }[];
-      overdueInstallments: { count: number; total: number };
-      remindersToSend: number;
-      unclosedCashDays: string[];
-    };
-    agenda: {
-      type: "session" | "rental";
-      id: string;
-      startsAt: string;
-      endsAt: string;
-      label: string;
-      instructorName: string | null;
-      roomName: string | null;
-      sheetStatus: string | null;
-    }[];
-  };
-}
+import type { Dashboard, Granularity } from "../lib/dashboard";
 
 const DAYS = ["Dim", "Lun", "Mar", "Mer", "Jeu", "Ven", "Sam"];
 const MONTHS = ["janv.", "févr.", "mars", "avr.", "mai", "juin", "juil.", "août", "sept.", "oct.", "nov.", "déc."];
@@ -103,151 +72,214 @@ function Chart({ series, granularity, today }: { series: { bucket: string; total
 
 export function DashboardPage() {
   usePage(["Tableau de bord"]);
-  const { can } = useSession();
+  const { session, can } = useSession();
+  const queue = useActionQueue();
   const [granularity, setGranularity] = useState<Granularity>("day");
-  const data = useQuery({ queryKey: ["dashboard", granularity], queryFn: () => api.get<Dashboard>("/dashboard", { granularity }) });
-  const requests = useQuery({
-    queryKey: ["cw-requests"],
-    queryFn: () => api.get<{ items: unknown[] }>("/coworking/requests"),
-    enabled: can("coworking:write"),
+  const canDashboard = can("dashboard:financial") || can("dashboard:operational");
+  const data = useQuery({
+    queryKey: ["dashboard", granularity],
+    queryFn: () => api.get<Dashboard>("/dashboard", { granularity }),
+    enabled: canDashboard,
+    refetchInterval: 60_000,
+    placeholderData: keepPreviousData,
   });
-  if (data.isPending) return <Loading />;
-  if (data.error) return <ErrorBanner error={data.error} retry={() => data.refetch()} />;
+  const today = data.data?.today ?? todayIso();
+  const coworking = useQuery({
+    queryKey: ["cw-planning", today],
+    queryFn: () => api.get<PlanningDay>("/coworking/planning", { date: today }),
+    enabled: can("coworking:read"),
+    refetchInterval: 30_000,
+  });
+  const refresh = () => {
+    void queue.refresh();
+    if (canDashboard) void data.refetch();
+    if (can("coworking:read")) void coworking.refetch();
+  };
   const d = data.data;
-  const f = d.financial;
-  const o = d.operational;
-  const todo: { title: string; sub: string; to: string; action: string }[] = [];
-  const pendingRequests = requests.data?.items.length ?? 0;
-  if (pendingRequests)
-    todo.push({
-      title: `${pendingRequests} demande(s) de réservation coworking à traiter`,
-      sub: "Envoyées depuis l'espace client, en attente de votre réponse",
-      to: "/coworking/demandes",
-      action: "Répondre",
-    });
-  if (o) {
-    if (o.todo.sessionsWithoutSheet.length)
-      todo.push({
-        title: `${o.todo.sessionsWithoutSheet.length} feuille(s) de présence à valider`,
-        sub: o.todo.sessionsWithoutSheet
-          .slice(0, 3)
-          .map((s) => `${s.groupName}, ${frDate(s.startsAt)} ${frTime(s.startsAt)}`)
-          .join(" · "),
-        to: `/presences/${o.todo.sessionsWithoutSheet[0]!.id}`,
-        action: "Faire l'appel",
-      });
-    if (o.todo.overdueInstallments.count)
-      todo.push({
-        title: `${o.todo.overdueInstallments.count} échéance(s) en retard`,
-        sub: `${tnd(o.todo.overdueInstallments.total)} TND restant dus`,
-        to: "/encaissements",
-        action: "Voir",
-      });
-    if (o.todo.remindersToSend)
-      todo.push({
-        title: `${o.todo.remindersToSend} relance(s) à envoyer`,
-        sub: "Payeurs en retard non relancés depuis 7 jours",
-        to: "/encaissements",
-        action: "Relancer",
-      });
-    if (o.todo.unclosedCashDays.length)
-      todo.push({
-        title: `${o.todo.unclosedCashDays.length} journée(s) de caisse non clôturée(s)`,
-        sub: o.todo.unclosedCashDays.map(frDate).join(", "),
-        to: `/caisse?date=${o.todo.unclosedCashDays[0]}`,
-        action: "Clôturer",
-      });
-  }
+  const f = canDashboard ? d?.financial : undefined;
+  const o = canDashboard && can("catalogue:read") ? d?.operational : undefined;
+  const bookings = [
+    ...new Map(
+      (coworking.data?.floors ?? [])
+        .flatMap((floor) =>
+          floor.resources.flatMap((resource) =>
+            resource.bookings
+              .filter((b) => b.kind === "booking" && ["confirmed", "checked_in", "completed"].includes(b.status))
+              .map((b) => [b.id, { ...b, resourceCode: resource.code }] as const),
+          ),
+        )
+        .map(([id, b]) => [id, b]),
+    ).values(),
+  ];
+  const urgent = queue.items.filter((i) => i.priority === "urgent").reduce((sum, i) => sum + i.count, 0);
+  const [priority, setPriority] = useState<"all" | "urgent" | "attention" | "info">("all");
+  const notices = queue.items.filter((i) => priority === "all" || priority === i.priority);
+  const agenda = [
+    ...(o?.agenda ?? []).map((a) => ({
+      id: a.id,
+      startsAt: a.startsAt,
+      title: a.label,
+      sub: [a.instructorName, a.roomName].filter(Boolean).join(" · "),
+      to: a.type === "session" ? `/presences/${a.id}` : "/planning",
+      label: a.type === "session" ? "Séance" : "Location",
+    })),
+    ...bookings.map((b) => ({
+      id: b.id,
+      startsAt: b.startsAt,
+      title: b.memberName ?? "Réservation coworking",
+      sub: b.resourceCode,
+      to: `/coworking/reservations/${b.id}`,
+      label: "Coworking",
+    })),
+  ].sort((a, b) => a.startsAt.localeCompare(b.startsAt));
   return (
-    <>
-      <PageHeader title="Tableau de bord" />
-      {o || pendingRequests ? (
-        <Card title="À faire aujourd'hui" actions={todo.length ? <Badge tone="red">{todo.length}</Badge> : <Badge tone="green">Rien</Badge>}>
-          {todo.length === 0 ? (
-            <Empty title="Tout est à jour" />
-          ) : (
-            <ul className="todo-list">
-              {todo.map((t) => (
-                <li key={t.title}>
-                  <div>
-                    <strong>{t.title}</strong>
-                    <div className="cap">{t.sub}</div>
-                  </div>
-                  <Link className="btn btn-p" to={t.to}>
-                    {t.action}
-                  </Link>
-                </li>
-              ))}
-            </ul>
-          )}
-        </Card>
-      ) : null}
-      <section className="grid4" aria-label="Indicateurs">
+    <div className="operations-dashboard">
+      <header className="launch-heading">
+        <div>
+          <h1>Votre centre, aujourd’hui</h1>
+          <p>Bonjour{session?.user.fullName ? ` ${session.user.fullName.split(/\s+/)[0]}` : ""}. Retrouvez les priorités et l’activité du centre.</p>
+        </div>
+        <div className="dashboard-header-actions">
+          <span className="launch-date">{frDate(today)}</span>
+          <Link className="btn" to="/raccourcis">
+            Mes raccourcis
+          </Link>
+          <button type="button" className="btn btn-g" onClick={refresh}>
+            Actualiser
+          </button>
+        </div>
+      </header>
+      <ErrorBanner error={queue.error ?? data.error ?? coworking.error} retry={refresh} />
+      <section className="dashboard-kpis" aria-label="Indicateurs du centre" aria-busy={queue.busy}>
         {f ? (
           <>
-            <Kpi label="Encaissé aujourd'hui" value={<span className="num">{tnd(f.collectionsToday)}</span>} sub="TND" />
-            <Kpi label="Encaissé ce mois" value={<span className="num">{tnd(f.collectionsMonth)}</span>} sub={`TND, ${monthLabel(d.today)}`} />
+            <Kpi
+              label="Encaissé ce mois"
+              value={<span className="num">{tnd(f.collectionsMonth)}</span>}
+              sub={`TND · ${tnd(f.collectionsToday)} TND aujourd’hui`}
+            />
             <Kpi
               label="Impayés"
               value={<span className="num">{tnd(f.unpaidTotal)}</span>}
-              sub={`TND, ${f.unpaidPayers} payeur(s) en retard`}
+              sub={`TND · ${f.unpaidPayers} payeur(s) en retard`}
               tone={f.unpaidTotal > 0 ? "red" : undefined}
             />
-            {f.payroll.toPay > 0 || f.payroll.toValidate > 0 ? (
-              <Kpi
-                label="Paie des profs / formateurs à régler"
-                value={<span className="num">{tnd(f.payroll.toPay)}</span>}
-                sub={`TND validés ; ${tnd(f.payroll.toValidate)} TND calculés à valider`}
-                tone={f.payroll.toPay > 0 ? "amber" : undefined}
-              />
-            ) : null}
+          </>
+        ) : canDashboard && data.isPending ? (
+          <>
+            <Kpi label="Activité du centre" value="…" sub="Chargement des indicateurs…" />
           </>
         ) : null}
-        {o && o.attendanceRateBasisPoints !== null ? (
-          <Kpi label="Taux de présence" value={percent(o.attendanceRateBasisPoints)} sub="Ce mois, feuilles validées" />
+        {o ? (
+          <Kpi
+            label="Séances et locations"
+            value={o.agenda.length}
+            sub={`Aujourd’hui · présence ${o.attendanceRateBasisPoints === null ? "non disponible" : percent(o.attendanceRateBasisPoints)}`}
+          />
         ) : null}
-        {o && o.roomOccupancyBasisPoints !== null ? (
-          <Kpi label="Occupation des salles" value={percent(o.roomOccupancyBasisPoints)} sub="Cette semaine, heures d'ouverture" />
+        {can("coworking:read") ? (
+          <Kpi
+            label="Réservations coworking"
+            value={coworking.isPending ? "…" : coworking.error ? "—" : bookings.length}
+            sub="Confirmées, en cours ou terminées aujourd’hui"
+          />
         ) : null}
-        {f && f.postponedInstallments > 0 ? <Kpi label="Échéances reportées" value={f.postponedInstallments} sub="encore ouvertes" /> : null}
+        {can("coworking:write") && (!f || !o) ? (
+          <Kpi
+            label="Inscriptions à valider"
+            value={queue.busy ? "…" : queue.memberCount}
+            sub="Nouveaux comptes de l’espace client"
+            tone={queue.memberCount ? "amber" : undefined}
+          />
+        ) : null}
+        {!f && !o && can("website:leads") ? (
+          <Kpi
+            label="Messages du site à traiter"
+            value={queue.busy ? "…" : `${queue.leadCount}${queue.more ? "+" : ""}`}
+            sub="Contacts, visites et demandes de devis"
+          />
+        ) : null}
       </section>
-      {o ? (
-        <Card title="Séances et locations du jour" actions={can("catalogue:read") ? <Link to="/planning">Ouvrir le planning</Link> : null}>
-          {o.agenda.length === 0 ? (
-            <Empty title="Rien de prévu aujourd'hui" />
-          ) : (
-            <div className="xs">
-              <table className="tbl">
-                <thead>
-                  <tr>
-                    <th>Heure</th>
-                    <th>Activité</th>
-                    <th>Prof / Formateur</th>
-                    <th>Salle</th>
-                    <th>Feuille</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {o.agenda.map((a) => (
-                    <tr key={`${a.type}${a.id}`}>
-                      <td className="num">
-                        {frTime(a.startsAt)} - {frTime(a.endsAt)}
-                      </td>
-                      <td>{a.type === "session" ? <Link to={`/presences/${a.id}`}>{a.label}</Link> : `Location : ${a.label}`}</td>
-                      <td>{a.instructorName ?? ""}</td>
-                      <td>{a.roomName ?? ""}</td>
-                      <td>{a.sheetStatus ? <Badge tone={SHEET[a.sheetStatus]?.tone ?? "neutral"}>{SHEET[a.sheetStatus]?.label}</Badge> : null}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+      <div className="dashboard-columns">
+        <section className="dashboard-priorities card" aria-labelledby="priorities-title">
+          <div className="dashboard-card-head">
+            <div>
+              <h2 id="priorities-title">Votre attention est nécessaire</h2>
+              <p>
+                {queue.busy
+                  ? "Actualisation des actions…"
+                  : `${queue.total}${queue.more ? "+" : ""} ${queue.total === 1 ? "action en attente" : "actions en attente"}${urgent ? `, dont ${urgent} ${urgent === 1 ? "urgente" : "urgentes"}` : ""}`}
+              </p>
             </div>
+            <span className={`dashboard-priority-total${urgent ? " urgent" : ""}`}>
+              {queue.total}
+              {queue.more ? "+" : ""}
+            </span>
+          </div>
+          <div className="dashboard-filters" role="group" aria-label="Priorité des notifications">
+            {(
+              [
+                { id: "all", text: "Tout" },
+                { id: "urgent", text: "Urgent" },
+                { id: "attention", text: "À traiter" },
+                { id: "info", text: "À suivre" },
+              ] as const
+            ).map((filter) => (
+              <button type="button" key={filter.id} aria-pressed={priority === filter.id} onClick={() => setPriority(filter.id)}>
+                {filter.text}
+              </button>
+            ))}
+          </div>
+          {notices.length ? (
+            <ActionNotices items={notices} />
+          ) : (
+            <Empty
+              title={
+                queue.busy
+                  ? "Chargement des actions…"
+                  : queue.error
+                    ? "Certaines informations sont indisponibles"
+                    : priority === "all"
+                      ? "Tout est à jour"
+                      : "Aucune action dans cette catégorie"
+              }
+              text={queue.error ? "Réessayez l’actualisation pour vérifier toutes les priorités." : ""}
+            />
           )}
-        </Card>
-      ) : null}
-      {f ? (
+        </section>
+        <section className="card dashboard-agenda" aria-labelledby="agenda-title">
+          <div className="dashboard-card-head">
+            <div>
+              <h2 id="agenda-title">Au programme aujourd’hui</h2>
+              <p>Séances, locations et coworking</p>
+            </div>
+            <span className="dashboard-priority-total">{agenda.length}</span>
+          </div>
+          {agenda.length ? (
+            <ol className="dashboard-agenda-list">
+              {agenda.slice(0, 6).map((a) => (
+                <li key={`${a.label}-${a.id}`}>
+                  <time dateTime={a.startsAt}>{frTime(a.startsAt)}</time>
+                  <div>
+                    <span className="cap">{a.label}</span>
+                    <Link to={a.to}>{a.title}</Link>
+                    <p>{a.sub}</p>
+                  </div>
+                </li>
+              ))}
+            </ol>
+          ) : (
+            <Empty title={data.isFetching || coworking.isFetching ? "Chargement du programme…" : "Rien de prévu aujourd’hui"} />
+          )}
+          <div className="dashboard-agenda-links">
+            {can("catalogue:read") ? <Link to="/planning">Planning des cours</Link> : null}
+            {can("coworking:read") ? <Link to="/coworking/planning">Planning coworking</Link> : null}
+          </div>
+        </section>
+      </div>
+      {f && d ? (
         <Card
-          title="Encaissements (TND)"
+          title="Évolution des encaissements"
           actions={
             <Segmented
               label="Période du graphique"
@@ -261,11 +293,11 @@ export function DashboardPage() {
             />
           }
         >
-          <div className="card-b">
+          <div className="card-b dashboard-chart">
             <Chart series={f.series} granularity={granularity} today={d.today} />
           </div>
         </Card>
       ) : null}
-    </>
+    </div>
   );
 }

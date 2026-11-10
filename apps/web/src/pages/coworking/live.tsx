@@ -267,7 +267,7 @@ export function LivePlanPage() {
         <Kpi
           label="Demandes en attente"
           value={requests.data?.items.length ?? 0}
-          sub={can("coworking:write") ? <Link to="/coworking/demandes">Traiter les demandes</Link> : "tous étages"}
+          sub={can("coworking:write") ? <Link to="/coworking/demandes?type=reservations">Traiter les demandes</Link> : "tous étages"}
           tone={requests.data?.items.length ? "amber" : undefined}
         />
       </div>

@@ -205,11 +205,23 @@ function useEscape(onClose: () => void) {
   }, [onClose]);
 }
 
-export function Drawer({ title, onClose, children, footer }: { title: string; onClose: () => void; children: ReactNode; footer?: ReactNode }) {
+export function Drawer({
+  title,
+  onClose,
+  children,
+  footer,
+  className = "",
+}: {
+  title: string;
+  onClose: () => void;
+  children: ReactNode;
+  footer?: ReactNode;
+  className?: string;
+}) {
   useEscape(onClose);
   return (
     <div className="overlay" onMouseDown={(e) => e.target === e.currentTarget && onClose()}>
-      <aside className="drawer" role="dialog" aria-modal="true" aria-label={title}>
+      <aside className={`drawer ${className}`} role="dialog" aria-modal="true" aria-label={title}>
         <div className="card-h">
           <h2 className="h2">{title}</h2>
           <button type="button" className="btn btn-g" onClick={onClose}>

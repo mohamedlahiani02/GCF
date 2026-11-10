@@ -20,6 +20,8 @@ import {
   type ActionLink,
 } from "../lib/navigation";
 import { NavIcon } from "./nav-icon";
+import { NotificationBell } from "./notifications";
+import { useActionQueue } from "../lib/action-queue";
 export { SETTINGS_LINKS } from "../lib/navigation";
 
 const LARGE_TEXT_KEY = "gcf.largeText";
@@ -75,28 +77,6 @@ function NavEntry({ item, active, count }: { item: ActionLink; active: boolean; 
       ) : null}
     </Link>
   );
-}
-
-/** Pending coworking requests, shared with the requests page through its query key. */
-/** Proposals prepared by the centre's automations that this person may confirm. */
-function useProposalCount(enabled: boolean): number {
-  const { data } = useQuery({
-    queryKey: ["proposals-count"],
-    queryFn: () => api.get<{ pending: number }>("/automations/proposals/count"),
-    enabled,
-    refetchInterval: 60_000,
-  });
-  return data?.pending ?? 0;
-}
-
-function useRequestCount(enabled: boolean): number {
-  const { data } = useQuery({
-    queryKey: ["cw-requests"],
-    queryFn: () => api.get<{ items: unknown[] }>("/coworking/requests"),
-    enabled,
-    refetchInterval: 60_000,
-  });
-  return data?.items.length ?? 0;
 }
 
 /* Page breadcrumb */
@@ -210,8 +190,8 @@ export function Shell() {
   const [fullScreen, setFullScreen] = useState(false);
   const [walkIn, setWalkIn] = useState(false);
   const [largeText, setLargeText] = useLargeText();
-  const requestCount = useRequestCount(!!session && can("coworking:write"));
-  const proposalCount = useProposalCount(!!session && (can("reminders:send") || can("payroll:calculate")));
+  const queue = useActionQueue();
+  const { requestCount, proposalCount } = queue;
   useEffect(() => {
     document.documentElement.classList.toggle("large-text", largeText && !fullScreen);
   }, [largeText, fullScreen]);
@@ -221,9 +201,10 @@ export function Shell() {
   const spaces = WORKSPACES.filter((w) => w.items.some(allowed));
   const inSettings = location.pathname === "/parametres" || SETTINGS_LINKS.some((l) => isUnder(location.pathname, l.to));
   const sidebar: ActionLink[] = [
-    { to: "/", label: "Accueil", icon: ICONS.home, permission: [] },
+    { to: "/", label: "Tableau de bord", icon: ICONS.dashboard, permission: [] },
+    { to: "/raccourcis", label: "Mes raccourcis", icon: ICONS.home, permission: [] },
     ...spaces.map((w) => ({ to: w.to, label: w.label, icon: w.icon, permission: [], also: w.items.filter(allowed).flatMap((i) => [i.to, ...(i.also ?? [])]) })),
-    { to: "/propositions", label: "À traiter", icon: ICONS.proposals, permission: ["reminders:send", "payroll:calculate"], badge: "proposals" },
+    { to: "/propositions", label: "Propositions", icon: ICONS.proposals, permission: ["reminders:send", "payroll:calculate"], badge: "proposals" },
   ];
   const client = useQueryClient();
   const navigate = useNavigate();
@@ -315,7 +296,7 @@ export function Shell() {
                         key={item.to}
                         item={item}
                         active={!inSettings && entryActive(item, location.pathname)}
-                        count={item.badge === "proposals" ? proposalCount : item.to === "/espaces/coworking" ? requestCount : 0}
+                        count={item.badge === "proposals" ? proposalCount : item.to === "/espaces/coworking" ? requestCount + queue.memberCount : 0}
                       />
                     ))}
                   </nav>
@@ -362,6 +343,7 @@ export function Shell() {
                         </button>
                       ) : null}
                       {createActions.length ? <MenuButton label="+ Nouveau" items={createActions} /> : null}
+                      <NotificationBell key={session.user.id} queue={queue} />
                       <MenuButton
                         label={session.user.fullName}
                         className="btn btn-g account-btn"
