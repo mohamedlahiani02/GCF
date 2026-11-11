@@ -1,4 +1,3 @@
-import { FloorPlanView } from "@gcf/floorplan";
 import { ASSIGNED_CATEGORIES, PLAN_STATES, addDays, type PlanState } from "@gcf/shared";
 import { useQuery } from "@tanstack/react-query";
 import { useState } from "react";
@@ -6,6 +5,7 @@ import { Link, useSearchParams } from "react-router";
 import { api } from "../../api/client";
 import { useSession } from "../../auth/session";
 import { usePage } from "../../components/shell";
+import { ZoomableFloorPlan } from "../../components/zoomable-floor-plan";
 import { Badge, Card, Drawer, Empty, ErrorBanner, Kpi, Loading, PageHeader, Segmented, Tabs } from "../../components/ui";
 import { addDaysIso, frDate, todayIso, weekdayLabel, zonedIso } from "../../lib/format";
 import {
@@ -267,7 +267,7 @@ export function LivePlanPage() {
         <Kpi
           label="Demandes en attente"
           value={requests.data?.items.length ?? 0}
-          sub={can("coworking:write") ? <Link to="/coworking/demandes">Traiter les demandes</Link> : "tous étages"}
+          sub={can("coworking:write") ? <Link to="/coworking/demandes?type=reservations">Traiter les demandes</Link> : "tous étages"}
           tone={requests.data?.items.length ? "amber" : undefined}
         />
       </div>
@@ -323,7 +323,8 @@ export function LivePlanPage() {
           {state.isPending || floor.isPending ? (
             <Loading />
           ) : layout && layout.items.length ? (
-            <FloorPlanView
+            <ZoomableFloorPlan
+              key={floorId}
               layout={layout}
               image={floorImage(floor.data)}
               zones={floor.data?.zones}

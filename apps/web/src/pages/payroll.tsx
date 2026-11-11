@@ -62,7 +62,12 @@ interface TrainingRow {
   title: string;
 }
 
-const SCOPE: Record<RuleRow["scope"], string> = { instructor: "Par défaut (intervenant)", study: "Cours particulier", training: "Formation", group: "Groupe" };
+const SCOPE: Record<RuleRow["scope"], string> = {
+  instructor: "Par défaut (prof / formateur)",
+  study: "Cours particulier",
+  training: "Formation",
+  group: "Groupe",
+};
 
 export function describeBase(r: Pick<RuleRow, "base_kind" | "basis_points" | "amount" | "collection_basis">): string {
   switch (r.base_kind) {
@@ -257,7 +262,7 @@ function RuleModal({ instructors, initialInstructorId, onClose }: { instructors:
       <div className="grid2" style={{ alignItems: "start" }}>
         <div className="stack">
           <div className="grid2">
-            <Field label="Intervenant *">
+            <Field label="Prof / Formateur *">
               <select className="input" value={d.instructorId} onChange={(e) => (set("instructorId", e.target.value), set("scopeId", ""))}>
                 <option value="">Choisir</option>
                 {instructors
@@ -280,7 +285,7 @@ function RuleModal({ instructors, initialInstructorId, onClose }: { instructors:
             </Field>
           </div>
           {d.scope !== "instructor" ? (
-            <Field label={`${SCOPE[d.scope]} *`} hint="Priorité : groupe, puis cours particulier ou formation, puis règle par défaut de l'intervenant.">
+            <Field label={`${SCOPE[d.scope]} *`} hint="Priorité : groupe, puis cours particulier ou formation, puis règle par défaut du prof / formateur.">
               <select className="input" value={d.scopeId} onChange={(e) => set("scopeId", e.target.value)}>
                 <option value="">Choisir</option>
                 {scopeOptions.map((o) => (
@@ -338,7 +343,10 @@ function RuleModal({ instructors, initialInstructorId, onClose }: { instructors:
               </Field>
             ) : null}
           </div>
-          <Field label="Rythme de calcul et de paiement" hint="Chaque élément est calculé, validé et réglé séparément, sans attendre les autres intervenants.">
+          <Field
+            label="Rythme de calcul et de paiement"
+            hint="Chaque élément est calculé, validé et réglé séparément, sans attendre les autres profs / formateurs."
+          >
             <select className="input" value={d.periodicity} onChange={(e) => set("periodicity", e.target.value as Periodicity)}>
               {PERIODICITIES[d.baseKind].map((p) => (
                 <option key={p} value={p}>
@@ -503,11 +511,11 @@ function RulesTab() {
           <select
             className="input"
             style={{ width: 240 }}
-            aria-label="Intervenant"
+            aria-label="Prof / Formateur"
             value={instructorId}
             onChange={(e) => setParams(e.target.value ? { onglet: "regles", intervenant: e.target.value } : { onglet: "regles" })}
           >
-            <option value="">Tous les intervenants</option>
+            <option value="">Tous les profs / formateurs</option>
             {(instructors.data ?? []).map((i) => (
               <option key={i.id} value={i.id}>
                 {i.lastName} {i.firstName}
@@ -531,13 +539,13 @@ function RulesTab() {
       {rules.isPending ? (
         <Loading />
       ) : rows.length === 0 ? (
-        <Empty title="Aucune règle" text="Sans règle applicable, un intervenant n'est pas rémunéré et le calcul le signale." />
+        <Empty title="Aucune règle" text="Sans règle applicable, un prof / formateur n'est pas rémunéré et le calcul le signale." />
       ) : (
         <div className="xs">
           <table className="tbl">
             <thead>
               <tr>
-                <th>Intervenant</th>
+                <th>Prof / Formateur</th>
                 <th>Portée</th>
                 <th>Base</th>
                 <th>Présence</th>
@@ -637,7 +645,7 @@ function SummaryTab() {
           value={month}
           onChange={(e) => e.target.value && setParams({ mois: e.target.value })}
         />
-        <span className="cap">Vue de suivi : chaque intervenant est calculé, validé et réglé séparément, sans validation globale du mois.</span>
+        <span className="cap">Vue de suivi : chaque prof / formateur est calculé, validé et réglé séparément, sans validation globale du mois.</span>
       </div>
       {t ? (
         <div className="grid4">
@@ -652,18 +660,18 @@ function SummaryTab() {
           />
         </div>
       ) : null}
-      <Card title={`Intervenants, ${monthLabel(month)}`}>
+      <Card title={`Profs / Formateurs, ${monthLabel(month)}`}>
         <ErrorBanner error={summary.error} retry={() => summary.refetch()} />
         {summary.isPending ? (
           <Loading />
         ) : summary.data?.instructors.length === 0 ? (
-          <Empty title="Aucun intervenant" />
+          <Empty title="Aucun prof / formateur" />
         ) : (
           <div className="xs">
             <table className="tbl">
               <thead>
                 <tr>
-                  <th>Intervenant</th>
+                  <th>Prof / Formateur</th>
                   <th>À calculer</th>
                   <th className="num">À valider (TND)</th>
                   <th className="num">Validé (TND)</th>
@@ -711,7 +719,7 @@ export function PayrollPage() {
   const tab = params.get("onglet") === "regles" || params.get("intervenant") ? "rules" : "summary";
   return (
     <>
-      <PageHeader title="Paie des intervenants" subtitle="Paie = Base × facteur de présence, sur les séances tenues dont les présences sont validées" />
+      <PageHeader title="Paie des profs / formateurs" subtitle="Paie = Base × facteur de présence, sur les séances tenues dont les présences sont validées" />
       <Tabs
         value={tab}
         onChange={(t) => setParams(t === "rules" ? { onglet: "regles" } : {})}
@@ -1093,7 +1101,7 @@ export function InstructorPayPage() {
   const [warnings, setWarnings] = useState<CalculationResult["warnings"]>([]);
   const [showCancelled, setShowCancelled] = useState(false);
   const pay = useQuery({ queryKey: ["instructor-pay", id, month], queryFn: () => api.get<InstructorPay>(`/payroll/instructors/${id}`, { month }) });
-  const name = pay.data ? `${pay.data.instructor.firstName} ${pay.data.instructor.lastName}` : "Intervenant";
+  const name = pay.data ? `${pay.data.instructor.firstName} ${pay.data.instructor.lastName}` : "Prof / Formateur";
   usePage(["Paie", name]);
   const calculate = useMutation({
     mutationFn: () => api.post<CalculationResult>("/payroll/calculate", { instructorId: id, month }),
@@ -1208,7 +1216,7 @@ export function InstructorPayPage() {
         subtitle={
           <span className="row center" style={{ gap: 8 }}>
             <span>{EMPLOYMENT[data.instructor.employment]}</span>
-            <Link to={`/intervenants/${id}`}>Fiche intervenant</Link>
+            <Link to={`/intervenants/${id}`}>Fiche prof / formateur</Link>
             <Link to={`/paie?onglet=regles&intervenant=${id}`}>Règles de rémunération</Link>
           </span>
         }

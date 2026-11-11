@@ -2,7 +2,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router";
 import { api } from "../api/client";
-import type { PlanItem, Study, TrainingDetail } from "../api/types";
+import type { PlanItem, Study, StudyDetail, TrainingDetail } from "../api/types";
 import { useSession } from "../auth/session";
 import { usePage } from "../components/shell";
 import { useToast } from "../components/toasts";
@@ -272,6 +272,9 @@ export function StudiesPage() {
                           + Groupe
                         </button>
                       ) : null}
+                      <Link className="btn btn-g" to={`/cours-particuliers/${s.id}/formules`}>
+                        Formules de paiement
+                      </Link>
                       <Link className="btn btn-g" to={`/groupes?cours=${s.id}`}>
                         Groupes
                       </Link>
@@ -511,7 +514,17 @@ function toItems(drafts: ItemDraft[]) {
   return items.every((i) => i !== null) ? items : null;
 }
 
-function PlanEditor({ training, plan, onClose }: { training: TrainingDetail; plan: TrainingDetail["plans"][number] | null; onClose: () => void }) {
+function PlanEditor({
+  training,
+  plan,
+  onClose,
+  offerKind = "training",
+}: {
+  offerKind?: "study" | "training";
+  training: Pick<TrainingDetail, "id" | "price" | "plans">;
+  plan: TrainingDetail["plans"][number] | null;
+  onClose: () => void;
+}) {
   const toast = useToast();
   const client = useQueryClient();
   const [name, setName] = useState(plan?.name ?? "");
@@ -519,6 +532,11 @@ function PlanEditor({ training, plan, onClose }: { training: TrainingDetail; pla
   const [kind, setKind] = useState<FormulaKind>(plan?.kind ?? "installments");
   const [amountText, setAmountText] = useState(plan?.amount === null || plan?.amount === undefined ? "" : tnd(plan.amount));
   const [absenceBilled, setAbsenceBilled] = useState(plan?.absenceBilled ?? false);
+  const [monthlyDueKind, setMonthlyDueKind] = useState<TrainingDetail["plans"][number]["monthlyDueKind"]>(plan?.monthlyDueKind ?? "month_end");
+  const [monthlyDueDay, setMonthlyDueDay] = useState(plan?.monthlyDueDay ?? 5);
+  const [dueOffsetDays, setDueOffsetDays] = useState(plan?.dueOffsetDays ?? 0);
+  const base = `/catalogue/${offerKind === "study" ? "studies" : "trainings"}/${training.id}/plans`;
+
   const amount = amountText.trim() ? tryParseTnd(amountText) : null;
   const [drafts, setDrafts] = useState<ItemDraft[]>(
     plan
@@ -536,12 +554,13 @@ function PlanEditor({ training, plan, onClose }: { training: TrainingDetail; pla
     return () => window.clearTimeout(t);
   }, [key]);
   const preview = useQuery({
-    queryKey: ["plan-preview", training.id, debounced],
+    queryKey: ["plan-preview", training.id, debounced, amount],
     queryFn: () =>
-      api.post<{ valid: boolean; price: number; amounts?: number[]; total?: number; message?: string }>(`/catalogue/trainings/${training.id}/plans/preview`, {
+      api.post<{ valid: boolean; price: number; amounts?: number[]; total?: number; message?: string }>(`${base}/preview`, {
         items: debounced,
+        amount,
       }),
-    enabled: kind === "installments" && !!debounced && debounced.length > 0,
+    enabled: kind === "installments" && !!debounced && debounced.length > 0 && (offerKind !== "study" || amount !== null),
   });
   const save = useMutation({
     mutationFn: () => {
@@ -549,14 +568,20 @@ function PlanEditor({ training, plan, onClose }: { training: TrainingDetail; pla
         name: name.trim(),
         isDefault,
         kind,
-        amount: kind === "installments" ? null : amount,
+        amount,
+        monthlyDueKind: kind === "monthly" ? monthlyDueKind : "anniversary",
+        monthlyDueDay: kind === "monthly" && monthlyDueKind === "day_of_month" ? monthlyDueDay : null,
+        dueOffsetDays: kind === "installments" ? 0 : dueOffsetDays,
         absenceBilled: kind === "per_session" ? absenceBilled : null,
         items: kind === "installments" ? items : [],
       };
-      return plan ? api.put(`/catalogue/plans/${plan.id}`, body) : api.post(`/catalogue/trainings/${training.id}/plans`, body);
+      return plan ? api.put(`/catalogue/plans/${plan.id}`, body) : api.post(base, body);
     },
     onSuccess: async () => {
-      await client.invalidateQueries({ queryKey: ["training", training.id] });
+      await Promise.all([
+        client.invalidateQueries({ queryKey: [offerKind, training.id] }),
+        client.invalidateQueries({ queryKey: [offerKind === "study" ? "studies" : "trainings"] }),
+      ]);
       toast(plan ? "Formule mise à jour. Les élèves déjà inscrits gardent leurs conditions." : "Formule créée.");
       onClose();
     },
@@ -564,10 +589,14 @@ function PlanEditor({ training, plan, onClose }: { training: TrainingDetail; pla
   const update = (index: number, patch: Partial<ItemDraft>) => setDrafts((list) => list.map((d, i) => (i === index ? { ...d, ...patch } : d)));
   const valid =
     !!name.trim() &&
+    Number.isInteger(dueOffsetDays) &&
+    dueOffsetDays >= 0 &&
+    dueOffsetDays <= 365 &&
+    (monthlyDueKind !== "day_of_month" || (Number.isInteger(monthlyDueDay) && monthlyDueDay >= 1 && monthlyDueDay <= 31)) &&
     (kind === "installments"
-      ? !!items && !!preview.data?.valid
+      ? !!items && !!preview.data?.valid && !preview.isFetching
       : kind === "full"
-        ? !amountText.trim() || (amount !== null && amount >= 0)
+        ? (offerKind === "training" && !amountText.trim()) || (amount !== null && amount >= 0)
         : amount !== null && amount > 0);
   return (
     <Modal
@@ -576,7 +605,7 @@ function PlanEditor({ training, plan, onClose }: { training: TrainingDetail; pla
       onClose={onClose}
       footer={
         <>
-          <span className="cap">Prix de la formation : {tnd(training.price)} TND</span>
+          <span className="cap">Prix de référence : {tnd(training.price)} TND</span>
           <div className="row" style={{ gap: 8 }}>
             <button type="button" className="btn" onClick={onClose}>
               Annuler
@@ -626,13 +655,39 @@ function PlanEditor({ training, plan, onClose }: { training: TrainingDetail; pla
           ) : null}
         </div>
       ) : null}
-      {kind === "full" ? (
+      {kind === "full" || kind === "installments" ? (
         <Field
-          label="Prix pour un paiement intégral (TND)"
-          hint={`Vide : prix de la formation, ${tnd(training.price)} TND.`}
+          label={offerKind === "study" ? "Prix total du forfait (TND) *" : "Prix total convenu (TND)"}
+          hint={
+            offerKind === "study"
+              ? "Prix du forfait complet, distinct du tarif mensuel ou à la séance du cours."
+              : `Vide : prix de la formation, ${tnd(training.price)} TND.`
+          }
           error={amountText && amount === null ? "Montant invalide" : null}
         >
           <input className="input num" inputMode="decimal" value={amountText} onChange={(e) => setAmountText(e.target.value)} />
+        </Field>
+      ) : null}
+      {kind === "monthly" ? (
+        <div className="grid2">
+          <Field label="Quand le paiement devient-il exigible ?">
+            <select className="input" value={monthlyDueKind} onChange={(e) => setMonthlyDueKind(e.target.value as typeof monthlyDueKind)}>
+              <option value="month_start">Début du mois</option>
+              <option value="month_end">Fin du mois</option>
+              <option value="anniversary">Date anniversaire de l’inscription</option>
+              <option value="day_of_month">Jour du mois personnalisé</option>
+            </select>
+          </Field>
+          {monthlyDueKind === "day_of_month" ? (
+            <Field label="Jour du mois (1 à 31)">
+              <input className="input" type="number" min={1} max={31} value={monthlyDueDay} onChange={(e) => setMonthlyDueDay(Number(e.target.value))} />
+            </Field>
+          ) : null}
+        </div>
+      ) : null}
+      {kind !== "installments" ? (
+        <Field label="Délai supplémentaire de paiement (jours)" hint="0 : à la date prévue. À la séance : délai après la séance validée.">
+          <input className="input" type="number" min={0} max={365} value={dueOffsetDays} onChange={(e) => setDueOffsetDays(Number(e.target.value))} />
         </Field>
       ) : null}
       {kind === "installments" ? (
@@ -753,7 +808,7 @@ function PlanEditor({ training, plan, onClose }: { training: TrainingDetail; pla
       ) : null}
       {kind === "installments" && preview.data && !preview.data.valid ? (
         <div className="ban ban-red" role="alert">
-          <span>Le total des tranches doit être égal au prix de la formation ({tnd(training.price)} TND).</span>
+          <span>Le total des tranches doit être égal au prix convenu ({tnd(amount ?? training.price)} TND).</span>
         </div>
       ) : kind === "installments" && preview.data?.valid ? (
         <div className="ban ban-green">
@@ -979,6 +1034,88 @@ export function TrainingPage() {
             await api.post(`/catalogue/plans/${archivingPlan.id}/archive`, { reason });
             await client.invalidateQueries({ queryKey: ["training", t.id] });
             toast("Plan archivé.");
+          }}
+        />
+      ) : null}
+    </>
+  );
+}
+
+export function StudyFormulasPage() {
+  const { id } = useParams();
+  usePage(["Cours particuliers", "Formules de paiement"]);
+  const { can } = useSession();
+  const client = useQueryClient();
+  const detail = useQuery({ queryKey: ["study", id], queryFn: () => api.get<StudyDetail>(`/catalogue/studies/${id}`) });
+  const [editing, setEditing] = useState<TrainingDetail["plans"][number] | "new" | null>(null);
+  const [archiving, setArchiving] = useState<TrainingDetail["plans"][number] | null>(null);
+  if (detail.isPending) return <Loading />;
+  if (!detail.data) return <ErrorBanner error={detail.error} />;
+  const course = detail.data;
+  return (
+    <>
+      <PageHeader
+        title={course.name}
+        actions={
+          <Link className="btn" to="/cours-particuliers">
+            Tous les cours particuliers
+          </Link>
+        }
+      />
+      <Card
+        title="Formules de paiement"
+        actions={
+          can("catalogue:write") ? (
+            <button className="btn btn-p" onClick={() => setEditing("new")}>
+              + Nouvelle formule
+            </button>
+          ) : undefined
+        }
+      >
+        <div className="card-b stack">
+          <p className="cap">
+            Proposez plusieurs formules au client : début ou fin de mois, forfait intégral, séance ou échéancier personnalisé. La formule est choisie à
+            l’inscription. Les inscriptions existantes conservent leurs conditions.
+          </p>
+          {!course.plans.some((p) => p.status === "active") ? (
+            <p>
+              Sans formule, le tarif historique du cours reste utilisé : {tnd(course.price)} TND{" "}
+              {course.billingMode === "monthly" ? "par mois, à la date anniversaire" : "par séance"}.
+            </p>
+          ) : null}
+          {course.plans
+            .filter((p) => p.status === "active")
+            .map((p) => (
+              <div className="row between" key={p.id}>
+                <div>
+                  <strong>{p.name}</strong> {p.isDefault ? <Badge tone="blue">Par défaut</Badge> : null}
+                  <div className="cap">{formulaText(p, course.price)}</div>
+                </div>
+                {can("catalogue:write") ? (
+                  <div className="row">
+                    <button className="btn" onClick={() => setEditing(p)}>
+                      Modifier
+                    </button>
+                    <button className="btn btn-g" onClick={() => setArchiving(p)}>
+                      Archiver
+                    </button>
+                  </div>
+                ) : null}
+              </div>
+            ))}
+        </div>
+      </Card>
+      {editing ? <PlanEditor training={course} offerKind="study" plan={editing === "new" ? null : editing} onClose={() => setEditing(null)} /> : null}
+      {archiving ? (
+        <ReasonDialog
+          explanation="Cette formule ne sera plus proposée aux nouvelles inscriptions. Les conditions existantes sont conservées."
+          confirmLabel="Archiver"
+          title={`Archiver « ${archiving.name} »`}
+          onClose={() => setArchiving(null)}
+          onConfirm={async (reason) => {
+            await api.post(`/catalogue/plans/${archiving.id}/archive`, { reason });
+            await client.invalidateQueries({ queryKey: ["study", id] });
+            setArchiving(null);
           }}
         />
       ) : null}

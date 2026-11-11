@@ -65,6 +65,9 @@ const planBody = z
     amount: millimes.nullable().optional(),
     absenceBilled: z.boolean().nullable().optional(),
     items: z.array(planItem).max(36).default([]),
+    monthlyDueKind: z.enum(["anniversary", "month_start", "month_end", "day_of_month"]).default("anniversary"),
+    monthlyDueDay: z.number().int().min(1).max(31).nullable().optional(),
+    dueOffsetDays: z.number().int().min(0).max(365).default(0),
   })
   .strict()
   .superRefine((p, ctx) => {
@@ -73,7 +76,10 @@ const planBody = z
     if (p.kind !== "installments" && p.items.length > 0) issue("only an instalment formula has instalments");
     if ((p.kind === "monthly" || p.kind === "per_session") && (p.amount === undefined || p.amount === null))
       issue("a monthly or per-session formula needs its tariff");
-    if (p.kind === "installments" && p.amount !== undefined && p.amount !== null) issue("an instalment formula takes the training price");
+    if ((p.monthlyDueKind === "day_of_month") !== (p.monthlyDueDay !== undefined && p.monthlyDueDay !== null))
+      issue("choose a day for a custom monthly due date only");
+    if (p.kind !== "monthly" && p.monthlyDueKind !== "anniversary") issue("monthly timing applies to monthly formulas only");
+    if (p.kind === "installments" && p.dueOffsetDays !== 0) issue("each installment has its own due date");
     if ((p.kind === "per_session") !== (p.absenceBilled !== undefined && p.absenceBilled !== null))
       issue("say whether an absence is billed, for a per-session formula only");
   });
@@ -82,10 +88,13 @@ const planColumns = (p: PlanBody) => ({
   name: p.name,
   is_default: p.isDefault,
   kind: p.kind,
-  amount: p.kind === "installments" ? null : (p.amount ?? null),
+  amount: p.amount ?? null,
+  monthly_due_kind: p.monthlyDueKind,
+  monthly_due_day: p.monthlyDueDay ?? null,
+  due_offset_days: p.dueOffsetDays,
   absence_billed: p.kind === "per_session" ? (p.absenceBilled ?? null) : null,
 });
-const planPreviewBody = z.object({ items: z.array(planItem).min(1).max(36) }).strict();
+const planPreviewBody = z.object({ items: z.array(planItem).min(1).max(36), amount: millimes.nullable().optional() }).strict();
 
 const sessionFields = { name: requiredText(100), startDate: isoDate, endDate: isoDate };
 const sessionCreate = z
@@ -139,6 +148,75 @@ export const catalogueRoutes: FastifyPluginAsync = async (app) => {
   const { db } = app;
   const read = app.requirePermission("catalogue:read");
   const write = app.requirePermission("catalogue:write");
+
+  const loadPlans = async (ownerColumn: "training_id" | "study_id", id: string, price: number) => {
+    const plans = await db
+      .selectFrom("payment_plans")
+      .select([
+        "id",
+        "name",
+        "is_default as isDefault",
+        "kind",
+        "amount",
+        "absence_billed as absenceBilled",
+        "status",
+        "monthly_due_kind as monthlyDueKind",
+        "monthly_due_day as monthlyDueDay",
+        "due_offset_days as dueOffsetDays",
+      ])
+      .where(ownerColumn, "=", id)
+      .orderBy("name")
+      .execute();
+    const items = plans.length
+      ? await db
+          .selectFrom("payment_plan_items")
+          .select([
+            "plan_id as planId",
+            "position",
+            "label",
+            "value_kind as valueKind",
+            "value",
+            "due_kind as dueKind",
+            "due_offset_days as dueOffsetDays",
+            "due_date as dueDate",
+          ])
+          .where(
+            "plan_id",
+            "in",
+            plans.map((p) => p.id),
+          )
+          .orderBy("plan_id")
+          .orderBy("position")
+          .execute()
+      : [];
+    return plans.map((p) => {
+      const planItems = items.filter((i) => i.planId === p.id).map(({ planId: _planId, ...rest }) => rest);
+      const amounts = p.kind === "installments" ? planAmounts(p.amount ?? price, planItems) : p.kind === "full" ? [p.amount ?? price] : [];
+      return { ...p, items: planItems, amounts };
+    });
+  };
+
+  app.get("/studies/:id", { preHandler: read }, async (request) => {
+    const { id } = idParam.parse(request.params);
+    const study = await db
+      .selectFrom("studies")
+      .select([
+        "id",
+        "subject_id as subjectId",
+        "name",
+        "billing_mode as billingMode",
+        "price",
+        "absence_billed as absenceBilled",
+        "sessions_per_week as sessionsPerWeek",
+        "capacity",
+        "status",
+      ])
+      .where("id", "=", id)
+      .where("centre_id", "=", request.user!.centreId)
+      .executeTakeFirst();
+    if (!study) throw notFound("study");
+    return { ...study, plans: await loadPlans("study_id", id, study.price) };
+  });
 
   /* Subjects */
 
@@ -388,34 +466,7 @@ export const catalogueRoutes: FastifyPluginAsync = async (app) => {
       .where("centre_id", "=", request.user!.centreId)
       .executeTakeFirst();
     if (!training) throw notFound("training");
-    const plans = await db
-      .selectFrom("payment_plans")
-      .select(["id", "name", "is_default as isDefault", "kind", "amount", "absence_billed as absenceBilled", "status"])
-      .where("training_id", "=", id)
-      .orderBy("name")
-      .execute();
-    const items = plans.length
-      ? await db
-          .selectFrom("payment_plan_items")
-          .select([
-            "plan_id as planId",
-            "position",
-            "label",
-            "value_kind as valueKind",
-            "value",
-            "due_kind as dueKind",
-            "due_offset_days as dueOffsetDays",
-            "due_date as dueDate",
-          ])
-          .where(
-            "plan_id",
-            "in",
-            plans.map((p) => p.id),
-          )
-          .orderBy("plan_id")
-          .orderBy("position")
-          .execute()
-      : [];
+    const plans = await loadPlans("training_id", id, training.price);
     const sessions = await db
       .selectFrom("training_sessions")
       .select(["id", "name", "start_date as startDate", "end_date as endDate", "status"])
@@ -424,11 +475,7 @@ export const catalogueRoutes: FastifyPluginAsync = async (app) => {
       .execute();
     return {
       ...training,
-      plans: plans.map((p) => {
-        const planItems = items.filter((i) => i.planId === p.id).map(({ planId: _planId, ...rest }) => rest);
-        const amounts = p.kind === "installments" ? planAmounts(training.price, planItems) : p.kind === "full" ? [p.amount ?? training.price] : [];
-        return { ...p, items: planItems, amounts };
-      }),
+      plans,
       sessions,
     };
   });
@@ -478,7 +525,14 @@ export const catalogueRoutes: FastifyPluginAsync = async (app) => {
       if (!before) throw notFound("training");
       if (body.price !== undefined && body.price !== before.price) {
         // Every active plan must still add up to the new price.
-        const plans = await trx.selectFrom("payment_plans").select("id").where("training_id", "=", id).where("status", "=", "active").execute();
+        const plans = await trx
+          .selectFrom("payment_plans")
+          .select("id")
+          .where("training_id", "=", id)
+          .where("status", "=", "active")
+          .where("kind", "=", "installments")
+          .where("amount", "is", null)
+          .execute();
         for (const plan of plans) {
           const items = await trx
             .selectFrom("payment_plan_items")
@@ -522,49 +576,77 @@ export const catalogueRoutes: FastifyPluginAsync = async (app) => {
     return training;
   };
 
-  /** Live total check used by the plan editor. */
-  app.post("/trainings/:id/plans/preview", { preHandler: read }, async (request) => {
-    const { id } = idParam.parse(request.params);
-    const training = await loadTraining(id, request.user!.centreId);
-    const { items } = planPreviewBody.parse(request.body);
-    try {
-      const amounts = planAmounts(training.price, toPlanInput(items));
-      return { valid: true, price: training.price, amounts, total: amounts.reduce((s, a) => s + a, 0) };
-    } catch (error) {
-      if (error instanceof ScheduleError) return { valid: false, price: training.price, message: error.message };
-      throw error;
-    }
-  });
-
-  app.post("/trainings/:id/plans", { preHandler: write }, async (request, reply) => {
-    const actor = request.user!;
-    const { id } = idParam.parse(request.params);
-    const training = await loadTraining(id, actor.centreId);
-    const body = planBody.parse(request.body);
-    const items = toPlanInput(body.items);
-    if (body.kind === "installments") checkPlanTotal(training.price, items);
-    const plan = await db.transaction().execute(async (trx) => {
-      if (body.isDefault) {
-        await trx.updateTable("payment_plans").set({ is_default: false }).where("training_id", "=", id).where("is_default", "=", true).execute();
+  for (const owner of ["trainings", "studies"] as const) {
+    const ownerColumn = owner === "trainings" ? "training_id" : "study_id";
+    const loadOffer = async (id: string, centreId: string) => {
+      const offer = await db.selectFrom(owner).select(["id", "price"]).where("id", "=", id).where("centre_id", "=", centreId).executeTakeFirst();
+      if (!offer) throw notFound(owner);
+      return offer;
+    };
+    /** Live total check used by the plan editor. */
+    app.post(`/${owner}/:id/plans/preview`, { preHandler: read }, async (request) => {
+      const { id } = idParam.parse(request.params);
+      const training = await loadOffer(id, request.user!.centreId);
+      const { items, amount } = planPreviewBody.parse(request.body);
+      if (owner === "studies" && amount == null) throw unprocessable("package_price_required", "a course package needs its own total price");
+      const price = amount ?? training.price;
+      try {
+        const amounts = planAmounts(price, toPlanInput(items));
+        return { valid: true, price, amounts, total: amounts.reduce((s, a) => s + a, 0) };
+      } catch (error) {
+        if (error instanceof ScheduleError) return { valid: false, price, message: error.message };
+        throw error;
       }
-      const created = await trx
-        .insertInto("payment_plans")
-        .values({ centre_id: actor.centreId, training_id: id, ...planColumns(body) })
-        .returning(["id", "name", "is_default as isDefault", "kind", "amount", "absence_billed as absenceBilled", "status"])
-        .executeTakeFirstOrThrow();
-      if (items.length) await savePlanItems(trx, created.id, items);
-      await writeAudit(trx, {
-        centreId: actor.centreId,
-        userId: actor.userId,
-        action: "payment_plan.created",
-        objectType: "payment_plan",
-        objectId: created.id,
-        after: { ...created, items },
-      });
-      return created;
     });
-    return reply.status(201).send(plan);
-  });
+
+    app.post(`/${owner}/:id/plans`, { preHandler: write }, async (request, reply) => {
+      const actor = request.user!;
+      const { id } = idParam.parse(request.params);
+      const training = await loadOffer(id, actor.centreId);
+      const body = planBody.parse(request.body);
+      const items = toPlanInput(body.items);
+      if (owner === "studies" && (body.kind === "full" || body.kind === "installments") && body.amount == null)
+        throw unprocessable("package_price_required", "a course package needs its own total price");
+      if (body.kind === "installments") checkPlanTotal(body.amount ?? training.price, items);
+      const plan = await db.transaction().execute(async (trx) => {
+        if (body.isDefault) {
+          await trx.updateTable("payment_plans").set({ is_default: false }).where(ownerColumn, "=", id).where("is_default", "=", true).execute();
+        }
+        const created = await trx
+          .insertInto("payment_plans")
+          .values({
+            centre_id: actor.centreId,
+            training_id: owner === "trainings" ? id : null,
+            study_id: owner === "studies" ? id : null,
+            ...planColumns(body),
+          })
+          .returning([
+            "id",
+            "name",
+            "is_default as isDefault",
+            "kind",
+            "amount",
+            "absence_billed as absenceBilled",
+            "status",
+            "monthly_due_kind as monthlyDueKind",
+            "monthly_due_day as monthlyDueDay",
+            "due_offset_days as dueOffsetDays",
+          ])
+          .executeTakeFirstOrThrow();
+        if (items.length) await savePlanItems(trx, created.id, items);
+        await writeAudit(trx, {
+          centreId: actor.centreId,
+          userId: actor.userId,
+          action: "payment_plan.created",
+          objectType: "payment_plan",
+          objectId: created.id,
+          after: { ...created, items },
+        });
+        return created;
+      });
+      return reply.status(201).send(plan);
+    });
+  }
 
   /**
    * Replaces the items of a plan. Schedules already generated for enrolled students keep their own instalments:
@@ -578,16 +660,29 @@ export const catalogueRoutes: FastifyPluginAsync = async (app) => {
     return db.transaction().execute(async (trx) => {
       const plan = await trx
         .selectFrom("payment_plans")
-        .innerJoin("trainings", "trainings.id", "payment_plans.training_id")
-        .select(["payment_plans.id", "payment_plans.training_id as trainingId", "trainings.price"])
+        .leftJoin("trainings", "trainings.id", "payment_plans.training_id")
+        .leftJoin("studies", "studies.id", "payment_plans.study_id")
+        .select([
+          "payment_plans.id",
+          "payment_plans.training_id as trainingId",
+          "payment_plans.study_id as studyId",
+          sql<number>`coalesce(trainings.price, studies.price)`.as("price"),
+        ])
         .where("payment_plans.id", "=", id)
         .where("payment_plans.centre_id", "=", actor.centreId)
-        .forUpdate()
+        .forUpdate("payment_plans")
         .executeTakeFirst();
       if (!plan) throw notFound("payment plan");
-      if (body.kind === "installments") checkPlanTotal(plan.price, items);
+      if (plan.studyId && (body.kind === "full" || body.kind === "installments") && body.amount == null)
+        throw unprocessable("package_price_required", "a course package needs its own total price");
+      if (body.kind === "installments") checkPlanTotal(body.amount ?? plan.price, items);
       if (body.isDefault) {
-        await trx.updateTable("payment_plans").set({ is_default: false }).where("training_id", "=", plan.trainingId).where("id", "!=", id).execute();
+        await trx
+          .updateTable("payment_plans")
+          .set({ is_default: false })
+          .where(plan.trainingId ? "training_id" : "study_id", "=", (plan.trainingId ?? plan.studyId)!)
+          .where("id", "!=", id)
+          .execute();
       }
       await trx.updateTable("payment_plans").set(planColumns(body)).where("id", "=", id).execute();
       await trx.deleteFrom("payment_plan_items").where("plan_id", "=", id).execute();
@@ -608,6 +703,9 @@ export const catalogueRoutes: FastifyPluginAsync = async (app) => {
         kind: saved.kind,
         amount: saved.amount,
         absenceBilled: saved.absence_billed,
+        monthlyDueKind: saved.monthly_due_kind,
+        monthlyDueDay: saved.monthly_due_day,
+        dueOffsetDays: saved.due_offset_days,
         status: "active",
       };
     });

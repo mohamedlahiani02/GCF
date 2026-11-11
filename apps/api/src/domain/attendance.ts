@@ -1,3 +1,4 @@
+import { addDays } from "@gcf/shared";
 import { attendanceRate, rateToBasisPoints, type AttendanceStatus } from "@gcf/shared";
 import { sql, type Kysely, type Transaction } from "kysely";
 import type { Database } from "../db/types.js";
@@ -240,6 +241,7 @@ export async function syncSessionCharges(trx: Transaction<Database>, session: Se
         "attendance_records.student_id as studentId",
         "attendance_records.status",
         "enrolments.session_price as sessionPrice",
+        "enrolments.due_offset_days as dueOffsetDays",
         "enrolments.session_absence_billed as absenceBilled",
       ])
       .where("attendance_records.session_id", "=", session.id)
@@ -278,8 +280,8 @@ export async function syncSessionCharges(trx: Transaction<Database>, session: Se
           label: `${session.groupName}, séance du ${session.localDate.split("-").reverse().join("/")}`,
           kind: "charge",
           amount: r.price,
-          due_date: session.localDate,
-          original_due_date: session.localDate,
+          due_date: addDays(session.localDate, r.dueOffsetDays),
+          original_due_date: addDays(session.localDate, r.dueOffsetDays),
           discount_status: null,
           session_id: session.id,
           created_by: userId,

@@ -179,10 +179,16 @@ export interface TrainingsTable {
   updated_at: Timestamp;
 }
 
+export type MonthlyDueKind = "anniversary" | "month_start" | "month_end" | "day_of_month";
+
 export interface PaymentPlansTable {
   id: Generated<string>;
   centre_id: string;
-  training_id: string;
+  training_id: string | null;
+  study_id: Generated<string | null>;
+  monthly_due_kind: Generated<MonthlyDueKind>;
+  monthly_due_day: Generated<number | null>;
+  due_offset_days: Generated<number>;
   name: string;
   is_default: Generated<boolean>;
   kind: Generated<PlanKind>;
@@ -251,6 +257,10 @@ export type EnrolmentStatus = "active" | "transferred" | "dropped" | "completed"
 export type PaymentMode = "full" | "installments" | "monthly" | "per_session";
 
 export interface EnrolmentsTable {
+  prorate_partial_months: Generated<boolean>;
+  monthly_due_kind: Generated<MonthlyDueKind>;
+  monthly_due_day: Generated<number | null>;
+  due_offset_days: Generated<number>;
   id: Generated<string>;
   centre_id: string;
   student_id: string;
@@ -278,6 +288,8 @@ export interface InstallmentsTable {
   amount: number;
   due_date: DateColumn;
   original_due_date: DateColumn;
+  service_period_start: Generated<string | null>;
+  service_period_end: Generated<string | null>;
   postponement_count: Generated<number>;
   discount_status: "pending" | "approved" | "rejected" | null;
   status: Generated<"open" | "cancelled">;

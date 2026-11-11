@@ -1,4 +1,14 @@
-import { monthlyDueDates, percentOf, planLines, ScheduleError, type PlanItemInput } from "@gcf/shared";
+import {
+  addDays,
+  addMonthsClamped,
+  monthlyBillingDates,
+  mulDivRound,
+  type BillingTiming,
+  percentOf,
+  planLines,
+  ScheduleError,
+  type PlanItemInput,
+} from "@gcf/shared";
 import type { Kysely, Transaction } from "kysely";
 import type { Database, PaymentMode, PlanKind } from "../db/types.js";
 import { notFound, unprocessable } from "../errors.js";
@@ -76,11 +86,14 @@ export interface ScheduleLine {
   label: string;
   amount: number;
   dueDate: string;
+  servicePeriodStart?: string;
+  servicePeriodEnd?: string;
+  proration?: { coveredDays: number; periodDays: number; monthlyAmount: number };
 }
 
 const MONTHS_FR = ["janvier", "février", "mars", "avril", "mai", "juin", "juillet", "août", "septembre", "octobre", "novembre", "décembre"];
 
-export interface TrainingPlan {
+export interface TrainingPlan extends BillingTiming {
   id: string;
   name: string;
   kind: PlanKind;
@@ -98,18 +111,39 @@ export async function loadTrainingPlan(
   if (!planId) throw unprocessable("plan_required", "choose a formula for this training");
   const plan = await db
     .selectFrom("payment_plans")
-    .select(["id", "name", "kind", "amount", "absence_billed as absenceBilled", "status", "training_id as trainingId"])
+    .select([
+      "id",
+      "name",
+      "kind",
+      "amount",
+      "absence_billed as absenceBilled",
+      "status",
+      "training_id as trainingId",
+      "study_id as studyId",
+      "monthly_due_kind as monthlyDueKind",
+      "monthly_due_day as monthlyDueDay",
+      "due_offset_days as dueOffsetDays",
+    ])
     .where("id", "=", planId)
     .where("centre_id", "=", centreId)
     .executeTakeFirst();
-  if (!plan || plan.status !== "active" || plan.trainingId !== group.trainingId) {
+  if (!plan || plan.status !== "active" || (group.kind === "training" ? plan.trainingId !== group.trainingId : plan.studyId !== group.studyId)) {
     throw unprocessable("unknown_plan", "the formula does not belong to this training or is archived");
   }
-  return { id: plan.id, name: plan.name, kind: plan.kind, amount: plan.amount, absenceBilled: plan.absenceBilled };
+  return {
+    id: plan.id,
+    name: plan.name,
+    kind: plan.kind,
+    amount: plan.amount,
+    absenceBilled: plan.absenceBilled,
+    monthlyDueKind: plan.monthlyDueKind,
+    monthlyDueDay: plan.monthlyDueDay,
+    dueOffsetDays: plan.dueOffsetDays,
+  };
 }
 
 /** Payment mode, formula and per-session tariff an enrolment is created with. */
-export interface EnrolmentTerms {
+export interface EnrolmentTerms extends BillingTiming {
   paymentMode: PaymentMode;
   planId: string | null;
   sessionPrice: number | null;
@@ -126,12 +160,31 @@ export async function resolveTerms(
   request: { paymentMode?: PaymentMode | undefined; planId?: string | undefined },
   centreId: string,
 ): Promise<{ terms: EnrolmentTerms; plan: TrainingPlan | null }> {
-  if (group.kind === "study") {
+  if (group.kind === "study" && !request.planId) {
+    const hasPlans = await db
+      .selectFrom("payment_plans")
+      .select("id")
+      .where("study_id", "=", group.studyId!)
+      .where("centre_id", "=", centreId)
+      .where("status", "=", "active")
+      .executeTakeFirst();
+    if (hasPlans) throw unprocessable("plan_required", "choose a formula for this course");
     const mode = group.billingMode ?? "monthly";
     if (request.paymentMode !== undefined && request.paymentMode !== mode) {
       throw unprocessable("payment_mode_not_allowed", `this offer is billed ${mode === "monthly" ? "monthly" : "per session"}`);
     }
-    return { terms: { paymentMode: mode, planId: null, sessionPrice: null, sessionAbsenceBilled: null }, plan: null };
+    return {
+      terms: {
+        paymentMode: mode,
+        planId: null,
+        sessionPrice: null,
+        sessionAbsenceBilled: null,
+        monthlyDueKind: "anniversary",
+        monthlyDueDay: null,
+        dueOffsetDays: 0,
+      },
+      plan: null,
+    };
   }
   const plan = await loadTrainingPlan(db, group, request.planId, centreId);
   if (request.paymentMode !== undefined && request.paymentMode !== plan.kind) {
@@ -139,6 +192,9 @@ export async function resolveTerms(
   }
   return {
     terms: {
+      monthlyDueKind: plan.monthlyDueKind,
+      monthlyDueDay: plan.monthlyDueDay,
+      dueOffsetDays: plan.dueOffsetDays,
       paymentMode: plan.kind,
       planId: plan.id,
       sessionPrice: plan.kind === "per_session" ? plan.amount : null,
@@ -148,35 +204,81 @@ export async function resolveTerms(
   };
 }
 
-function monthlyLines(label: string, amount: number, firstDue: string, endDate: string): ScheduleLine[] {
-  return monthlyDueDates(firstDue, endDate).map((dueDate) => ({
-    label: `${label}, ${MONTHS_FR[Number(dueDate.slice(5, 7)) - 1]} ${dueDate.slice(0, 4)}`,
-    amount,
-    dueDate,
-  }));
+/** Date-only intervals use UTC so daylight saving and the server's timezone cannot change the number of days. */
+function inclusiveDays(start: string, end: string): number {
+  return (Date.parse(`${end}T00:00:00Z`) - Date.parse(`${start}T00:00:00Z`)) / 86_400_000 + 1;
 }
 
-/** The instalments an enrolment creates up front. Per-session billing creates none: each validated session does. */
+/** A contractual cycle is separate from the payment deadline. Only the covered portion can be prorated. */
+export function monthlySchedule(
+  label: string,
+  amount: number,
+  firstDue: string,
+  endDate: string,
+  timing: BillingTiming,
+  policy: { proratePartialMonths: boolean; effectiveDate?: string },
+): ScheduleLine[] {
+  try {
+    const dates = monthlyBillingDates(firstDue, endDate, timing);
+    const anniversary = timing.monthlyDueKind === "anniversary";
+    const serviceFrom = policy.effectiveDate && policy.effectiveDate > firstDue ? policy.effectiveDate : firstDue;
+    const lines: ScheduleLine[] = [];
+    for (const [index, { month, dueDate }] of dates.entries()) {
+      const periodStart = anniversary ? addDays(dueDate, -timing.dueOffsetDays) : `${month}-01`;
+      // Use the original anchor for every cycle (e.g. Jan 31 → Feb 28 → Mar 31).
+      const nextStart = anniversary ? addMonthsClamped(firstDue, index + 1, Number(firstDue.slice(8, 10))) : addMonthsClamped(periodStart, 1);
+      const periodEnd = addDays(nextStart, -1);
+      const servicePeriodStart = periodStart < serviceFrom ? serviceFrom : periodStart;
+      const servicePeriodEnd = periodEnd > endDate ? endDate : periodEnd;
+      if (servicePeriodStart > servicePeriodEnd) continue;
+      const periodDays = inclusiveDays(periodStart, periodEnd);
+      const coveredDays = inclusiveDays(servicePeriodStart, servicePeriodEnd);
+      const prorated = policy.proratePartialMonths && coveredDays < periodDays;
+      const billed = prorated ? mulDivRound(amount, coveredDays, periodDays) : amount;
+      if (billed === 0) continue; // The ledger only stores positive charges.
+      lines.push({
+        label: `${label}, ${MONTHS_FR[Number(month.slice(5, 7)) - 1]} ${month.slice(0, 4)}`,
+        amount: billed,
+        dueDate,
+        servicePeriodStart,
+        servicePeriodEnd,
+        ...(prorated ? { proration: { coveredDays, periodDays, monthlyAmount: amount } } : {}),
+      });
+    }
+    return lines;
+  } catch (error) {
+    if (error instanceof ScheduleError) throw unprocessable("invalid_schedule", error.message);
+    throw error;
+  }
+}
+
+/** Future lines are projections until their agreed due date. Session charges are issued by validated attendance. */
 export async function buildSchedule(
   db: Kysely<Database> | Transaction<Database>,
   group: GroupBilling,
   request: ScheduleRequest,
-  centreId: string,
+  { terms, plan }: Awaited<ReturnType<typeof resolveTerms>>,
+  proratePartialMonths: boolean,
 ): Promise<ScheduleLine[]> {
+  if (request.firstDueDate && terms.monthlyDueKind !== "anniversary")
+    throw unprocessable("due_date_from_formula", "the chosen formula determines the monthly due date");
   const firstDue = request.firstDueDate ?? request.effectiveDate;
-  if (group.kind === "study") {
-    const { terms } = await resolveTerms(db, group, request, centreId);
-    if (terms.paymentMode === "per_session") return [];
-    return monthlyLines(group.label, group.price, firstDue, group.endDate);
-  }
-  const { plan } = await resolveTerms(db, group, request, centreId);
-  switch (plan!.kind) {
+  switch (terms.paymentMode) {
     case "per_session":
       return [];
     case "monthly":
-      return monthlyLines(group.label, plan!.amount!, firstDue, group.endDate);
+      return monthlySchedule(group.label, plan?.amount ?? group.price, firstDue, group.endDate, terms, {
+        proratePartialMonths,
+        effectiveDate: request.effectiveDate,
+      });
     case "full":
-      return [{ label: `${group.label}, paiement intégral`, amount: plan!.amount ?? group.price, dueDate: firstDue }];
+      return [
+        {
+          label: `${group.label}, paiement intégral`,
+          amount: plan!.amount ?? group.price,
+          dueDate: request.firstDueDate ?? addDays(request.effectiveDate, terms.dueOffsetDays),
+        },
+      ];
     case "installments": {
       const items: PlanItemInput[] = await db
         .selectFrom("payment_plan_items")
@@ -185,7 +287,7 @@ export async function buildSchedule(
         .orderBy("position")
         .execute();
       try {
-        return planLines(group.price, items, request.effectiveDate).map((l) => ({ ...l, label: `${group.label}, ${l.label}` }));
+        return planLines(plan!.amount ?? group.price, items, request.effectiveDate).map((l) => ({ ...l, label: `${group.label}, ${l.label}` }));
       } catch (error) {
         if (error instanceof ScheduleError) throw unprocessable("plan_total_mismatch", error.message);
         throw error;

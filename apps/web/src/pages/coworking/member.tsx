@@ -615,7 +615,7 @@ export function MemberPage() {
           tone={m.noShowsLast90Days >= 3 ? "amber" : undefined}
         />
         <Kpi
-          label="Reste à payer"
+          label="Exigible aujourd’hui"
           value={<span className="num">{tnd(m.totals.due)}</span>}
           sub={`TND · crédit ${tnd(m.totals.credit)} TND`}
           tone={m.totals.due > 0 ? "amber" : undefined}

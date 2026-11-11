@@ -155,12 +155,19 @@ export interface PayerTotals {
   due: number;
   credit: number;
   pendingDiscounts: number;
+  future: number;
+  totalRemaining: number;
+  asOf: string;
 }
 
 export async function payerTotals(db: Db, centreId: string, payer: Payer): Promise<PayerTotals> {
   const balances = await installmentBalances(db, centreId, { payer });
+  const { today } = await centreClock(db, centreId);
   return {
-    due: balances.reduce((s, b) => s + b.remaining, 0),
+    due: balances.filter((b) => b.dueDate <= today).reduce((s, b) => s + b.remaining, 0),
+    future: balances.filter((b) => b.dueDate > today).reduce((s, b) => s + b.remaining, 0),
+    totalRemaining: balances.reduce((s, b) => s + b.remaining, 0),
+    asOf: today,
     credit: await payerCredit(db, payer),
     pendingDiscounts: balances.filter((b) => b.state === "pending_discount").reduce((s, b) => s - b.amount, 0),
   };

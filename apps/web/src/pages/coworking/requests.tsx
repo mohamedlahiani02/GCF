@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useState } from "react";
-import { Link } from "react-router";
+import { Link, useSearchParams } from "react-router";
 import { api } from "../../api/client";
 import { usePage } from "../../components/shell";
 import { useToast } from "../../components/toasts";
@@ -8,6 +8,9 @@ import { Badge, Card, Empty, ErrorBanner, Loading, PageHeader, ReasonDialog } fr
 import { errorMessage } from "../../lib/errors";
 import { frDate, frTime, localParts, tnd } from "../../lib/format";
 import { PROFILE, durationLabel, type RequestRow } from "./api";
+import { PendingSignups } from "./pending-signups";
+import { useActionQueue } from "../../lib/action-queue";
+import { Segmented } from "../../components/ui";
 import { ReassignModal } from "./bookingParts";
 
 /** Time left before a request expires, refreshed every 30 seconds. */
@@ -36,7 +39,10 @@ const reassignTarget = (r: RequestRow) => ({
  * accept, refuse with a reason, or move the request to another free resource and accept it.
  */
 export function RequestsPage() {
-  usePage(["Coworking", "Demandes"]);
+  usePage(["Coworking", "Demandes et inscriptions"]);
+  const [params, setParams] = useSearchParams();
+  const tab = params.get("type") === "reservations" ? "reservations" : "comptes";
+  const queue = useActionQueue();
   const now = useNow(30_000);
   const client = useQueryClient();
   const toast = useToast();
@@ -58,74 +64,86 @@ export function RequestsPage() {
   const rows = list.data?.items ?? [];
   return (
     <>
-      <PageHeader title="Demandes de réservation" subtitle="Demandes envoyées depuis l'espace client, à accepter ou refuser avant leur expiration." />
-      <Card title={`En attente (${rows.length})`}>
-        <ErrorBanner error={list.error} retry={() => list.refetch()} />
-        {list.isPending ? (
-          <Loading />
-        ) : rows.length === 0 ? (
-          <Empty title="Aucune demande en attente" />
-        ) : (
-          <div className="xs">
-            <table className="tbl">
-              <thead>
-                <tr>
-                  <th>Expire dans</th>
-                  <th>Client</th>
-                  <th>Ressource</th>
-                  <th>Créneau</th>
-                  <th>Profil</th>
-                  <th className="num">Montant (TND)</th>
-                  <th />
-                </tr>
-              </thead>
-              <tbody>
-                {rows.map((r) => {
-                  const left = Math.max(0, Math.round((new Date(r.expiresAt).getTime() - now) / 60_000));
-                  return (
-                    <tr key={r.id}>
-                      <td>
-                        <Badge tone={left < 60 ? "red" : left < 240 ? "amber" : "neutral"}>{left > 0 ? durationLabel(left) : "Expirée"}</Badge>
-                        <div className="cap">
-                          demandée le {frDate(r.requestedAt)} à {frTime(r.requestedAt)}
-                        </div>
-                      </td>
-                      <td>
-                        <Link to={`/coworking/membres/${r.memberId}`}>{r.memberName}</Link>
-                        <div className="cap">{[r.company, r.phone, r.email].filter(Boolean).join(" · ")}</div>
-                      </td>
-                      <td>
-                        <Link to={`/coworking/reservations/${r.id}`}>{r.resourceCode}</Link>
-                        <div className="cap">{r.typeName}</div>
-                      </td>
-                      <td>
-                        {frDate(r.startsAt)}
-                        <div className="cap">
-                          {frTime(r.startsAt)}-{frTime(r.endsAt)}
-                        </div>
-                        {r.notes ? <div className="cap">{r.notes}</div> : null}
-                      </td>
-                      <td>{PROFILE[r.profile]}</td>
-                      <td className="num">{tnd(r.charge)}</td>
-                      <td style={{ textAlign: "right", whiteSpace: "nowrap" }}>
-                        <button type="button" className="btn btn-p" disabled={approve.isPending} onClick={() => approve.mutate(r.id)}>
-                          Accepter
-                        </button>
-                        <button type="button" className="btn btn-g" onClick={() => setMoving(r)}>
-                          Autre ressource
-                        </button>
-                        <button type="button" className="btn btn-g" onClick={() => setRefusing(r)}>
-                          Refuser
-                        </button>
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
-        )}
-      </Card>
+      <PageHeader title="Demandes et inscriptions" subtitle="Validez les nouveaux comptes et répondez aux demandes de réservation de l’espace client." />
+      <Segmented
+        label="Type de demande"
+        value={tab}
+        onChange={(type) => setParams({ type })}
+        options={[
+          { value: "comptes", label: `Inscriptions (${queue.memberCount})` },
+          { value: "reservations", label: `Réservations (${rows.length})` },
+        ]}
+      />
+      {tab === "comptes" ? <PendingSignups /> : null}
+      {tab === "reservations" ? (
+        <Card title={`En attente (${rows.length})`}>
+          <ErrorBanner error={list.error} retry={() => list.refetch()} />
+          {list.isPending ? (
+            <Loading />
+          ) : rows.length === 0 ? (
+            <Empty title="Aucune demande en attente" />
+          ) : (
+            <div className="xs">
+              <table className="tbl">
+                <thead>
+                  <tr>
+                    <th>Expire dans</th>
+                    <th>Client</th>
+                    <th>Ressource</th>
+                    <th>Créneau</th>
+                    <th>Profil</th>
+                    <th className="num">Montant (TND)</th>
+                    <th />
+                  </tr>
+                </thead>
+                <tbody>
+                  {rows.map((r) => {
+                    const left = Math.max(0, Math.round((new Date(r.expiresAt).getTime() - now) / 60_000));
+                    return (
+                      <tr key={r.id}>
+                        <td>
+                          <Badge tone={left < 60 ? "red" : left < 240 ? "amber" : "neutral"}>{left > 0 ? durationLabel(left) : "Expirée"}</Badge>
+                          <div className="cap">
+                            demandée le {frDate(r.requestedAt)} à {frTime(r.requestedAt)}
+                          </div>
+                        </td>
+                        <td>
+                          <Link to={`/coworking/membres/${r.memberId}`}>{r.memberName}</Link>
+                          <div className="cap">{[r.company, r.phone, r.email].filter(Boolean).join(" · ")}</div>
+                        </td>
+                        <td>
+                          <Link to={`/coworking/reservations/${r.id}`}>{r.resourceCode}</Link>
+                          <div className="cap">{r.typeName}</div>
+                        </td>
+                        <td>
+                          {frDate(r.startsAt)}
+                          <div className="cap">
+                            {frTime(r.startsAt)}-{frTime(r.endsAt)}
+                          </div>
+                          {r.notes ? <div className="cap">{r.notes}</div> : null}
+                        </td>
+                        <td>{PROFILE[r.profile]}</td>
+                        <td className="num">{tnd(r.charge)}</td>
+                        <td style={{ textAlign: "right", whiteSpace: "nowrap" }}>
+                          <button type="button" className="btn btn-p" disabled={approve.isPending} onClick={() => approve.mutate(r.id)}>
+                            Accepter
+                          </button>
+                          <button type="button" className="btn btn-g" onClick={() => setMoving(r)}>
+                            Autre ressource
+                          </button>
+                          <button type="button" className="btn btn-g" onClick={() => setRefusing(r)}>
+                            Refuser
+                          </button>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </Card>
+      ) : null}
       {refusing ? (
         <ReasonDialog
           title="Refuser la demande"

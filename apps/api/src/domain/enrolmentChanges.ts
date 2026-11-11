@@ -2,7 +2,7 @@ import { addDays } from "@gcf/shared";
 import { sql, type Transaction } from "kysely";
 import type { Database } from "../db/types.js";
 import { conflict, notFound, unprocessable } from "../errors.js";
-import { buildSchedule, loadGroupBilling } from "./enrolmentSchedule.js";
+import { monthlySchedule, loadGroupBilling } from "./enrolmentSchedule.js";
 import { recordFinancialEvents } from "./financialEvents.js";
 import { lockStudent, settleStudent } from "./ledger.js";
 
@@ -43,13 +43,15 @@ async function untouchedChargesFrom(trx: Transaction<Database>, enrolmentId: str
       "installments.amount",
       "installments.due_date as dueDate",
       "installments.original_due_date as originalDueDate",
+      "installments.service_period_start as servicePeriodStart",
+      "installments.service_period_end as servicePeriodEnd",
       "installments.postponement_count as postponementCount",
     ])
     .where("installments.enrolment_id", "=", enrolmentId)
     .where("installments.kind", "=", "charge")
     .where("installments.status", "=", "open")
     .where("installments.session_id", "is", null)
-    .where("installments.due_date", ">=", from)
+    .where(sql<boolean>`coalesce(installments.service_period_start, installments.due_date) >= ${from}::date`)
     .where(sql<boolean>`coalesce(p.paid, 0) = 0`)
     .orderBy("installments.due_date")
     .execute();
@@ -79,7 +81,7 @@ export async function transferEnrolment(trx: Transaction<Database>, actor: Actor
   const sameOffer = from.kind === to.kind && (from.kind === "study" ? from.studyId === to.studyId : from.trainingId === to.trainingId);
   if (!sameOffer) throw unprocessable("different_offer", "a change of group stays within the same study or training; otherwise drop and enrol again");
   // A training's monthly price comes from its formula, which a change of group keeps: only private lessons reprice.
-  if (input.mode === "reprice" && (old.payment_mode !== "monthly" || to.kind !== "study")) {
+  if (input.mode === "reprice" && (old.payment_mode !== "monthly" || to.kind !== "study" || old.plan_id !== null)) {
     throw unprocessable("reprice_not_applicable", "re-pricing applies to monthly private lessons only");
   }
 
@@ -113,7 +115,11 @@ export async function transferEnrolment(trx: Transaction<Database>, actor: Actor
       group_id: to.groupId,
       effective_date: input.effectiveDate,
       payment_mode: old.payment_mode,
+      prorate_partial_months: old.prorate_partial_months,
       plan_id: old.plan_id,
+      monthly_due_kind: old.monthly_due_kind,
+      monthly_due_day: old.monthly_due_day,
+      due_offset_days: old.due_offset_days,
       session_price: old.session_price,
       session_absence_billed: old.session_absence_billed,
       transferred_from_id: old.id,
@@ -146,6 +152,8 @@ export async function transferEnrolment(trx: Transaction<Database>, actor: Actor
             amount: c.amount,
             due_date: c.dueDate,
             original_due_date: c.originalDueDate,
+            service_period_start: c.servicePeriodStart,
+            service_period_end: c.servicePeriodEnd,
             postponement_count: c.postponementCount,
             discount_status: null,
             carried_from_id: c.id,
@@ -156,11 +164,18 @@ export async function transferEnrolment(trx: Transaction<Database>, actor: Actor
         .execute();
     }
   } else if (moving.length) {
-    const lines = await buildSchedule(
-      trx,
-      to,
-      { paymentMode: "monthly", effectiveDate: input.effectiveDate, firstDueDate: moving[0]!.dueDate },
-      actor.centreId,
+    // Existing legacy enrollments keep working even after new formulas are added to their offer.
+    const lines = monthlySchedule(
+      to.label,
+      to.price,
+      moving[0]!.dueDate,
+      to.endDate,
+      {
+        monthlyDueKind: old.monthly_due_kind,
+        monthlyDueDay: old.monthly_due_day,
+        dueOffsetDays: old.due_offset_days,
+      },
+      { proratePartialMonths: old.prorate_partial_months },
     );
     if (lines.length) {
       issued = await trx
@@ -174,6 +189,8 @@ export async function transferEnrolment(trx: Transaction<Database>, actor: Actor
             amount: l.amount,
             due_date: l.dueDate,
             original_due_date: l.dueDate,
+            service_period_start: l.servicePeriodStart ?? null,
+            service_period_end: l.servicePeriodEnd ?? null,
             discount_status: null,
             created_by: actor.userId,
           })),

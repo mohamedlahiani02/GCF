@@ -5,7 +5,17 @@ import { writeAudit } from "../audit.js";
 import type { Database } from "../db/types.js";
 import { assertCashOpen } from "../domain/cash.js";
 import { recordFinancialEvents } from "../domain/financialEvents.js";
-import { applyAllocations, lockPayer, payerCredit, payerTotals, planAllocations, settlePayer, type Payer, type PlannedAllocation } from "../domain/ledger.js";
+import {
+  applyAllocations,
+  centreClock,
+  lockPayer,
+  payerCredit,
+  payerTotals,
+  planAllocations,
+  settlePayer,
+  type Payer,
+  type PlannedAllocation,
+} from "../domain/ledger.js";
 import { issueReceipt } from "../domain/receipts.js";
 import { conflict, notFound, unprocessable } from "../errors.js";
 import { idParam, isoDate, millimes, optionalText, reason, uuid } from "../validation.js";
@@ -105,6 +115,10 @@ export const paymentRoutes: FastifyPluginAsync = async (app) => {
   const write = app.requirePermission("payments:write");
 
   const assertInstallmentsOfPayer = async (payer: Payer, installmentIds: string[], centreId: string) => {
+    // Preview must verify the payer even when no installment is selected, before reading their credit.
+    const table = payer.kind === "student" ? "students" : payer.kind === "renter" ? "renters" : "members";
+    const owner = await db.selectFrom(table).select("id").where("id", "=", payer.id).where("centre_id", "=", centreId).executeTakeFirst();
+    if (!owner) throw notFound(payer.kind);
     if (installmentIds.length === 0) return;
     const rows = await db
       .selectFrom("installments")
@@ -119,6 +133,54 @@ export const paymentRoutes: FastifyPluginAsync = async (app) => {
       .execute();
     if (rows.length !== new Set(installmentIds).size) throw unprocessable("unknown_installment", "a selected instalment is not an open charge of this payer");
   };
+
+  /** Every payer's overdue charges, with the same grace-period boundary as the dashboard. */
+  app.get("/overdue", { preHandler: read }, async (request) => {
+    const { page, pageSize } = z
+      .object({ page: z.coerce.number().int().min(1).default(1), pageSize: z.coerce.number().int().min(1).max(200).default(50) })
+      .parse(request.query);
+    const centreId = request.user!.centreId;
+    const { today, graceDays } = await centreClock(db, centreId);
+    const rows = await db
+      .selectFrom("installments")
+      .leftJoin("enrolments", "enrolments.id", "installments.enrolment_id")
+      .leftJoin("students", "students.id", "enrolments.student_id")
+      .leftJoin("rentals", "rentals.id", "installments.rental_id")
+      .leftJoin("renters", "renters.id", "rentals.renter_id")
+      .leftJoin("members", "members.id", "installments.member_id")
+      .leftJoin(
+        db
+          .selectFrom("effective_allocations")
+          .select(["installment_id", sql<number>`sum(amount)::bigint`.as("paid")])
+          .groupBy("installment_id")
+          .as("p"),
+        "p.installment_id",
+        "installments.id",
+      )
+      .select([
+        "installments.id",
+        "installments.label",
+        "installments.due_date as dueDate",
+        "enrolments.student_id as studentId",
+        "rentals.renter_id as renterId",
+        "installments.member_id as memberId",
+        sql<string>`coalesce(students.first_name || ' ' || students.last_name, renters.name, concat_ws(' ', members.first_name, members.last_name))`.as(
+          "payerName",
+        ),
+        sql<number>`installments.amount - coalesce(p.paid, 0)`.as("remaining"),
+      ])
+      .where("installments.centre_id", "=", centreId)
+      .where("installments.kind", "=", "charge")
+      .where("installments.status", "=", "open")
+      .where(sql<boolean>`installments.due_date + ${graceDays}::integer < ${today}::date`)
+      .where(sql<boolean>`installments.amount > coalesce(p.paid, 0)`)
+      .orderBy("installments.due_date")
+      .orderBy("installments.id")
+      .limit(pageSize + 1)
+      .offset((page - 1) * pageSize)
+      .execute();
+    return { asOf: today, items: rows.slice(0, pageSize).map((r) => ({ ...r, remaining: Number(r.remaining) })), hasMore: rows.length > pageSize };
+  });
 
   /** What the payment would pay, and what would remain as credit, before anything is saved. */
   app.post("/preview", { preHandler: write }, async (request) => {
@@ -135,7 +197,10 @@ export const paymentRoutes: FastifyPluginAsync = async (app) => {
       lines,
       advance: body.amount - allocated,
       after: {
-        due: totals.due - planned.filter((p) => p.source === "payment").reduce((s, p) => s + p.amount, 0),
+        ...totals,
+        due: Math.max(0, totals.due - planned.filter((p) => p.dueDate <= totals.asOf).reduce((s, p) => s + p.amount, 0)),
+        future: Math.max(0, totals.future - planned.filter((p) => p.dueDate > totals.asOf).reduce((s, p) => s + p.amount, 0)),
+        totalRemaining: Math.max(0, totals.totalRemaining - planned.reduce((s, p) => s + p.amount, 0)),
         credit: totals.credit + body.amount - planned.filter((p) => p.source === "payment").reduce((s, p) => s + p.amount, 0),
       },
     };

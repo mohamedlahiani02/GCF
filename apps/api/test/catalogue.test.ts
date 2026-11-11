@@ -106,7 +106,7 @@ describe("private studies and groups", () => {
     expect(res.body.conflicts.map((c: { type: string }) => c.type)).toEqual(["instructor"]);
   });
 
-  it("generates one monthly instalment per month until the end of the group", async () => {
+  it("generates one monthly instalment per cycle and prorates the last partial cycle", async () => {
     const preview = await h.call("POST", "/api/enrolments/preview", secretariat, {
       studentId: ids.student,
       groupId: ids.groupA,
@@ -116,7 +116,8 @@ describe("private studies and groups", () => {
     });
     expect(preview.status).toBe(200);
     expect(preview.body.lines.map((l: { dueDate: string }) => l.dueDate)).toEqual(["2026-10-05", "2026-11-05", "2026-12-05"]);
-    expect(preview.body.total).toBe(120_000);
+    expect(preview.body.total).toBe(114_839);
+    expect(preview.body.lines.at(-1)).toMatchObject({ amount: 34_839, proration: { coveredDays: 27, periodDays: 31 } });
 
     const created = await h.call("POST", "/api/enrolments", secretariat, {
       studentId: ids.student,
@@ -128,7 +129,8 @@ describe("private studies and groups", () => {
     expect(created.status).toBe(201);
     const events = await h.db.selectFrom("financial_events").select(["event_type", "amount"]).where("enrolment_id", "=", created.body.id).execute();
     expect(events).toHaveLength(3);
-    expect(events.every((e) => e.event_type === "installment_issued" && e.amount === 40_000)).toBe(true);
+    expect(events.every((e) => e.event_type === "installment_issued")).toBe(true);
+    expect(events.map((e) => e.amount).sort((a, b) => a - b)).toEqual([34_839, 40_000, 40_000]);
   });
 
   it("rejects a payment mode the study does not allow and a duplicate enrolment", async () => {

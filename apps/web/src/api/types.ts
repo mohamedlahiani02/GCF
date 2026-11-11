@@ -1,6 +1,9 @@
 /** Shapes returned by the GCF API (dates as ISO strings, amounts as integer millimes). */
 
 export interface Totals {
+  future: number;
+  totalRemaining: number;
+  asOf: string;
   due: number;
   credit: number;
   pendingDiscounts: number;
@@ -21,6 +24,7 @@ export interface StudentRow {
   notes: string | null;
   status: "active" | "archived";
   activeGroups?: string[];
+  canChangeProration?: boolean;
   due?: number;
   lastPaymentAt?: string | null;
 }
@@ -98,6 +102,7 @@ export interface EnrolmentRow {
   endDate: string | null;
   status: "active" | "transferred" | "dropped" | "completed";
   paymentMode: string;
+  planId: string | null;
   transferredFromId: string | null;
   endedReason: string | null;
 }
@@ -238,6 +243,9 @@ export interface TrainingDetail {
     kind: "full" | "installments" | "monthly" | "per_session";
     amount: number | null;
     absenceBilled: boolean | null;
+    monthlyDueKind: "anniversary" | "month_start" | "month_end" | "day_of_month";
+    monthlyDueDay: number | null;
+    dueOffsetDays: number;
     status: string;
     items: PlanItem[];
     amounts: number[];
@@ -285,4 +293,8 @@ export interface DaySession {
   roomName: string | null;
   status: string;
   sheetStatus: "none" | "in_progress" | "validated";
+}
+
+export interface StudyDetail extends Study {
+  plans: TrainingDetail["plans"];
 }

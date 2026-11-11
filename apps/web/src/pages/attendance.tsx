@@ -61,7 +61,7 @@ export function AttendanceDayPage() {
                 <tr>
                   <th>Horaire</th>
                   <th>Groupe</th>
-                  <th>Intervenant</th>
+                  <th>Prof / Formateur</th>
                   <th>Salle</th>
                   <th>Feuille</th>
                   <th />
@@ -298,7 +298,7 @@ export function AttendanceSheetPage() {
           </span>
           {can("payroll:read") ? (
             <Link className="btn" to={`/paie/intervenants/${s.session.instructorId}?mois=${s.session.localDate.slice(0, 7)}`}>
-              Rémunération de l'intervenant
+              Rémunération du prof / formateur
             </Link>
           ) : null}
         </div>

@@ -1,11 +1,11 @@
 import { createBrowserRouter, Link, Navigate } from "react-router";
-import { useSession } from "./auth/session";
 import { RequirePermission, Shell } from "./components/shell";
 import { AdminPage } from "./pages/admin";
 import { AttendanceDayPage, AttendanceSheetPage } from "./pages/attendance";
 import { AutomationsPage } from "./pages/automations";
 import { CashPage } from "./pages/cash";
-import { StudiesPage, TrainingPage, TrainingsPage } from "./pages/catalogue";
+import { StudyFormulasPage, StudiesPage, TrainingPage, TrainingsPage } from "./pages/catalogue";
+import { LaunchpadPage, WorkspacePage } from "./pages/launchpad";
 import { DashboardPage } from "./pages/dashboard";
 import { EnrolmentWizardPage } from "./pages/enrolment";
 import { GroupCreatePage, GroupPage, GroupsPage } from "./pages/groups";
@@ -34,27 +34,11 @@ function NotFound() {
       <div className="empty">
         <strong style={{ color: "var(--ink)" }}>Page introuvable</strong>
         <Link to="/" className="btn">
-          Retour au tableau de bord
+          Retour à l’accueil
         </Link>
       </div>
     </div>
   );
-}
-
-/** The training dashboard when that module runs, otherwise the first area the role can open. */
-function Home() {
-  const { can } = useSession();
-  if (can("students:read")) return <DashboardPage />;
-  const first = (
-    [
-      ["coworking:read", "/coworking"],
-      ["website:edit", "/site"],
-      ["website:leads", "/site/demandes"],
-      ["payments:read", "/encaissements"],
-      ["cash:read", "/caisse"],
-    ] as const
-  ).find(([permission]) => can(permission));
-  return first ? <Navigate to={first[1]} replace /> : <NotFound />;
 }
 
 export const router = createBrowserRouter([
@@ -62,13 +46,17 @@ export const router = createBrowserRouter([
   {
     element: <Shell />,
     children: [
-      { path: "/", element: <Home /> },
+      { path: "/", element: <DashboardPage /> },
+      { path: "/raccourcis", element: <LaunchpadPage /> },
+      { path: "/espaces/:slug", element: <WorkspacePage /> },
+      { path: "/tableau-de-bord", element: <Navigate to="/" replace /> },
       { path: "/eleves", element: guard("students:read", <StudentsPage />) },
       { path: "/eleves/:id", element: guard("students:read", <StudentPage />) },
       { path: "/inscriptions/nouvelle", element: guard("enrolments:write", <EnrolmentWizardPage />) },
       { path: "/intervenants", element: guard("instructors:read", <InstructorsPage />) },
       { path: "/intervenants/:id", element: guard("instructors:read", <InstructorPage />) },
       { path: "/cours-particuliers", element: guard("catalogue:read", <StudiesPage />) },
+      { path: "/cours-particuliers/:id/formules", element: guard("catalogue:read", <StudyFormulasPage />) },
       { path: "/formations", element: guard("catalogue:read", <TrainingsPage />) },
       { path: "/formations/:id", element: guard("catalogue:read", <TrainingPage />) },
       { path: "/groupes", element: guard("catalogue:read", <GroupsPage />) },

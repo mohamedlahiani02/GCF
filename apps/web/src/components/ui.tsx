@@ -132,7 +132,7 @@ export function Empty({ title, text, action }: { title: string; text?: string; a
 
 export function ConflictBanner({ conflicts }: { conflicts: ConflictItem[] }) {
   if (!conflicts.length) return null;
-  const TYPE = { room: "Salle occupée", instructor: "Intervenant déjà pris", group: "Groupe déjà en séance" };
+  const TYPE = { room: "Salle occupée", instructor: "Prof / Formateur déjà pris", group: "Groupe déjà en séance" };
   return (
     <div className="ban ban-red" role="alert" style={{ flexDirection: "column", alignItems: "flex-start" }}>
       <strong>Conflit de planning</strong>
@@ -198,18 +198,30 @@ export function Tabs<T extends string>({ value, tabs, onChange }: { value: T; ta
 function useEscape(onClose: () => void) {
   useEffect(() => {
     const handler = (event: KeyboardEvent) => {
-      if (event.key === "Escape") onClose();
+      if (event.key === "Escape" && !event.defaultPrevented && !document.querySelector("dialog[open]")) onClose();
     };
     window.addEventListener("keydown", handler);
     return () => window.removeEventListener("keydown", handler);
   }, [onClose]);
 }
 
-export function Drawer({ title, onClose, children, footer }: { title: string; onClose: () => void; children: ReactNode; footer?: ReactNode }) {
+export function Drawer({
+  title,
+  onClose,
+  children,
+  footer,
+  className = "",
+}: {
+  title: string;
+  onClose: () => void;
+  children: ReactNode;
+  footer?: ReactNode;
+  className?: string;
+}) {
   useEscape(onClose);
   return (
     <div className="overlay" onMouseDown={(e) => e.target === e.currentTarget && onClose()}>
-      <aside className="drawer" role="dialog" aria-modal="true" aria-label={title}>
+      <aside className={`drawer ${className}`} role="dialog" aria-modal="true" aria-label={title}>
         <div className="card-h">
           <h2 className="h2">{title}</h2>
           <button type="button" className="btn btn-g" onClick={onClose}>

@@ -40,7 +40,7 @@ const TEXT: Record<Key, { title: string; text: string; propose?: string; auto: s
   },
   payroll_month: {
     title: "Paie du mois",
-    text: "Le mois précédent : les éléments que les règles produisent, et les points à vérifier (intervenant sans règle, feuille non validée).",
+    text: "Le mois précédent : les éléments que les règles produisent, et les points à vérifier (prof / formateur sans règle, feuille non validée).",
     propose: "Le calcul attend dans Propositions ; la comptabilité le confirme.",
     auto: "Les éléments sont calculés. Leur validation reste toujours une décision de la comptabilité.",
   },
