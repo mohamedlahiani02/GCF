@@ -426,6 +426,8 @@ const OBJECT_TYPES: Record<string, string> = {
   cafe_product: "Produit du café",
   cafe_closing: "Clôture du café",
   cafe_settings: "Réglages du café",
+  cafe_supplier: "Fournisseur du café",
+  cafe_purchase_order: "Bon de commande du café",
   student: "Élève",
   enrolment: "Inscription",
   payment: "Paiement",

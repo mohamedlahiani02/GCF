@@ -10,7 +10,7 @@ import { CAFE_METHOD, isLow, type CafeMethod, type CafeProduct, type CafeSetting
 
 const OTHER = "Autres";
 
-function Ticket({ ticket, onClose }: { ticket: CafeTicket; onClose: () => void }) {
+function Ticket({ ticket, printing, onClose }: { ticket: CafeTicket; printing: CafeSettings["ticketPrinting"]; onClose: () => void }) {
   return (
     <Modal
       title={`Vente ${ticket.number}`}
@@ -19,9 +19,11 @@ function Ticket({ ticket, onClose }: { ticket: CafeTicket; onClose: () => void }
         <>
           <span className="cap">{frDateTime(ticket.soldAt)}</span>
           <div className="row" style={{ gap: 8 }}>
-            <button type="button" className="btn" onClick={() => window.print()}>
-              Imprimer le ticket
-            </button>
+            {printing !== "none" ? (
+              <button type="button" className="btn" onClick={() => window.print()}>
+                Imprimer le ticket
+              </button>
+            ) : null}
             <button type="button" className="btn btn-p" autoFocus onClick={onClose}>
               Nouvelle vente
             </button>
@@ -29,7 +31,7 @@ function Ticket({ ticket, onClose }: { ticket: CafeTicket; onClose: () => void }
         </>
       }
     >
-      <div className="cafe-ticket">
+      <div className={`cafe-ticket cafe-ticket-${printing}`}>
         <table className="tbl">
           <tbody>
             {ticket.lines.map((l) => (
@@ -251,7 +253,7 @@ export function CafePosPage() {
           </section>
         </div>
       )}
-      {ticket ? <Ticket ticket={ticket} onClose={() => setTicket(null)} /> : null}
+      {ticket ? <Ticket ticket={ticket} printing={settings.data?.ticketPrinting ?? "none"} onClose={() => setTicket(null)} /> : null}
     </>
   );
 }

@@ -9,7 +9,7 @@ import { frDate, frTime, percent, tnd, todayIso } from "../lib/format";
 import { useActionQueue } from "../lib/action-queue";
 import { ActionNotices } from "../components/notifications";
 import type { PlanningDay } from "./coworking/api";
-import { HomeShortcuts, longDate } from "./launchpad";
+import { longDate } from "./launchpad";
 
 import type { Dashboard, Granularity } from "../lib/dashboard";
 
@@ -72,7 +72,7 @@ function Chart({ series, granularity, today }: { series: { bucket: string; total
 }
 
 export function DashboardPage() {
-  usePage(["Accueil"]);
+  usePage(["Tableau de bord"]);
   const { session, can } = useSession();
   const queue = useActionQueue();
   const [granularity, setGranularity] = useState<Granularity>("day");
@@ -142,20 +142,22 @@ export function DashboardPage() {
         </div>
         <div className="dashboard-header-actions">
           <span className="launch-date">{longDate()}</span>
+          <Link className="btn" to="/raccourcis">
+            Mes raccourcis
+          </Link>
           <button type="button" className="btn btn-g" onClick={refresh}>
             Actualiser
           </button>
         </div>
       </header>
       <ErrorBanner error={queue.error ?? data.error ?? coworking.error} retry={refresh} />
-      {session ? <HomeShortcuts userId={session.user.id} /> : null}
       <section className="dashboard-kpis" aria-label="Indicateurs du centre" aria-busy={queue.busy}>
         {f ? (
           <>
             <Kpi
               label="Encaissé ce mois"
               value={<span className="num">{tnd(f.collectionsMonth)}</span>}
-              sub={`TND · ${tnd(f.collectionsToday)} TND aujourd’hui`}
+              sub={`TND · ${tnd(f.collectionsToday)} TND aujourd’hui${f.cafeMonth > 0 ? ` · dont café ${tnd(f.cafeMonth)} TND ce mois` : ""}`}
             />
             <Kpi
               label="Impayés"

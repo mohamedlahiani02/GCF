@@ -1,7 +1,7 @@
 import type { FastifyPluginAsync } from "fastify";
 import { z } from "zod";
 import { writeAudit } from "../audit.js";
-import { assertCafeOpen, cafeDay, cafeSettings, lockCafeTill, moveStock, nextSaleNumber } from "../domain/cafe.js";
+import { activeSupplier, assertCafeOpen, cafeDay, cafeSettings, lockCafeTill, moveStock, nextSaleNumber } from "../domain/cafe.js";
 import { recordFinancialEvents } from "../domain/financialEvents.js";
 import { centreClock } from "../domain/ledger.js";
 import { conflict, notFound, unprocessable } from "../errors.js";
@@ -16,6 +16,8 @@ const settingsBody = z
       .string()
       .trim()
       .regex(/^[A-Z0-9]{1,8}$/, "1 to 8 capital letters or digits"),
+    ticketPrinting: z.enum(["none", "browser", "thermal_58", "thermal_80"]),
+    purchasing: z.enum(["simple", "suppliers", "orders"]),
   })
   .strict();
 const productBody = z
@@ -29,7 +31,9 @@ const productBody = z
   .strict();
 const productPatch = productBody.partial().extend({ active: z.boolean().optional() }).strict();
 const stockBody = z.discriminatedUnion("kind", [
-  z.object({ kind: z.literal("purchase"), quantity, unitCost: millimes.nullable().optional(), reason: optionalText(500) }).strict(),
+  z
+    .object({ kind: z.literal("purchase"), quantity, unitCost: millimes.nullable().optional(), supplierId: uuid.optional(), reason: optionalText(500) })
+    .strict(),
   z.object({ kind: z.literal("loss"), quantity, reason }).strict(),
   z.object({ kind: z.literal("count"), counted: z.number().int().min(0).max(1_000_000), reason }).strict(),
 ]);
@@ -76,6 +80,8 @@ export const cafeRoutes: FastifyPluginAsync = async (app) => {
         opening_float: body.openingFloat,
         allow_negative_stock: body.allowNegativeStock,
         ticket_prefix: body.ticketPrefix,
+        ticket_printing: body.ticketPrinting,
+        purchasing: body.purchasing,
         updated_by: actor.userId,
         updated_at: new Date(),
       };
@@ -190,7 +196,14 @@ export const cafeRoutes: FastifyPluginAsync = async (app) => {
       if (!product.trackStock) throw unprocessable("stock_not_tracked", "this product has no stock to follow");
       const signed = body.kind === "purchase" ? body.quantity : body.kind === "loss" ? -body.quantity : body.counted - product.stockQuantity;
       if (signed === 0) throw unprocessable("no_difference", "the counted quantity is the quantity already recorded");
-      const { allowNegativeStock } = await cafeSettings(trx, actor.centreId);
+      const { allowNegativeStock, purchasing } = await cafeSettings(trx, actor.centreId);
+      let supplierId: string | null = null;
+      if (body.kind === "purchase") {
+        // The centre chose how it buys: a delivery may need a supplier, or only come from a purchase order.
+        if (purchasing === "orders") throw unprocessable("order_required", "deliveries are received from a purchase order");
+        if (purchasing === "suppliers" && !body.supplierId) throw unprocessable("supplier_required", "a delivery names its supplier");
+        if (body.supplierId) supplierId = (await activeSupplier(trx, actor.centreId, body.supplierId)).id;
+      }
       const quantityAfter = await moveStock(trx, {
         centreId: actor.centreId,
         productId: id,
@@ -198,6 +211,7 @@ export const cafeRoutes: FastifyPluginAsync = async (app) => {
         quantity: signed,
         unitCost: body.kind === "purchase" ? (body.unitCost ?? null) : null,
         reason: body.reason ?? null,
+        supplierId,
         userId: actor.userId,
         allowNegative: allowNegativeStock,
       });
@@ -222,7 +236,11 @@ export const cafeRoutes: FastifyPluginAsync = async (app) => {
       .selectFrom("cafe_stock_movements")
       .leftJoin("users", "users.id", "cafe_stock_movements.created_by")
       .leftJoin("cafe_sales", "cafe_sales.id", "cafe_stock_movements.sale_id")
+      .leftJoin("cafe_suppliers", "cafe_suppliers.id", "cafe_stock_movements.supplier_id")
+      .leftJoin("cafe_purchase_orders", "cafe_purchase_orders.id", "cafe_stock_movements.purchase_order_id")
       .select([
+        "cafe_suppliers.name as supplierName",
+        "cafe_purchase_orders.number as orderNumber",
         "cafe_stock_movements.id",
         "cafe_stock_movements.kind",
         "cafe_stock_movements.quantity",

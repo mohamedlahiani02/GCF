@@ -159,11 +159,31 @@
   body:has(.cafe-ticket) .modal {
     position: absolute;
     inset: 0 auto auto 0;
-    width: 72mm;
+    width: 180mm;
     box-shadow: none;
     border: 0;
   }
   body:has(.cafe-ticket) .modal .card-f .btn {
     display: none;
+  }
+}
+@media print {
+  body:has(.cafe-ticket-thermal_80) .modal {
+    width: 72mm;
+  }
+  body:has(.cafe-ticket-thermal_58) .modal {
+    width: 48mm;
+    font-size: 11px;
+  }
+}
+.cafe-order-line {
+  display: grid;
+  grid-template-columns: minmax(0, 2fr) minmax(0, 1fr) minmax(0, 1fr) auto;
+  gap: 12px;
+  align-items: end;
+}
+@media (max-width: 700px) {
+  .cafe-order-line {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
   }
 }

@@ -445,66 +445,7 @@
 .workspace-page .launch-heading {
   padding-block: 0 8px;
 }
-.shortcut-personalize {
-  position: relative;
-}
-.shortcut-personalize summary {
-  padding: 10px 14px;
-  min-height: 40px;
-  border: 1px solid var(--line2);
-  border-radius: 7px;
-  background: var(--surface);
-  cursor: pointer;
-}
-.shortcut-picker {
-  position: absolute;
-  inset-inline-end: 0;
-  top: calc(100% + 8px);
-  z-index: 20;
-  width: min(380px, calc(100vw - 40px));
-  max-height: 60vh;
-  overflow: auto;
-  overscroll-behavior: contain;
-  padding: 20px;
-  border: 1px solid var(--line2);
-  border-radius: 10px;
-  box-shadow: 0 8px 24px #1825361a;
-  background: var(--surface);
-}
-.shortcut-picker h3 {
-  font-size: 16px;
-}
-.shortcut-picker p {
-  font-size: 13px;
-  color: var(--muted);
-  margin-top: 6px;
-}
-.shortcut-picker fieldset {
-  padding: 12px 0;
-  margin: 12px 0 0;
-  border: 0;
-  border-top: 1px solid var(--line);
-}
-.shortcut-picker legend {
-  font-weight: 600;
-  padding-inline-end: 10px;
-}
-.shortcut-picker label {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  min-height: 40px;
-  cursor: pointer;
-}
-.shortcut-picker input {
-  width: 18px;
-  height: 18px;
-  accent-color: var(--accent);
-}
-.shortcut-picker label:has(:disabled) {
-  color: var(--muted);
-  cursor: default;
-}
+
 .launch-empty {
   padding: 32px;
   border: 1px dashed var(--line2);
@@ -772,14 +713,6 @@
   .workspace-trail a.workspace-return {
     width: 100%;
   }
-  .shortcut-picker {
-    position: fixed;
-    top: 15vh;
-    left: 16px;
-    right: 16px;
-    width: auto;
-    max-height: 70vh;
-  }
 }
 @media (prefers-reduced-motion: reduce) {
   .workspace-shell .navi,
@@ -805,62 +738,77 @@
   height: auto;
 }
 
-/* Home page: the user's shortcuts in one compact row above the indicators. */
-.home-shortcuts {
+/* Shortcuts page: tiles fill the row, so a short list never leaves a ragged grid. */
+.launch-actions .action-grid {
+  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+}
+.shortcut-editor {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 24px;
+  padding: 20px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--surface);
+}
+.shortcut-editor h3 {
+  margin: 0 0 12px;
+  font-size: 1rem;
+}
+.shortcut-order {
   display: flex;
   flex-direction: column;
-  gap: 12px;
-}
-.home-shortcuts-head {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: baseline;
-  justify-content: space-between;
-  gap: 8px 16px;
-}
-.home-shortcuts-head h2 {
-  margin: 0;
-  font-size: 1.05rem;
-}
-.home-shortcuts-grid {
-  display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 12px;
-}
-@media (max-width: 1100px) {
-  .home-shortcuts-grid {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-}
-@media (max-width: 540px) {
-  .home-shortcuts-grid {
-    gap: 8px;
-  }
-  .home-shortcuts-grid .action-tile {
-    min-height: 56px;
-    padding: 8px 10px;
-    font-size: 0.9rem;
-  }
-  .home-shortcuts-grid .action-icon {
-    width: 32px;
-    height: 32px;
-    flex-shrink: 0;
-  }
-}
-.home-shortcuts-grid .action-tile {
-  flex-direction: row;
-  align-items: center;
-  gap: 12px;
-  min-height: 64px;
-  padding: 12px 14px;
-}
-.home-shortcuts-grid .action-copy > span,
-.home-shortcuts-grid .action-arrow {
-  display: none;
-}
-.shortcut-personalize summary {
+  gap: 8px;
+  margin: 0 0 16px;
+  padding: 0;
   list-style: none;
 }
-.shortcut-personalize summary::-webkit-details-marker {
-  display: none;
+.shortcut-order li {
+  display: grid;
+  grid-template-columns: 24px 40px minmax(0, 1fr) auto auto auto;
+  gap: 8px;
+  align-items: center;
+  padding: 8px 10px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+}
+.shortcut-rank {
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+  text-align: center;
+}
+.shortcut-name {
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+.shortcut-order .btn-g {
+  min-width: 40px;
+  min-height: 40px;
+  justify-content: center;
+}
+.shortcut-add {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 0 0 16px;
+  padding: 0;
+  border: 0;
+}
+.shortcut-add legend {
+  margin-bottom: 8px;
+  padding: 0;
+  color: var(--muted);
+  font-size: 0.85rem;
+  font-weight: 600;
+}
+@media (max-width: 900px) {
+  .shortcut-editor {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .shortcut-order li {
+    grid-template-columns: 24px minmax(0, 1fr) auto auto auto;
+  }
+  .shortcut-order .action-icon {
+    display: none;
+  }
 }

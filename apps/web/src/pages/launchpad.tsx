@@ -1,5 +1,7 @@
+import { useMutation } from "@tanstack/react-query";
 import { useState } from "react";
 import { Link, useParams, useSearchParams } from "react-router";
+import { api } from "../api/client";
 import { useSession } from "../auth/session";
 import { NavIcon } from "../components/nav-icon";
 import { useCollect, usePage, useWalkIn } from "../components/shell";
@@ -39,52 +41,26 @@ function ActionTile({ item }: { item: WorkspaceAction }) {
   );
 }
 
-const storageKeyOf = (userId: string) => `gcf.shortcuts.v1.${userId}`;
 export const longDate = () => new Intl.DateTimeFormat("fr-TN", { weekday: "long", day: "numeric", month: "long" }).format(new Date());
 
-/** The shortcuts a user may see, and the ones they chose (or the advised ones while they chose nothing). */
-function shortcutChoice(userId: string, can: (permission: string) => boolean) {
-  const available = ACTIONS.filter((i) => permitted(i.permission, can));
-  const defaults = DEFAULT_SHORTCUTS.filter((id) => available.some((i) => i.id === id));
-  const fallback = defaults.length ? defaults : available.slice(0, 8).map((i) => i.id);
-  let ids = fallback;
+const MAX_SHORTCUTS = 12;
+
+/** Shortcuts chosen in this browser before they were saved on the account; read once, as a starting point. */
+function legacyShortcuts(userId: string): string[] | null {
   try {
-    const saved: unknown = JSON.parse(localStorage.getItem(storageKeyOf(userId)) ?? "null");
-    if (Array.isArray(saved) && saved.every((id) => typeof id === "string")) ids = [...new Set(saved as string[])].slice(0, 8);
+    const saved: unknown = JSON.parse(localStorage.getItem(`gcf.shortcuts.v1.${userId}`) ?? "null");
+    return Array.isArray(saved) && saved.every((id) => typeof id === "string") ? (saved as string[]) : null;
   } catch {
-    /* Storage unavailable: keep the advised shortcuts for this visit. */
+    return null;
   }
-  return { available, fallback, ids };
 }
 
-/** The user's shortcuts on the home page, in a compact row; the full page lets them choose and search. */
-export function HomeShortcuts({ userId }: { userId: string }) {
-  const { can } = useSession();
-  const { available, ids } = shortcutChoice(userId, can);
-  const selected = ids.map((id) => available.find((i) => i.id === id)).filter((i) => i !== undefined);
-  if (selected.length === 0) return null;
-  return (
-    <section className="home-shortcuts" aria-labelledby="home-shortcuts-title">
-      <div className="home-shortcuts-head">
-        <h2 id="home-shortcuts-title">Mes raccourcis</h2>
-        <Link to="/raccourcis">Toutes les actions et personnalisation</Link>
-      </div>
-      <div className="home-shortcuts-grid">
-        {selected.map((i) => (
-          <ActionTile key={i.id} item={i} />
-        ))}
-      </div>
-    </section>
-  );
-}
-
-function Shortcuts({ userId }: { userId: string }) {
-  const { can } = useSession();
-  const choice = shortcutChoice(userId, can);
-  const { available } = choice;
-  const defaults = choice.fallback;
-  const storageKey = storageKeyOf(userId);
-  const [ids, setIds] = useState<string[]>(choice.ids);
+function Shortcuts({ userId, saved }: { userId: string; saved: string[] | null }) {
+  const { can, refresh } = useSession();
+  const available = ACTIONS.filter((i) => permitted(i.permission, can));
+  const advised = DEFAULT_SHORTCUTS.filter((id) => available.some((i) => i.id === id)).slice(0, 8);
+  const [ids, setIds] = useState<string[]>(() => saved ?? legacyShortcuts(userId) ?? advised);
+  const [editing, setEditing] = useState(false);
   const [notice, setNotice] = useState("");
   const [params, setParams] = useSearchParams();
   const search = params.get("q") ?? "";
@@ -99,106 +75,143 @@ function Shortcuts({ userId }: { userId: string }) {
         ? workspace.items.filter((i) => permitted(i.permission, can))
         : available;
   const filtered = source.filter((i) => normalize(`${i.label} ${i.text}`).includes(normalize(search.trim())));
+  const save = useMutation({
+    mutationFn: (next: string[] | null) => api.put("/auth/shortcuts", { ids: next }),
+    onSuccess: async () => {
+      setNotice("Raccourcis enregistrés sur votre compte.");
+      await refresh();
+    },
+    onError: () => setNotice("Les raccourcis n'ont pas pu être enregistrés. Réessayez."),
+  });
   const update = (next: string[]) => {
     setIds(next);
-    try {
-      localStorage.setItem(storageKey, JSON.stringify(next));
-      setNotice("Raccourcis enregistrés pour ce navigateur.");
-    } catch {
-      setNotice("Raccourcis conservés pour cette visite. Le stockage du navigateur est indisponible.");
-    }
+    save.mutate(next);
+  };
+  const move = (index: number, by: -1 | 1) => {
+    const next = selected.map((i) => i.id);
+    const [moved] = next.splice(index, 1);
+    next.splice(index + by, 0, moved!);
+    update(next);
   };
   const visibleSpaces = WORKSPACES.filter((w) => w.items.some((i) => permitted(i.permission, can)));
+  const full = selected.length >= MAX_SHORTCUTS;
   return (
     <>
       <section className="launch-actions" aria-labelledby="shortcuts-title">
         <div className="launch-section-head">
           <div>
-            <h2 id="shortcuts-title">Mes raccourcis</h2>
-            <p>Vos actions courantes, à portée de main.</p>
+            <h2 id="shortcuts-title">{editing ? "Personnaliser mes raccourcis" : "Mes raccourcis"}</h2>
+            <p>
+              {editing
+                ? `Choisissez jusqu'à ${MAX_SHORTCUTS} actions et rangez-les dans l'ordre qui vous convient.`
+                : "Vos actions courantes, à portée de main."}
+            </p>
           </div>
-          <details
-            className="shortcut-personalize"
-            onKeyDown={(e) => {
-              if (e.key === "Escape") {
-                e.currentTarget.open = false;
-                e.currentTarget.querySelector("summary")?.focus();
-              }
-            }}
-          >
-            <summary>Personnaliser</summary>
-            <div className="shortcut-picker">
-              <h3>Choisir mes raccourcis</h3>
-              <p>Jusqu’à 8 actions sur votre accueil. Votre choix est conservé dans ce navigateur.</p>
-              <p role="status">{selected.length} raccourci(s) sélectionné(s) sur 8</p>
-              {visibleSpaces.map((w) => (
-                <fieldset key={w.id}>
-                  <legend>{w.label}</legend>
-                  {w.items
-                    .filter((i) => permitted(i.permission, can))
-                    .map((i) => (
-                      <label key={i.id}>
-                        <input
-                          type="checkbox"
-                          checked={ids.includes(i.id)}
-                          disabled={!ids.includes(i.id) && selected.length >= 8}
-                          onChange={(e) => update(e.target.checked ? [...selected.map((i) => i.id), i.id] : ids.filter((id) => id !== i.id))}
-                        />
-                        <span>{i.label}</span>
-                      </label>
-                    ))}
-                </fieldset>
-              ))}
-              <button type="button" className="btn" onClick={() => update(defaults)}>
+          <button type="button" className={editing ? "btn btn-p" : "btn"} aria-pressed={editing} onClick={() => setEditing(!editing)}>
+            {editing ? "Terminer" : "Personnaliser"}
+          </button>
+        </div>
+        <p className={editing ? "cap" : "visually-hidden"} role="status">
+          {notice || (search ? `${filtered.length} action(s) trouvée(s)` : "")}
+        </p>
+        {editing ? (
+          <div className="shortcut-editor">
+            <div>
+              <h3>Mes raccourcis, dans l'ordre</h3>
+              {selected.length === 0 ? <p className="cap">Aucun raccourci. Ajoutez une action depuis la liste.</p> : null}
+              <ol className="shortcut-order">
+                {selected.map((item, index) => (
+                  <li key={item.id}>
+                    <span className="shortcut-rank">{index + 1}</span>
+                    <span className="action-icon">
+                      <NavIcon d={item.icon} />
+                    </span>
+                    <span className="shortcut-name">{item.label}</span>
+                    <button type="button" className="btn btn-g" disabled={index === 0} aria-label={`Monter ${item.label}`} onClick={() => move(index, -1)}>
+                      ↑
+                    </button>
+                    <button
+                      type="button"
+                      className="btn btn-g"
+                      disabled={index === selected.length - 1}
+                      aria-label={`Descendre ${item.label}`}
+                      onClick={() => move(index, 1)}
+                    >
+                      ↓
+                    </button>
+                    <button type="button" className="btn btn-l" onClick={() => update(ids.filter((id) => id !== item.id))}>
+                      Retirer
+                    </button>
+                  </li>
+                ))}
+              </ol>
+              <button type="button" className="btn" onClick={() => update(advised)}>
                 Rétablir les raccourcis conseillés
               </button>
             </div>
-          </details>
-        </div>
-        <div className="launch-toolbar">
-          <div className="launch-filters" role="group" aria-label="Filtrer les raccourcis">
-            {[{ id: "favorites", label: "Mes raccourcis" }, ...visibleSpaces].map((s) => (
-              <button type="button" key={s.id} aria-pressed={scope === s.id} onClick={() => setParams({ espace: s.id })}>
-                {s.label}
-              </button>
-            ))}
-          </div>
-          <label className="action-search">
-            <NavIcon d={ICONS.search} />
-            <span className="visually-hidden">Trouver une action</span>
-            <input
-              type="search"
-              name="action"
-              autoComplete="off"
-              placeholder="Trouver une action…"
-              value={search}
-              onChange={(e) => setParams({ espace: scope, q: e.target.value }, { replace: true })}
-            />
-          </label>
-        </div>
-        <p className="visually-hidden" role="status">
-          {notice || (search ? `${filtered.length} action(s) trouvée(s)` : "")}
-        </p>
-        {filtered.length ? (
-          <div className="action-grid">
-            {filtered.map((i) => (
-              <ActionTile key={i.id} item={i} />
-            ))}
+            <div>
+              <h3>Ajouter une action</h3>
+              {full ? <p className="cap">{MAX_SHORTCUTS} raccourcis au maximum : retirez-en un pour en ajouter un autre.</p> : null}
+              {visibleSpaces.map((w) => {
+                const rest = w.items.filter((i) => permitted(i.permission, can) && !ids.includes(i.id));
+                return rest.length ? (
+                  <fieldset key={w.id} className="shortcut-add">
+                    <legend>{w.label}</legend>
+                    {rest.map((i) => (
+                      <button key={i.id} type="button" className="btn" disabled={full} onClick={() => update([...selected.map((s) => s.id), i.id])}>
+                        + {i.label}
+                      </button>
+                    ))}
+                  </fieldset>
+                ) : null;
+              })}
+            </div>
           </div>
         ) : (
-          <div className="launch-empty">
-            <h3>{search ? "Aucune action trouvée" : "Votre accueil vous ressemble"}</h3>
-            <p>
-              {search
-                ? "Essayez « groupe », « paie » ou le nom de l’action."
-                : "Ouvrez Personnaliser pour choisir vos raccourcis, ou explorez un espace ci-dessous."}
-            </p>
-            {search ? (
-              <button type="button" className="btn" onClick={() => setParams({ espace: scope })}>
-                Effacer la recherche
-              </button>
-            ) : null}
-          </div>
+          <>
+            <div className="launch-toolbar">
+              <div className="launch-filters" role="group" aria-label="Filtrer les raccourcis">
+                {[{ id: "favorites", label: "Mes raccourcis" }, ...visibleSpaces].map((s) => (
+                  <button type="button" key={s.id} aria-pressed={scope === s.id} onClick={() => setParams({ espace: s.id })}>
+                    {s.label}
+                  </button>
+                ))}
+              </div>
+              <label className="action-search">
+                <NavIcon d={ICONS.search} />
+                <span className="visually-hidden">Trouver une action</span>
+                <input
+                  type="search"
+                  name="action"
+                  autoComplete="off"
+                  placeholder="Trouver une action…"
+                  value={search}
+                  onChange={(e) => setParams({ espace: scope, q: e.target.value }, { replace: true })}
+                />
+              </label>
+            </div>
+            {filtered.length ? (
+              <div className="action-grid">
+                {filtered.map((i) => (
+                  <ActionTile key={i.id} item={i} />
+                ))}
+              </div>
+            ) : (
+              <div className="launch-empty">
+                <h3>{search ? "Aucune action trouvée" : "Aucun raccourci pour l'instant"}</h3>
+                <p>{search ? "Essayez « groupe », « paie » ou le nom de l’action." : "Choisissez vos actions courantes avec Personnaliser."}</p>
+                {search ? (
+                  <button type="button" className="btn" onClick={() => setParams({ espace: scope })}>
+                    Effacer la recherche
+                  </button>
+                ) : (
+                  <button type="button" className="btn btn-p" onClick={() => setEditing(true)}>
+                    Personnaliser
+                  </button>
+                )}
+              </div>
+            )}
+          </>
         )}
       </section>
       <section className="launch-spaces" aria-labelledby="spaces-title">
@@ -216,15 +229,7 @@ function Shortcuts({ userId }: { userId: string }) {
               </span>
               <span>
                 <strong>{w.label}</strong>
-                <span>
-                  {w.id === "training"
-                    ? "Élèves, groupes et séances"
-                    : w.id === "coworking"
-                      ? "Clients, réservations et espace"
-                      : w.id === "finance"
-                        ? "Encaissements, paie et suivi"
-                        : "Pages, médias et demandes"}
-                </span>
+                <span>{w.summary}</span>
               </span>
               <NavIcon d={ICONS.arrow} />
             </Link>
@@ -247,7 +252,7 @@ export function LaunchpadPage() {
         </div>
         <span className="launch-date">{longDate()}</span>
       </header>
-      {session ? <Shortcuts key={session.user.id} userId={session.user.id} /> : null}
+      {session ? <Shortcuts key={session.user.id} userId={session.user.id} saved={session.shortcuts} /> : null}
     </div>
   );
 }

@@ -112,13 +112,35 @@ describe("café sales", () => {
 
   it("sells below zero only when the centre allows negative stock", async () => {
     await h.call("PATCH", `/api/cafe/products/${service}`, admin, { active: true });
-    expect((await h.call("PUT", "/api/cafe/settings", secretariat, { openingFloat: 0, allowNegativeStock: true, ticketPrefix: "CAF" })).status).toBe(403);
-    await h.call("PUT", "/api/cafe/settings", admin, { openingFloat: 50000, allowNegativeStock: true, ticketPrefix: "BAR" });
+    expect(
+      (
+        await h.call("PUT", "/api/cafe/settings", secretariat, {
+          openingFloat: 0,
+          allowNegativeStock: true,
+          ticketPrefix: "CAF",
+          ticketPrinting: "none",
+          purchasing: "simple",
+        })
+      ).status,
+    ).toBe(403);
+    await h.call("PUT", "/api/cafe/settings", admin, {
+      openingFloat: 50000,
+      allowNegativeStock: true,
+      ticketPrefix: "BAR",
+      ticketPrinting: "thermal_80",
+      purchasing: "simple",
+    });
     const sale = await h.call("POST", "/api/cafe/sales", secretariat, { lines: [{ productId: service, quantity: 2 }], method: "card", expectedTotal: 3600 });
     expect(sale.status).toBe(201);
     expect(sale.body.number).toMatch(/^BAR-\d{4}-000002$/);
     expect(await stockOf(service)).toBe(-2);
-    await h.call("PUT", "/api/cafe/settings", admin, { openingFloat: 50000, allowNegativeStock: false, ticketPrefix: "CAF" });
+    await h.call("PUT", "/api/cafe/settings", admin, {
+      openingFloat: 50000,
+      allowNegativeStock: false,
+      ticketPrefix: "CAF",
+      ticketPrinting: "none",
+      purchasing: "simple",
+    });
   });
 
   it("cancels a sale with a reason, puts the stock back, and only lets authorised roles do it", async () => {
@@ -185,10 +207,110 @@ describe("café till", () => {
   });
 });
 
+describe("café takings in the centre's figures", () => {
+  const range = () => `from=${today}&to=${today}`;
+
+  it("adds the café to the revenue report and keeps its till apart in the collections report", async () => {
+    const revenue = (await h.call("GET", `/api/reports/revenue?${range()}`, accountant)).body;
+    expect(revenue.rows).toContainEqual({ offer: "Café : ventes au comptoir", invoiced: 12600, collected: 12600 });
+    const collections = (await h.call("GET", `/api/reports/collections?${range()}`, accountant)).body;
+    const cafe = collections.rows.filter((r: { till: string }) => r.till === "Café");
+    expect(cafe.reduce((sum: number, r: { total: number }) => sum + r.total, 0)).toBe(12600);
+    expect(collections.rows.filter((r: { till: string }) => r.till === "Centre")).toHaveLength(0);
+  });
+
+  it("reports the sales per product without the cancelled sale", async () => {
+    const report = (await h.call("GET", `/api/reports/cafe?${range()}`, accountant)).body;
+    expect(report.rows).toEqual([
+      { product: "Café express", quantity: 2, total: 5000 },
+      { product: "Eau 0,5 L", quantity: 4, total: 4000 },
+      { product: "Croissant", quantity: 2, total: 3600 },
+    ]);
+    expect((await h.call("GET", "/api/reports", accountant)).body.map((r: { name: string }) => r.name)).toContain("cafe");
+  });
+
+  it("counts the café in the dashboard takings and gives its share", async () => {
+    const dashboard = (await h.call("GET", "/api/dashboard", accountant)).body;
+    expect(dashboard.financial).toMatchObject({ collectionsToday: 12600, collectionsMonth: 12600, cafeToday: 12600, cafeMonth: 12600 });
+    expect(dashboard.financial.series.at(-1).total).toBe(12600);
+  });
+});
+
+describe("café purchasing, as each centre works", () => {
+  const settings = (purchasing: string) =>
+    h.call("PUT", "/api/cafe/settings", admin, { openingFloat: 50000, allowNegativeStock: false, ticketPrefix: "CAF", ticketPrinting: "none", purchasing });
+  let supplier: string;
+
+  it("asks for a supplier on a delivery once the centre follows its suppliers", async () => {
+    await settings("suppliers");
+    expect((await h.call("POST", `/api/cafe/products/${water}/stock`, admin, { kind: "purchase", quantity: 6 })).body.code).toBe("supplier_required");
+    expect((await h.call("POST", "/api/cafe/suppliers", secretariat, { name: "Eaux du Nord" })).status).toBe(403);
+    supplier = (await h.call("POST", "/api/cafe/suppliers", admin, { name: "Eaux du Nord", phone: "71 000 000" })).body.id;
+    expect((await h.call("POST", "/api/cafe/suppliers", admin, { name: "eaux du nord" })).status).toBe(409);
+    const delivery = await h.call("POST", `/api/cafe/products/${water}/stock`, admin, { kind: "purchase", quantity: 6, unitCost: 400, supplierId: supplier });
+    expect(delivery.body.stockQuantity).toBe(6);
+    const movements = (await h.call("GET", `/api/cafe/products/${water}/movements`, admin)).body;
+    expect(movements[0]).toMatchObject({ kind: "purchase", supplierName: "Eaux du Nord", orderNumber: null });
+  });
+
+  it("refuses purchase orders until the centre chooses them, then receives stock only through an order", async () => {
+    const lines = [{ productId: water, quantity: 24, unitCost: 380 }];
+    expect((await h.call("POST", "/api/cafe/purchase-orders", admin, { supplierId: supplier, lines })).body.code).toBe("orders_disabled");
+    await settings("orders");
+    expect((await h.call("POST", `/api/cafe/products/${water}/stock`, admin, { kind: "purchase", quantity: 1, supplierId: supplier })).body.code).toBe(
+      "order_required",
+    );
+    const untracked = await h.call("POST", "/api/cafe/purchase-orders", admin, {
+      supplierId: supplier,
+      lines: [{ productId: coffee, quantity: 1, unitCost: 100 }],
+    });
+    expect(untracked.body.code).toBe("stock_not_tracked");
+    const order = await h.call("POST", "/api/cafe/purchase-orders", admin, { supplierId: supplier, lines });
+    expect(order.body).toMatchObject({ status: "draft", total: 9120 });
+    expect(order.body.number).toMatch(/^BC-\d{4}-0001$/);
+    expect((await h.call("POST", `/api/cafe/purchase-orders/${order.body.id}/receive`, admin)).body.code).toBe("order_not_sent");
+    expect(await stockOf(water)).toBe(6);
+    expect((await h.call("POST", `/api/cafe/purchase-orders/${order.body.id}/send`, admin)).body.status).toBe("ordered");
+    expect((await h.call("POST", `/api/cafe/purchase-orders/${order.body.id}/receive`, admin)).body.status).toBe("received");
+    expect(await stockOf(water)).toBe(30);
+    expect((await h.call("POST", `/api/cafe/purchase-orders/${order.body.id}/receive`, admin)).body.code).toBe("order_not_sent");
+    expect((await h.call("POST", `/api/cafe/purchase-orders/${order.body.id}/cancel`, admin, { reason: "Erreur" })).body.code).toBe("order_closed");
+    const movements = (await h.call("GET", `/api/cafe/products/${water}/movements`, admin)).body;
+    expect(movements[0]).toMatchObject({ kind: "purchase", quantity: 24, unitCost: 380, supplierName: "Eaux du Nord", orderNumber: order.body.number });
+  });
+
+  it("cancels an order that was not received, and stops ordering from an archived supplier", async () => {
+    const order = await h.call("POST", "/api/cafe/purchase-orders", admin, { supplierId: supplier, lines: [{ productId: water, quantity: 5, unitCost: 380 }] });
+    expect((await h.call("POST", `/api/cafe/purchase-orders/${order.body.id}/cancel`, admin, { reason: "Commande en double" })).body.status).toBe("cancelled");
+    expect(await stockOf(water)).toBe(30);
+    await h.call("PATCH", `/api/cafe/suppliers/${supplier}`, admin, { active: false });
+    const refused = await h.call("POST", "/api/cafe/purchase-orders", admin, {
+      supplierId: supplier,
+      lines: [{ productId: water, quantity: 5, unitCost: 380 }],
+    });
+    expect(refused.body.code).toBe("supplier_inactive");
+    const list = (await h.call("GET", "/api/cafe/purchase-orders", accountant)).body;
+    expect(list.map((o: { status: string }) => o.status).sort()).toEqual(["cancelled", "received"]);
+    expect(list[0].lines).toHaveLength(1);
+  });
+});
+
 describe("café module", () => {
   it("is closed to a centre that did not subscribe to it", async () => {
     await h.setModules(["training"]);
     const again = await h.login("admin@cafe.tn");
     expect((await h.call("GET", "/api/cafe/products", again)).status).toBe(403);
+    expect((await h.call("GET", `/api/reports/cafe?from=${today}&to=${today}`, again)).status).toBe(403);
+    expect((await h.call("GET", "/api/reports", again)).body.map((r: { name: string }) => r.name)).not.toContain("cafe");
+  });
+
+  it("keeps each user's shortcuts in their order, on their account", async () => {
+    const again = await h.login("admin@cafe.tn");
+    expect((await h.call("GET", "/api/auth/session", again)).body.shortcuts).toBeNull();
+    expect((await h.call("PUT", "/api/auth/shortcuts", again, { ids: ["collect", "enrol", "collect"] })).status).toBe(400);
+    expect((await h.call("PUT", "/api/auth/shortcuts", again, { ids: ["planning", "collect"] })).status).toBe(200);
+    expect((await h.call("GET", "/api/auth/session", again)).body.shortcuts).toEqual(["planning", "collect"]);
+    expect((await h.call("GET", "/api/auth/session", await h.login("sec@cafe.tn"))).body.shortcuts).toBeNull();
+    expect((await h.call("PUT", "/api/auth/shortcuts", again, { ids: null })).body.shortcuts).toBeNull();
   });
 });

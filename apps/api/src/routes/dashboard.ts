@@ -4,6 +4,7 @@ import { sql } from "kysely";
 import { z } from "zod";
 import { can } from "../auth/permissions.js";
 import { groupAttendance } from "../domain/attendance.js";
+import { cafeTakings } from "../domain/cafe.js";
 import { centreClock, stateOf } from "../domain/ledger.js";
 import { openMinutes } from "../domain/reports.js";
 import { forbidden } from "../errors.js";
@@ -97,12 +98,18 @@ export const dashboardRoutes: FastifyPluginAsync = async (app) => {
         with buckets as (
           select generate_series(date_trunc(${unit}, ${today}::date) - (${BUCKETS[granularity] - 1} || ' ' || ${unit})::interval, date_trunc(${unit}, ${today}::date), ('1 ' || ${unit})::interval)::date as bucket
         )
-        select to_char(b.bucket, 'YYYY-MM-DD') as bucket, coalesce(sum(p.amount), 0)::bigint as total
+        select to_char(b.bucket, 'YYYY-MM-DD') as bucket, coalesce(sum(m.amount), 0)::bigint as total
         from buckets b
-        left join payments p on p.centre_id = ${centreId}
-          and p.status = 'valid' and coalesce(p.cheque_status, 'cashed') <> 'bounced'
-          and date_trunc(${unit}, (p.received_at at time zone ${timezone})::date)::date = b.bucket
+        left join (
+          select (p.received_at at time zone ${timezone})::date as day, p.amount
+          from payments p
+          where p.centre_id = ${centreId} and p.status = 'valid' and coalesce(p.cheque_status, 'cashed') <> 'bounced'
+          union all
+          select s.day, s.total from cafe_sales s where s.centre_id = ${centreId} and s.status = 'valid'
+        ) m on date_trunc(${unit}, m.day)::date = b.bucket
         group by b.bucket order by b.bucket`.execute(db);
+      const cafeToday = (await cafeTakings(db, centreId, today, today)).total;
+      const cafeMonth = (await cafeTakings(db, centreId, monthStart, today)).total;
       const payrollRow = await db
         .selectFrom("pay_items")
         .leftJoin(
@@ -124,8 +131,11 @@ export const dashboardRoutes: FastifyPluginAsync = async (app) => {
         .executeTakeFirstOrThrow();
       const payroll = { toValidate: Number(payrollRow.toValidate), toPay: Number(payrollRow.toPay) };
       result.financial = {
-        collectionsToday: await sumBetween(today, today),
-        collectionsMonth: await sumBetween(monthStart, today),
+        // Everything received, café included; the café share is given apart because its till is separate.
+        collectionsToday: (await sumBetween(today, today)) + cafeToday,
+        collectionsMonth: (await sumBetween(monthStart, today)) + cafeMonth,
+        cafeToday,
+        cafeMonth,
         unpaidTotal: overdue.reduce((s, o) => s + o.remaining, 0),
         unpaidPayers: new Set(overdue.map((o) => o.payerId)).size,
         postponedInstallments: states.filter((s) => s.postponementCount > 0).length,

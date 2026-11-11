@@ -50,6 +50,7 @@ export interface UsersTable {
   failed_login_count: Generated<number>;
   locked_until: ColumnType<Date | null, Date | string | null | undefined, Date | string | null>;
   last_login_at: ColumnType<Date | null, Date | string | null | undefined, Date | string | null>;
+  shortcuts: ColumnType<string[] | null, string[] | null | undefined, string[] | null>;
   created_at: Timestamp;
   updated_at: Timestamp;
 }

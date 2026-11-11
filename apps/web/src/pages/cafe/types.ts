@@ -15,6 +15,16 @@ export interface CafeSettings {
   openingFloat: number;
   allowNegativeStock: boolean;
   ticketPrefix: string;
+  ticketPrinting: "none" | "browser" | "thermal_58" | "thermal_80";
+  purchasing: "simple" | "suppliers" | "orders";
+}
+export interface CafeSupplier {
+  id: string;
+  name: string;
+  phone: string | null;
+  email: string | null;
+  note: string | null;
+  active: boolean;
 }
 export interface CafeSaleLine {
   productName: string;

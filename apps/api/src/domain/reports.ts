@@ -1,7 +1,8 @@
 import { addDays, isoWeekday, mulDivRound } from "@gcf/shared";
 import { sql, type Kysely } from "kysely";
-import type { Database } from "../db/types.js";
+import type { Database, Module } from "../db/types.js";
 import { groupAttendance } from "./attendance.js";
+import { cafeTakings } from "./cafe.js";
 import { centreClock, stateOf } from "./ledger.js";
 import type { ReportTable } from "./tableExport.js";
 
@@ -12,18 +13,21 @@ export interface ReportRange {
   to: string;
 }
 
-export type ReportName = "unpaid" | "revenue" | "collections" | "payroll" | "attendance" | "rooms";
+export type ReportName = "unpaid" | "revenue" | "collections" | "payroll" | "attendance" | "rooms" | "cafe";
 export type Audience = "operational" | "financial";
 
-export const REPORTS: Record<ReportName, { title: string; audiences: Audience[] }> = {
+/** A report tied to a module only exists for the centres that subscribed to it. */
+export const REPORTS: Record<ReportName, { title: string; audiences: Audience[]; module?: Module }> = {
   unpaid: { title: "Impayés et échéances reportées", audiences: ["operational", "financial"] },
-  revenue: { title: "Chiffre d'affaires par formation, cours particulier et location", audiences: ["financial"] },
-  collections: { title: "Encaissements par mode et par utilisateur", audiences: ["financial"] },
-  payroll: { title: "Paie par intervenant", audiences: ["financial"] },
+  revenue: { title: "Chiffre d'affaires par activité", audiences: ["financial"] },
+  collections: { title: "Encaissements par caisse, mode et utilisateur", audiences: ["financial"] },
+  payroll: { title: "Paie par prof / formateur", audiences: ["financial"] },
   attendance: { title: "Taux de présence par groupe", audiences: ["operational", "financial"] },
   rooms: { title: "Occupation et revenus des salles", audiences: ["operational", "financial"] },
+  cafe: { title: "Ventes du café par produit", audiences: ["financial"], module: "cafe" },
 };
 
+const CAFE_OFFER = "Café : ventes au comptoir";
 const subtitle = (range: ReportRange) => `Du ${range.from.split("-").reverse().join("/")} au ${range.to.split("-").reverse().join("/")}`;
 
 async function unpaid(db: Db, centreId: string, range: ReportRange): Promise<ReportTable> {
@@ -93,7 +97,18 @@ async function unpaid(db: Db, centreId: string, range: ReportRange): Promise<Rep
 
 async function revenue(db: Db, centreId: string, range: ReportRange): Promise<ReportTable> {
   const { timezone } = await centreClock(db, centreId);
-  const offer = sql<string>`coalesce('Cours particulier : ' || studies.name, 'Formation : ' || trainings.title, 'Location : ' || rooms.name)`;
+  // Every charge belongs to one activity; a coworking charge has no group and no room, so it is named by its kind.
+  const offer = sql<string>`coalesce(
+    'Cours particulier : ' || studies.name,
+    'Formation : ' || trainings.title,
+    'Location : ' || rooms.name,
+    case
+      when installments.cw_subscription_id is not null then 'Coworking : abonnements'
+      when installments.cw_pack_id is not null then 'Coworking : carnets'
+      when installments.member_id is not null then 'Coworking : réservations'
+    end,
+    'Autre'
+  )`;
   const base = db
     .selectFrom("installments")
     .leftJoin("enrolments", "enrolments.id", "installments.enrolment_id")
@@ -122,9 +137,16 @@ async function revenue(db: Db, centreId: string, range: ReportRange): Promise<Re
     .groupBy(offer)
     .execute();
   const offers = [...new Set([...invoiced.map((r) => r.offer), ...collected.map((r) => r.offer)])].sort((a, b) => a.localeCompare(b, "fr"));
+  // A counter sale is billed and collected at once.
+  const cafe = (await cafeTakings(db, centreId, range.from, range.to)).total;
+  if (cafe > 0) {
+    offers.push(CAFE_OFFER);
+    invoiced.push({ offer: CAFE_OFFER, total: cafe });
+    collected.push({ offer: CAFE_OFFER, total: cafe });
+  }
   return {
     title: REPORTS.revenue.title,
-    subtitle: `${subtitle(range)}. Facturé : échéances de la période, remises approuvées déduites. Encaissé : paiements reçus sur la période.`,
+    subtitle: `${subtitle(range)}. Facturé : échéances de la période, remises approuvées déduites. Encaissé : paiements reçus sur la période. Café : ventes valides.`,
     columns: [
       { key: "offer", label: "Offre", kind: "text" },
       { key: "invoiced", label: "Facturé (TND)", kind: "money" },
@@ -154,16 +176,66 @@ async function collections(db: Db, centreId: string, range: ReportRange): Promis
     .orderBy("users.full_name")
     .execute();
   const methods = { cash: "Espèces", transfer: "Virement", cheque: "Chèque", card: "Carte" } as const;
+  const cafeRows = await db
+    .selectFrom("cafe_sales")
+    .leftJoin("users", "users.id", "cafe_sales.created_by")
+    .select([
+      "cafe_sales.method",
+      "users.full_name as user",
+      sql<number>`count(*)::integer`.as("count"),
+      sql<number>`sum(cafe_sales.total)::bigint`.as("total"),
+    ])
+    .where("cafe_sales.centre_id", "=", centreId)
+    .where("cafe_sales.status", "=", "valid")
+    .where("cafe_sales.day", ">=", range.from)
+    .where("cafe_sales.day", "<=", range.to)
+    .groupBy(["cafe_sales.method", "users.full_name"])
+    .orderBy("cafe_sales.method")
+    .orderBy("users.full_name")
+    .execute();
   return {
     title: REPORTS.collections.title,
-    subtitle: `${subtitle(range)}. Paiements valides, chèques impayés exclus, remboursements déduits.`,
+    subtitle: `${subtitle(range)}. Paiements valides, chèques impayés exclus, remboursements déduits. La caisse du café est tenue à part.`,
     columns: [
+      { key: "till", label: "Caisse", kind: "text" },
       { key: "method", label: "Mode", kind: "text" },
       { key: "user", label: "Utilisateur", kind: "text" },
       { key: "count", label: "Opérations", kind: "number" },
       { key: "total", label: "Montant (TND)", kind: "money" },
     ],
-    rows: rows.map((r) => ({ method: methods[r.method], user: r.user ?? "", count: r.count, total: Number(r.total) })),
+    rows: [
+      ...rows.map((r) => ({ till: "Centre", method: methods[r.method], user: r.user ?? "", count: r.count, total: Number(r.total) })),
+      ...cafeRows.map((r) => ({ till: "Café", method: methods[r.method], user: r.user ?? "", count: r.count, total: Number(r.total) })),
+    ],
+  };
+}
+
+async function cafe(db: Db, centreId: string, range: ReportRange): Promise<ReportTable> {
+  const rows = await db
+    .selectFrom("cafe_sale_lines")
+    .innerJoin("cafe_sales", "cafe_sales.id", "cafe_sale_lines.sale_id")
+    .select([
+      "cafe_sale_lines.product_name as product",
+      sql<number>`sum(cafe_sale_lines.quantity)::integer`.as("quantity"),
+      sql<number>`sum(cafe_sale_lines.line_total)::bigint`.as("total"),
+    ])
+    .where("cafe_sales.centre_id", "=", centreId)
+    .where("cafe_sales.status", "=", "valid")
+    .where("cafe_sales.day", ">=", range.from)
+    .where("cafe_sales.day", "<=", range.to)
+    .groupBy("cafe_sale_lines.product_name")
+    .orderBy(sql`sum(cafe_sale_lines.line_total)`, "desc")
+    .orderBy("cafe_sale_lines.product_name")
+    .execute();
+  return {
+    title: REPORTS.cafe.title,
+    subtitle: `${subtitle(range)}. Ventes valides ; le nom est celui du produit au moment de la vente.`,
+    columns: [
+      { key: "product", label: "Produit", kind: "text" },
+      { key: "quantity", label: "Quantité vendue", kind: "number" },
+      { key: "total", label: "Ventes (TND)", kind: "money" },
+    ],
+    rows: rows.map((r) => ({ product: r.product, quantity: r.quantity, total: Number(r.total) })),
   };
 }
 
@@ -330,5 +402,7 @@ export async function buildReport(db: Db, name: ReportName, centreId: string, ra
       return attendance(db, centreId, range);
     case "rooms":
       return rooms(db, centreId, range);
+    case "cafe":
+      return cafe(db, centreId, range);
   }
 }

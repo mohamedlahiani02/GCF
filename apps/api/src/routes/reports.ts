@@ -18,7 +18,11 @@ export const reportRoutes: FastifyPluginAsync = async (app) => {
     const user = request.user;
     if (!user) throw forbidden();
     return Object.entries(REPORTS)
-      .filter(([, r]) => r.audiences.some((a) => can(user, a === "operational" ? "reports:operational" : "reports:financial")))
+      .filter(
+        ([, r]) =>
+          (!r.module || user.modules.includes(r.module)) &&
+          r.audiences.some((a) => can(user, a === "operational" ? "reports:operational" : "reports:financial")),
+      )
       .map(([name, r]) => ({ name, title: r.title }));
   });
 
@@ -29,7 +33,8 @@ export const reportRoutes: FastifyPluginAsync = async (app) => {
     const q = query.parse(request.query);
     if (q.to < q.from) throw unprocessable("invalid_range", "the end date cannot be before the start date");
     const allowed = REPORTS[name].audiences.some((a) => can(user, a === "operational" ? "reports:operational" : "reports:financial"));
-    if (!allowed) throw forbidden();
+    const report = REPORTS[name];
+    if (!allowed || (report.module && !user.modules.includes(report.module))) throw forbidden();
     const table = await buildReport(db, name, user.centreId, { from: q.from, to: q.to });
     if (q.format === "json") return table;
     await writeAudit(db, {

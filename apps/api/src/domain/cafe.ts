@@ -1,6 +1,6 @@
 import { sql, type Kysely, type Transaction } from "kysely";
 import type { Database } from "../db/types.js";
-import type { CafeSaleMethod, CafeStockMovementKind } from "../db/types.cafe.js";
+import type { CafePurchasing, CafeSaleMethod, CafeStockMovementKind, CafeTicketPrinting } from "../db/types.cafe.js";
 import { conflict, notFound, unprocessable } from "../errors.js";
 
 type Db = Kysely<Database> | Transaction<Database>;
@@ -9,16 +9,26 @@ export interface CafeSettings {
   openingFloat: number;
   allowNegativeStock: boolean;
   ticketPrefix: string;
+  /** Whether a ticket is printed after a sale, and on which paper. */
+  ticketPrinting: CafeTicketPrinting;
+  /** How stock is bought: plain deliveries, deliveries tied to a supplier, or purchase orders. */
+  purchasing: CafePurchasing;
 }
 
 /** The centre's café settings; a centre that never saved them runs on the defaults of the schema. */
 export async function cafeSettings(db: Db, centreId: string): Promise<CafeSettings> {
   const row = await db
     .selectFrom("cafe_settings")
-    .select(["opening_float as openingFloat", "allow_negative_stock as allowNegativeStock", "ticket_prefix as ticketPrefix"])
+    .select([
+      "opening_float as openingFloat",
+      "allow_negative_stock as allowNegativeStock",
+      "ticket_prefix as ticketPrefix",
+      "ticket_printing as ticketPrinting",
+      "purchasing",
+    ])
     .where("centre_id", "=", centreId)
     .executeTakeFirst();
-  return row ?? { openingFloat: 0, allowNegativeStock: false, ticketPrefix: "CAF" };
+  return row ?? { openingFloat: 0, allowNegativeStock: false, ticketPrefix: "CAF", ticketPrinting: "none", purchasing: "simple" };
 }
 
 /** Once the café till is closed for a day, that day's sales can no longer be added or cancelled. */
@@ -44,6 +54,8 @@ export interface StockChange {
   unitCost?: number | null;
   reason?: string | null;
   saleId?: string | null;
+  supplierId?: string | null;
+  purchaseOrderId?: string | null;
   userId: string;
   allowNegative: boolean;
 }
@@ -81,6 +93,8 @@ export async function moveStock(trx: Transaction<Database>, change: StockChange)
       unit_cost: change.unitCost ?? null,
       reason: change.reason ?? null,
       sale_id: change.saleId ?? null,
+      supplier_id: change.supplierId ?? null,
+      purchase_order_id: change.purchaseOrderId ?? null,
       created_by: change.userId,
     })
     .execute();
@@ -155,4 +169,43 @@ export async function cafeDay(db: Db, centreId: string, day: string, openingFloa
     openingFloat,
     expectedCash: openingFloat + totals.cash,
   };
+}
+
+/** Valid café sales between two local days, both included. A sale is money received the moment it is recorded. */
+export async function cafeTakings(db: Db, centreId: string, from: string, to: string): Promise<Record<CafeSaleMethod, number> & { total: number }> {
+  const rows = await db
+    .selectFrom("cafe_sales")
+    .select(["method", sql<number>`sum(total)::bigint`.as("total")])
+    .where("centre_id", "=", centreId)
+    .where("status", "=", "valid")
+    .where("day", ">=", from)
+    .where("day", "<=", to)
+    .groupBy("method")
+    .execute();
+  const totals = { cash: 0, card: 0 };
+  for (const r of rows) totals[r.method] = Number(r.total);
+  return { ...totals, total: totals.cash + totals.card };
+}
+
+/** A supplier of the centre that is still in use; an archived supplier cannot receive new deliveries or orders. */
+export async function activeSupplier(db: Db, centreId: string, supplierId: string): Promise<{ id: string; name: string }> {
+  const supplier = await db
+    .selectFrom("cafe_suppliers")
+    .select(["id", "name", "active"])
+    .where("id", "=", supplierId)
+    .where("centre_id", "=", centreId)
+    .executeTakeFirst();
+  if (!supplier) throw notFound("supplier");
+  if (!supplier.active) throw unprocessable("supplier_inactive", `${supplier.name} is archived`);
+  return supplier;
+}
+
+export async function nextOrderNumber(trx: Transaction<Database>, centreId: string, year: number): Promise<string> {
+  const row = await trx
+    .insertInto("cafe_order_counters")
+    .values({ centre_id: centreId, year, last_number: 1 })
+    .onConflict((oc) => oc.columns(["centre_id", "year"]).doUpdateSet({ last_number: sql<number>`cafe_order_counters.last_number + 1` }))
+    .returning("last_number as lastNumber")
+    .executeTakeFirstOrThrow();
+  return `BC-${year}-${String(row.lastNumber).padStart(4, "0")}`;
 }

@@ -20,6 +20,7 @@ import { auditRoutes } from "./routes/audit.js";
 import { automationRoutes } from "./routes/automations.js";
 import { authRoutes } from "./routes/auth.js";
 import { cafeRoutes } from "./routes/cafe.js";
+import { cafePurchasingRoutes } from "./routes/cafePurchasing.js";
 import { cashRoutes } from "./routes/cash.js";
 import { catalogueRoutes } from "./routes/catalogue.js";
 import { centreRoutes } from "./routes/centre.js";
@@ -218,6 +219,7 @@ export async function buildApp(options: AppOptions): Promise<FastifyInstance> {
   await app.register(rentalRoutes, { prefix: "/api" });
   await app.register(cashRoutes, { prefix: "/api/cash" });
   await app.register(cafeRoutes, { prefix: "/api/cafe" });
+  await app.register(cafePurchasingRoutes, { prefix: "/api/cafe" });
   await app.register(reportRoutes, { prefix: "/api/reports" });
   await app.register(dashboardRoutes, { prefix: "/api/dashboard" });
   await app.register(searchRoutes, { prefix: "/api/search" });

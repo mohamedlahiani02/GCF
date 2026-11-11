@@ -4,8 +4,9 @@ import { api } from "../../api/client";
 import { useSession } from "../../auth/session";
 import { usePage } from "../../components/shell";
 import { useToast } from "../../components/toasts";
-import { Badge, Card, Empty, ErrorBanner, Field, Loading, Modal, PageHeader, Segmented } from "../../components/ui";
+import { Badge, Card, Empty, ErrorBanner, Field, Loading, Modal, PageHeader, Segmented, Tabs } from "../../components/ui";
 import { frDateTime, tnd, tryParseTnd } from "../../lib/format";
+import { OrdersPanel, SuppliersPanel, useSuppliers } from "./purchasing";
 import { isLow, type CafeProduct, type CafeSettings } from "./types";
 
 type StockKind = "purchase" | "loss" | "count";
@@ -18,6 +19,8 @@ interface Movement {
   reason: string | null;
   createdAt: string;
   saleNumber: string | null;
+  supplierName: string | null;
+  orderNumber: string | null;
   createdBy: string | null;
 }
 const KIND: Record<Movement["kind"], string> = {
@@ -104,10 +107,13 @@ function ProductModal({ product, onClose }: { product: CafeProduct | null; onClo
   );
 }
 
-function StockModal({ product, onClose }: { product: CafeProduct; onClose: () => void }) {
+function StockModal({ product, purchasing, onClose }: { product: CafeProduct; purchasing: CafeSettings["purchasing"]; onClose: () => void }) {
   const client = useQueryClient();
   const toast = useToast();
-  const [kind, setKind] = useState<StockKind>("purchase");
+  const byOrder = purchasing === "orders";
+  const suppliers = useSuppliers(purchasing === "suppliers");
+  const [kind, setKind] = useState<StockKind>(byOrder ? "count" : "purchase");
+  const [supplierId, setSupplierId] = useState("");
   const [quantityText, setQuantityText] = useState("");
   const [costText, setCostText] = useState("");
   const [reason, setReason] = useState("");
@@ -123,15 +129,18 @@ function StockModal({ product, onClose }: { product: CafeProduct; onClose: () =>
         ? "Le stock compté est déjà le stock enregistré."
         : needsReason && !reason.trim()
           ? "Le motif est obligatoire."
-          : costText.trim() !== "" && cost === null
-            ? "Le coût unitaire est invalide."
-            : null;
+          : kind === "purchase" && purchasing === "suppliers" && !supplierId
+            ? "Choisissez le fournisseur de cette réception."
+            : costText.trim() !== "" && cost === null
+              ? "Le coût unitaire est invalide."
+              : null;
   const save = useMutation({
     mutationFn: () =>
       api.post(`/cafe/products/${product.id}/stock`, {
         kind,
         ...(kind === "count" ? { counted: quantity } : { quantity }),
         ...(kind === "purchase" && cost !== null ? { unitCost: cost } : {}),
+        ...(kind === "purchase" && supplierId ? { supplierId } : {}),
         ...(reason.trim() ? { reason: reason.trim() } : {}),
       }),
     onSuccess: async () => {
@@ -164,7 +173,7 @@ function StockModal({ product, onClose }: { product: CafeProduct; onClose: () =>
         value={kind}
         onChange={setKind}
         options={[
-          { value: "purchase", label: "Réception" },
+          { value: "purchase", label: "Réception", disabled: byOrder },
           { value: "loss", label: "Perte" },
           { value: "count", label: "Inventaire" },
         ]}
@@ -217,7 +226,11 @@ function HistoryModal({ product, onClose }: { product: CafeProduct; onClose: () 
                   <td>{KIND[m.kind]}</td>
                   <td className="num">{m.quantity > 0 ? `+${m.quantity}` : m.quantity}</td>
                   <td className="num">{m.quantityAfter}</td>
-                  <td>{m.saleNumber ?? m.reason ?? (m.unitCost !== null ? `${tnd(m.unitCost)} TND l'unité` : "")}</td>
+                  <td>
+                    {[m.saleNumber, m.orderNumber, m.supplierName, m.unitCost !== null ? `${tnd(m.unitCost)} TND l'unité` : null, m.reason]
+                      .filter(Boolean)
+                      .join(" · ")}
+                  </td>
                   <td>{m.createdBy}</td>
                 </tr>
               ))}
@@ -237,10 +250,12 @@ function SettingsModal({ settings, onClose }: { settings: CafeSettings; onClose:
   const [floatText, setFloatText] = useState(tnd(settings.openingFloat));
   const [allowNegative, setAllowNegative] = useState(settings.allowNegativeStock);
   const [prefix, setPrefix] = useState(settings.ticketPrefix);
+  const [ticketPrinting, setTicketPrinting] = useState(settings.ticketPrinting);
+  const [purchasing, setPurchasing] = useState(settings.purchasing);
   const openingFloat = tryParseTnd(floatText);
   const prefixOk = /^[A-Z0-9]{1,8}$/.test(prefix);
   const save = useMutation({
-    mutationFn: () => api.put("/cafe/settings", { openingFloat, allowNegativeStock: allowNegative, ticketPrefix: prefix }),
+    mutationFn: () => api.put("/cafe/settings", { openingFloat, allowNegativeStock: allowNegative, ticketPrefix: prefix, ticketPrinting, purchasing }),
     onSuccess: async () => {
       await client.invalidateQueries({ queryKey: ["cafe-settings"] });
       await client.invalidateQueries({ queryKey: ["cafe-journal"] });
@@ -278,6 +293,23 @@ function SettingsModal({ settings, onClose }: { settings: CafeSettings; onClose:
           <input className="input" value={prefix} maxLength={8} onChange={(e) => setPrefix(e.target.value.toUpperCase())} />
         </Field>
       </div>
+      <div className="grid2">
+        <Field label="Impression du ticket" hint="Sans imprimante, la vente affiche seulement la monnaie à rendre.">
+          <select className="input" value={ticketPrinting} onChange={(e) => setTicketPrinting(e.target.value as CafeSettings["ticketPrinting"])}>
+            <option value="none">Pas d'impression</option>
+            <option value="browser">Imprimante de bureau (A4)</option>
+            <option value="thermal_80">Imprimante à tickets 80 mm</option>
+            <option value="thermal_58">Imprimante à tickets 58 mm</option>
+          </select>
+        </Field>
+        <Field label="Achats" hint="Comment le café enregistre ce qu'il achète.">
+          <select className="input" value={purchasing} onChange={(e) => setPurchasing(e.target.value as CafeSettings["purchasing"])}>
+            <option value="simple">Réception simple, sans fournisseur</option>
+            <option value="suppliers">Réception avec fournisseur</option>
+            <option value="orders">Bons de commande puis réception</option>
+          </select>
+        </Field>
+      </div>
       <label className="row center" style={{ gap: 8 }}>
         <input type="checkbox" className="chk" checked={allowNegative} onChange={(e) => setAllowNegative(e.target.checked)} />
         Autoriser la vente d'un produit en rupture de stock
@@ -298,6 +330,7 @@ export function CafeStockPage() {
   const [stock, setStock] = useState<CafeProduct | null>(null);
   const [history, setHistory] = useState<CafeProduct | null>(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [tab, setTab] = useState<"products" | "suppliers" | "orders">("products");
   const products = useQuery({ queryKey: ["cafe-products", "all"], queryFn: () => api.get<CafeProduct[]>("/cafe/products", { all: "true" }) });
   const settings = useQuery({ queryKey: ["cafe-settings"], queryFn: () => api.get<CafeSettings>("/cafe/settings") });
   const toggle = useMutation({
@@ -307,6 +340,13 @@ export function CafeStockPage() {
   const all = products.data ?? [];
   const shown = showInactive ? all : all.filter((p) => p.active);
   const low = all.filter((p) => p.active && isLow(p));
+  const purchasing = settings.data?.purchasing ?? "simple";
+  const tabs = [
+    { value: "products" as const, label: "Produits" },
+    ...(purchasing !== "simple" ? [{ value: "suppliers" as const, label: "Fournisseurs" }] : []),
+    ...(purchasing === "orders" ? [{ value: "orders" as const, label: "Bons de commande" }] : []),
+  ];
+  const shownTab = tabs.some((t) => t.value === tab) ? tab : "products";
   return (
     <>
       <PageHeader
@@ -331,89 +371,94 @@ export function CafeStockPage() {
           Stock bas : {low.map((p) => `${p.name} (${p.stockQuantity})`).join(", ")}.
         </div>
       ) : null}
-      <Card
-        title="Produits"
-        actions={
-          all.some((p) => !p.active) ? (
-            <label className="row center cap" style={{ gap: 6 }}>
-              <input type="checkbox" className="chk" checked={showInactive} onChange={(e) => setShowInactive(e.target.checked)} />
-              Afficher les produits retirés
-            </label>
-          ) : undefined
-        }
-      >
-        {products.isPending ? (
-          <Loading />
-        ) : shown.length === 0 ? (
-          <Empty
-            title="Aucun produit"
-            text={manage ? "Créez votre premier produit pour ouvrir la vente au comptoir." : "Un administrateur doit créer les produits du café."}
-          />
-        ) : (
-          <div className="xs">
-            <table className="tbl">
-              <thead>
-                <tr>
-                  <th>Produit</th>
-                  <th>Catégorie</th>
-                  <th className="num">Prix (TND)</th>
-                  <th className="num">Stock</th>
-                  <th>
-                    <span className="visually-hidden">Actions</span>
-                  </th>
-                </tr>
-              </thead>
-              <tbody>
-                {shown.map((p) => (
-                  <tr key={p.id} className={p.active ? undefined : "void"}>
-                    <td>
-                      {p.name} {p.active ? null : <Badge tone="gray">Retiré</Badge>}
-                    </td>
-                    <td>{p.category}</td>
-                    <td className="num">{tnd(p.price)}</td>
-                    <td className="num">
-                      {p.trackStock ? (
-                        <>
-                          {p.stockQuantity}{" "}
-                          {isLow(p) ? <Badge tone={p.stockQuantity <= 0 ? "red" : "amber"}>{p.stockQuantity <= 0 ? "Rupture" : "Bas"}</Badge> : null}
-                        </>
-                      ) : (
-                        <span className="cap">Non suivi</span>
-                      )}
-                    </td>
-                    <td>
-                      <div className="row" style={{ gap: 8, justifyContent: "flex-end", flexWrap: "wrap" }}>
-                        {manage && p.trackStock && p.active ? (
-                          <button type="button" className="btn" onClick={() => setStock(p)}>
-                            Mettre à jour le stock
-                          </button>
-                        ) : null}
-                        {p.trackStock ? (
-                          <button type="button" className="btn btn-l" onClick={() => setHistory(p)}>
-                            Mouvements
-                          </button>
-                        ) : null}
-                        {manage ? (
-                          <>
-                            <button type="button" className="btn btn-l" onClick={() => setEditing(p)}>
-                              Modifier
-                            </button>
-                            <button type="button" className="btn btn-l" disabled={toggle.isPending} onClick={() => toggle.mutate(p)}>
-                              {p.active ? "Retirer de la vente" : "Remettre en vente"}
-                            </button>
-                          </>
-                        ) : null}
-                      </div>
-                    </td>
+      {tabs.length > 1 ? <Tabs value={shownTab} onChange={setTab} tabs={tabs} /> : null}
+      {shownTab === "suppliers" ? <SuppliersPanel manage={manage} /> : null}
+      {shownTab === "orders" ? <OrdersPanel manage={manage} products={all} /> : null}
+      {shownTab === "products" ? (
+        <Card
+          title="Produits"
+          actions={
+            all.some((p) => !p.active) ? (
+              <label className="row center cap" style={{ gap: 6 }}>
+                <input type="checkbox" className="chk" checked={showInactive} onChange={(e) => setShowInactive(e.target.checked)} />
+                Afficher les produits retirés
+              </label>
+            ) : undefined
+          }
+        >
+          {products.isPending ? (
+            <Loading />
+          ) : shown.length === 0 ? (
+            <Empty
+              title="Aucun produit"
+              text={manage ? "Créez votre premier produit pour ouvrir la vente au comptoir." : "Un administrateur doit créer les produits du café."}
+            />
+          ) : (
+            <div className="xs">
+              <table className="tbl">
+                <thead>
+                  <tr>
+                    <th>Produit</th>
+                    <th>Catégorie</th>
+                    <th className="num">Prix (TND)</th>
+                    <th className="num">Stock</th>
+                    <th>
+                      <span className="visually-hidden">Actions</span>
+                    </th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
-      </Card>
+                </thead>
+                <tbody>
+                  {shown.map((p) => (
+                    <tr key={p.id} className={p.active ? undefined : "void"}>
+                      <td>
+                        {p.name} {p.active ? null : <Badge tone="gray">Retiré</Badge>}
+                      </td>
+                      <td>{p.category}</td>
+                      <td className="num">{tnd(p.price)}</td>
+                      <td className="num">
+                        {p.trackStock ? (
+                          <>
+                            {p.stockQuantity}{" "}
+                            {isLow(p) ? <Badge tone={p.stockQuantity <= 0 ? "red" : "amber"}>{p.stockQuantity <= 0 ? "Rupture" : "Bas"}</Badge> : null}
+                          </>
+                        ) : (
+                          <span className="cap">Non suivi</span>
+                        )}
+                      </td>
+                      <td>
+                        <div className="row" style={{ gap: 8, justifyContent: "flex-end", flexWrap: "wrap" }}>
+                          {manage && p.trackStock && p.active ? (
+                            <button type="button" className="btn" onClick={() => setStock(p)}>
+                              Mettre à jour le stock
+                            </button>
+                          ) : null}
+                          {p.trackStock ? (
+                            <button type="button" className="btn btn-l" onClick={() => setHistory(p)}>
+                              Mouvements
+                            </button>
+                          ) : null}
+                          {manage ? (
+                            <>
+                              <button type="button" className="btn btn-l" onClick={() => setEditing(p)}>
+                                Modifier
+                              </button>
+                              <button type="button" className="btn btn-l" disabled={toggle.isPending} onClick={() => toggle.mutate(p)}>
+                                {p.active ? "Retirer de la vente" : "Remettre en vente"}
+                              </button>
+                            </>
+                          ) : null}
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </Card>
+      ) : null}
       {editing ? <ProductModal product={editing === "new" ? null : editing} onClose={() => setEditing(null)} /> : null}
-      {stock ? <StockModal product={stock} onClose={() => setStock(null)} /> : null}
+      {stock ? <StockModal product={stock} purchasing={purchasing} onClose={() => setStock(null)} /> : null}
       {history ? <HistoryModal product={history} onClose={() => setHistory(null)} /> : null}
       {settingsOpen && settings.data ? <SettingsModal settings={settings.data} onClose={() => setSettingsOpen(false)} /> : null}
     </>

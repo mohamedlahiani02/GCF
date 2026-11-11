@@ -94,6 +94,8 @@ export interface Workspace {
   label: string;
   title: string;
   text: string;
+  /** A few words under the workspace name on the shortcuts page. */
+  summary: string;
   icon: string;
   items: WorkspaceAction[];
 }
@@ -109,6 +111,7 @@ export const WORKSPACES: Workspace[] = [
     label: "Formation et cours",
     title: "Formation et cours particuliers",
     text: "Inscriptions, groupes et séances : tout pour accompagner vos élèves.",
+    summary: "Élèves, groupes et séances",
     icon: ICONS.trainings,
     items: [
       {
@@ -123,7 +126,7 @@ export const WORKSPACES: Workspace[] = [
       {
         id: "groups",
         to: "/groupes",
-        label: "Gérer les groupes",
+        label: "Voir les groupes",
         text: "Élèves, séances et prochaines dates",
         icon: ICONS.groups,
         permission: "catalogue:read",
@@ -132,8 +135,8 @@ export const WORKSPACES: Workspace[] = [
       {
         id: "attendance",
         to: "/presences",
-        label: "Saisir les présences",
-        text: "Ouvrir les feuilles de présence",
+        label: "Faire l'appel",
+        text: "Noter les présents et les absents",
         icon: ICONS.attendance,
         permission: "attendance:read",
         section: "Au quotidien",
@@ -159,7 +162,7 @@ export const WORKSPACES: Workspace[] = [
       {
         id: "students",
         to: "/eleves",
-        label: "Élèves",
+        label: "Trouver un élève",
         text: "Fiches, inscriptions et historique",
         icon: ICONS.students,
         permission: "students:read",
@@ -168,7 +171,7 @@ export const WORKSPACES: Workspace[] = [
       {
         id: "instructors",
         to: "/intervenants",
-        label: "Profs / Formateurs",
+        label: "Voir les profs / formateurs",
         text: "Coordonnées et groupes associés",
         icon: ICONS.instructors,
         permission: "instructors:read",
@@ -177,7 +180,7 @@ export const WORKSPACES: Workspace[] = [
       {
         id: "lessons",
         to: "/cours-particuliers",
-        label: "Cours particuliers",
+        label: "Régler les cours particuliers",
         text: "Matières, niveaux et tarifs",
         icon: ICONS.lessons,
         permission: "catalogue:read",
@@ -186,7 +189,7 @@ export const WORKSPACES: Workspace[] = [
       {
         id: "trainings",
         to: "/formations",
-        label: "Formations",
+        label: "Régler les formations",
         text: "Catalogue et formules de paiement",
         icon: ICONS.trainings,
         permission: "catalogue:read",
@@ -195,7 +198,7 @@ export const WORKSPACES: Workspace[] = [
       {
         id: "rooms",
         to: "/salles",
-        label: "Salles et locations",
+        label: "Voir les salles",
         also: ["/locations"],
         text: "Espaces disponibles et locations",
         icon: ICONS.rooms,
@@ -219,13 +222,14 @@ export const WORKSPACES: Workspace[] = [
     label: "Coworking",
     title: "Votre espace coworking",
     text: "Accueillir vos clients, organiser les réservations et suivre votre espace.",
+    summary: "Clients, réservations et espace",
     icon: ICONS.floorPlan,
     items: [
       {
         id: "live-plan",
         to: "/coworking",
-        label: "Ouvrir le plan en direct",
-        text: "Disponibilités et réservations",
+        label: "Voir les places libres",
+        text: "Le plan de l'espace, en direct",
         icon: ICONS.floorPlan,
         permission: "coworking:read",
         section: "Au quotidien",
@@ -244,7 +248,7 @@ export const WORKSPACES: Workspace[] = [
       {
         id: "requests",
         to: "/coworking/demandes",
-        label: "Demandes et inscriptions",
+        label: "Répondre aux demandes",
         text: "Valider les comptes et les réservations",
         icon: ICONS.inbox,
         permission: "coworking:write",
@@ -254,7 +258,7 @@ export const WORKSPACES: Workspace[] = [
       {
         id: "cw-planning",
         to: "/coworking/planning",
-        label: "Planning coworking",
+        label: "Voir les réservations",
         text: "Préparer les prochaines réservations",
         icon: ICONS.planning,
         permission: "coworking:read",
@@ -263,7 +267,7 @@ export const WORKSPACES: Workspace[] = [
       {
         id: "members",
         to: "/coworking/membres",
-        label: "Clients coworking",
+        label: "Trouver un client",
         text: "Fiches et historique des clients",
         icon: ICONS.members,
         permission: "coworking:read",
@@ -272,7 +276,7 @@ export const WORKSPACES: Workspace[] = [
       {
         id: "subscriptions",
         to: "/coworking/abonnements",
-        label: "Abonnements",
+        label: "Suivre les abonnements",
         text: "Contrats et renouvellements",
         icon: ICONS.receipts,
         permission: "coworking:read",
@@ -281,7 +285,7 @@ export const WORKSPACES: Workspace[] = [
       {
         id: "mail",
         to: "/coworking/courrier",
-        label: "Courrier reçu",
+        label: "Enregistrer un courrier",
         text: "Suivre le courrier des clients domiciliés",
         icon: ICONS.inbox,
         permission: "coworking:read",
@@ -290,7 +294,7 @@ export const WORKSPACES: Workspace[] = [
       {
         id: "cw-stats",
         to: "/coworking/statistiques",
-        label: "Statistiques coworking",
+        label: "Voir l'occupation",
         text: "Occupation et revenus de l’espace",
         icon: ICONS.stats,
         permission: "coworking:reports",
@@ -304,6 +308,7 @@ export const WORKSPACES: Workspace[] = [
     label: "Finances",
     title: "Finances",
     text: "Encaissements, paie et caisse, réunis dans un même espace.",
+    summary: "Encaissements, paie et suivi",
     icon: ICONS.payments,
     items: [
       {
@@ -319,8 +324,8 @@ export const WORKSPACES: Workspace[] = [
       {
         id: "payments",
         to: "/encaissements",
-        label: "Suivre les encaissements",
-        text: "Échéances, impayés et relances",
+        label: "Suivre les paiements",
+        text: "Paiements reçus, impayés et relances",
         icon: ICONS.cash,
         permission: "payments:read",
         section: "Au quotidien",
@@ -329,8 +334,8 @@ export const WORKSPACES: Workspace[] = [
         id: "payroll",
         to: "/paie",
         also: ["/paie/intervenants"],
-        label: "Régler une paie",
-        text: "Calculer et régler les profs / formateurs",
+        label: "Payer un prof / formateur",
+        text: "Calculer, vérifier et régler la paie",
         icon: ICONS.payroll,
         permission: "payroll:read",
         section: "Au quotidien",
@@ -338,8 +343,8 @@ export const WORKSPACES: Workspace[] = [
       {
         id: "cash",
         to: "/caisse",
-        label: "Gérer la caisse",
-        text: "Mouvements et clôture de caisse",
+        label: "Clôturer la caisse",
+        text: "Compter les espèces en fin de journée",
         icon: ICONS.cash,
         permission: "cash:read",
         section: "Au quotidien",
@@ -365,7 +370,7 @@ export const WORKSPACES: Workspace[] = [
       {
         id: "reports",
         to: "/rapports",
-        label: "Rapports et exports",
+        label: "Sortir un rapport",
         text: "Suivi opérationnel et financier",
         icon: ICONS.reports,
         permission: ["reports:operational", "reports:financial"],
@@ -379,12 +384,13 @@ export const WORKSPACES: Workspace[] = [
     label: "Café",
     title: "Café et point de vente",
     text: "Vendre au comptoir, suivre le stock et clôturer la caisse du café.",
+    summary: "Ventes, stock et caisse du café",
     icon: ICONS.cafe,
     items: [
       {
         id: "cafe-sell",
         to: "/cafe",
-        label: "Vendre au comptoir",
+        label: "Vendre au café",
         text: "Composer un ticket et l'encaisser",
         icon: ICONS.cafe,
         permission: "cafe:sell",
@@ -394,7 +400,7 @@ export const WORKSPACES: Workspace[] = [
       {
         id: "cafe-till",
         to: "/cafe/caisse",
-        label: "Caisse du café",
+        label: "Clôturer la caisse du café",
         text: "Ventes du jour, annulations et clôture",
         icon: ICONS.cash,
         permission: "cafe:read",
@@ -403,7 +409,7 @@ export const WORKSPACES: Workspace[] = [
       {
         id: "cafe-stock",
         to: "/cafe/produits",
-        label: "Produits et stock",
+        label: "Gérer le stock du café",
         text: "Prix, réceptions, pertes et inventaire",
         icon: ICONS.stock,
         permission: "cafe:read",
@@ -417,6 +423,7 @@ export const WORKSPACES: Workspace[] = [
     label: "Site web",
     title: "Votre site web",
     text: "Publier vos pages et retrouver les demandes envoyées depuis votre site.",
+    summary: "Pages, médias et demandes",
     icon: ICONS.pages,
     items: [
       {
@@ -433,7 +440,7 @@ export const WORKSPACES: Workspace[] = [
       {
         id: "leads",
         to: "/site/demandes",
-        label: "Demandes du site",
+        label: "Lire les demandes du site",
         text: "Retrouver les contacts et demandes",
         icon: ICONS.leads,
         permission: "website:leads",
@@ -442,7 +449,7 @@ export const WORKSPACES: Workspace[] = [
       {
         id: "media",
         to: "/site/medias",
-        label: "Médiathèque",
+        label: "Ajouter des images",
         text: "Images et documents à publier",
         icon: ICONS.media,
         permission: "website:edit",
@@ -453,7 +460,21 @@ export const WORKSPACES: Workspace[] = [
 ];
 
 export const ACTIONS = WORKSPACES.flatMap((w) => w.items);
-export const DEFAULT_SHORTCUTS = ["enrol", "groups", "attendance", "collect", "planning", "payroll", "live-plan", "requests"];
+/** Advised shortcuts, most frequent first; a user only sees those their role and modules allow. */
+export const DEFAULT_SHORTCUTS = [
+  "collect",
+  "enrol",
+  "attendance",
+  "planning",
+  "students",
+  "groups",
+  "walk-in",
+  "requests",
+  "cafe-sell",
+  "payroll",
+  "cash",
+  "leads",
+];
 
 export function actionActive(item: ActionLink, pathname: string): boolean {
   const under = (to: string) => pathname === to || pathname.startsWith(`${to}/`);

@@ -117,7 +117,13 @@ try {
 
   /** A small counter: products, a first delivery and a few sales of the day. */
   async function seedCafe(): Promise<void> {
-    await call("PUT", "/cafe/settings", { openingFloat: 50_000, allowNegativeStock: false, ticketPrefix: "CAF" });
+    await call("PUT", "/cafe/settings", {
+      openingFloat: 50_000,
+      allowNegativeStock: false,
+      ticketPrefix: "CAF",
+      ticketPrinting: "browser",
+      purchasing: "simple",
+    });
     const products: Record<string, string> = {};
     for (const [key, name, category, price, stock] of [
       ["express", "Café express", "Boissons chaudes", 2_500, null],
@@ -164,6 +170,14 @@ try {
       "cash",
       11_000,
     );
+    await call("POST", "/cafe/suppliers", { name: "Grossiste du Lac", phone: "71 000 000" });
+    await call("PUT", "/cafe/settings", {
+      openingFloat: 50_000,
+      allowNegativeStock: false,
+      ticketPrefix: "CAF",
+      ticketPrinting: "browser",
+      purchasing: "suppliers",
+    });
   }
 
   async function seedTraining(): Promise<void> {

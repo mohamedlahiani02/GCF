@@ -16,6 +16,8 @@ interface Session {
   permissions: string[];
   /** Modules the centre subscribed to; permissions of the other modules are never granted. */
   modules: Module[];
+  /** The user's own shortcuts in their order; null while they never chose. */
+  shortcuts: string[] | null;
 }
 
 interface SessionContextValue {
