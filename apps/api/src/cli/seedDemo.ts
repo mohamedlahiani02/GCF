@@ -194,10 +194,10 @@ try {
     const instructor = async (firstName: string, lastName: string, kind: "teacher" | "trainer", employment: string, subjectIds: string[]) =>
       (await call("POST", "/instructors", { firstName, lastName, kind, employment, subjectIds, availability: [] })).id;
     const people = {
-      sana: await instructor("Sana", "Ben Salah", "teacher", "contractor", [subjects.maths]),
-      ines: await instructor("Ines", "Gharbi", "teacher", "salaried", [subjects.french]),
-      hichem: await instructor("Hichem", "Jaziri", "teacher", "freelance", [subjects.english]),
-      karim: await instructor("Karim", "Trabelsi", "trainer", "freelance", []),
+      sana: await instructor("Sana", "Valmont", "teacher", "contractor", [subjects.maths]),
+      ines: await instructor("Inès", "Aurelle", "teacher", "salaried", [subjects.french]),
+      hichem: await instructor("Hichem", "Davaran", "teacher", "freelance", [subjects.english]),
+      karim: await instructor("Karim", "Norvane", "trainer", "freelance", []),
       leila: await instructor("Leila", "Mansour", "trainer", "contractor", []),
     };
 
@@ -299,20 +299,20 @@ try {
       (await call("POST", "/students", { firstName, lastName, ...extra })).id;
     const minor = (guardianName: string, guardianPhone: string) => ({ isMinor: true, guardianName, guardianPhone });
     const pupils = {
-      amira: await student("Amira", "Chebbi", minor("Mourad Chebbi", "22 334 455")),
-      omar: await student("Omar", "Ayadi", minor("Faten Ayadi", "98 112 233")),
-      yasmine: await student("Yasmine", "Karray", minor("Nabil Karray", "55 667 788")),
-      youssef: await student("Youssef", "Mejri", minor("Hela Mejri", "20 445 566")),
-      mariem: await student("Mariem", "Sellami", minor("Ridha Sellami", "29 778 899")),
-      aziz: await student("Aziz", "Haddad", minor("Samia Haddad", "24 556 677")),
-      eya: await student("Eya", "Zouari", minor("Kamel Zouari", "50 223 344")),
-      rayen: await student("Rayen", "Bouzid", minor("Olfa Bouzid", "92 334 112")),
-      salma: await student("Salma", "Trabelsi", { phone: "21 998 877" }),
-      nour: await student("Nour", "Ben Amor", { phone: "26 554 433" }),
-      hamza: await student("Hamza", "Feki", { phone: "97 221 100" }),
-      rania: await student("Rania", "Dridi", { phone: "52 887 766" }),
-      walid: await student("Walid", "Masmoudi", { phone: "23 665 544" }),
-      khadija: await student("Khadija", "Ghanmi", { phone: "58 443 322" }),
+      amira: await student("Amira", "Lorenne", minor("Mourad Lorenne", "22 334 455")),
+      omar: await student("Omar", "Sorvel", minor("Faten Sorvel", "98 112 233")),
+      yasmine: await student("Yasmine", "Maldane", minor("Nabil Maldane", "55 667 788")),
+      youssef: await student("Youssef", "Teyral", minor("Hela Teyral", "20 445 566")),
+      mariem: await student("Mariem", "Quenard", minor("Ridha Quenard", "29 778 899")),
+      aziz: await student("Aziz", "Brivelle", minor("Samia Brivelle", "24 556 677")),
+      eya: await student("Eya", "Ostrane", minor("Kamel Ostrane", "50 223 344")),
+      rayen: await student("Rayen", "Calvier", minor("Olfa Calvier", "92 334 112")),
+      salma: await student("Salma", "Pellarin", { phone: "21 998 877" }),
+      nour: await student("Nour", "Vessier", { phone: "26 554 433" }),
+      hamza: await student("Hamza", "Taurel", { phone: "97 221 100" }),
+      rania: await student("Rania", "Delmare", { phone: "52 887 766" }),
+      walid: await student("Walid", "Ravelin", { phone: "23 665 544" }),
+      khadija: await student("Khadija", "Corvane", { phone: "58 443 322" }),
     };
 
     const enrol = (studentId: string, groupId: string, terms: Record<string, unknown>) =>

@@ -373,6 +373,10 @@ button.blk {
   height: 40px;
   border-radius: 10px;
 }
+.brand-mark {
+  flex: 0 0 auto;
+  border-radius: 10px;
+}
 .brand-logo {
   flex: 0 0 auto;
   display: inline-flex;
@@ -388,7 +392,11 @@ button.blk {
   align-items: flex-start;
   gap: 8px;
 }
-.side-brand.has-logo .brand-logo {
+.side-brand.has-logo .brand-mark {
+  flex: 0 0 auto;
+  border-radius: 10px;
+}
+.brand-logo {
   height: 56px;
   max-width: 100%;
 }
@@ -519,7 +527,11 @@ button.nav-title:focus-visible,
 .app:has(.side.collapsed) {
   background: linear-gradient(to right, var(--surface) 64px, transparent 64px);
 }
-.side.collapsed .brand-logo {
+.side.collapsed .brand-mark {
+  flex: 0 0 auto;
+  border-radius: 10px;
+}
+.brand-logo {
   min-width: 0;
   max-width: 40px;
   height: 40px;

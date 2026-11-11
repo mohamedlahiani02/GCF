@@ -33,12 +33,10 @@ export function LoginPage() {
       >
         <div className="card-b stack" style={{ gap: 16, padding: 28 }}>
           <div className="brand">
-            <span className="logo" aria-hidden="true">
-              GC
-            </span>
+            <img className="brand-mark" src="/axelia-mark.svg" alt="" width={40} height={40} />
             <div>
-              <div className="h2">Gestion du centre</div>
-              <div className="cap">Back-office</div>
+              <div className="h2">AXÉLIA</div>
+              <div className="cap">Au cœur de votre organisation</div>
             </div>
           </div>
           {login.isError ? (

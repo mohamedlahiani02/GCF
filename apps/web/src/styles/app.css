@@ -1,33 +1,33 @@
 :root {
-  --bg: #f5f6f8;
+  --bg: #f4f5f8;
   --surface: #ffffff;
-  --soft: #f8f9fb;
-  --line: #dde1e8;
-  --line2: #c3cad5;
-  --ink: #1b2430;
-  --muted: #566274;
-  --accent: #0e5a8a;
-  --accent-soft: #e4eff7;
+  --soft: #f8f9fc;
+  --line: #dfe2ea;
+  --line2: #c5cad8;
+  --ink: #0e1a36;
+  --muted: #5b6478;
+  --accent: #3d4ee0;
+  --accent-soft: #e8eafc;
   --on-accent: #ffffff;
 }
 .dark {
-  --bg: #12171e;
-  --surface: #1a212b;
-  --soft: #202833;
-  --line: #2d3846;
-  --line2: #415065;
-  --ink: #e7ecf3;
-  --muted: #a3afc0;
-  --accent: #6db3e3;
-  --accent-soft: #1b3347;
-  --on-accent: #0b1620;
+  --bg: #0a1228;
+  --surface: #0e1a36;
+  --soft: #15224a;
+  --line: #24325c;
+  --line2: #3a4a7a;
+  --ink: #f4f5f8;
+  --muted: #a9b1c7;
+  --accent: #8e9af5;
+  --accent-soft: #1c2a66;
+  --on-accent: #0e1a36;
 }
 * {
   box-sizing: border-box;
 }
 body {
   margin: 0;
-  font-family: "IBM Plex Sans", system-ui, sans-serif;
+  font-family: "Inter", system-ui, "Segoe UI", Arial, sans-serif;
   font-size: 14px;
   line-height: 1.45;
   color: var(--ink);
@@ -775,4 +775,13 @@ a.tab {
 .fp-legend .assigned {
   background: #f0e6fa;
   border-color: #9a6bc9;
+}
+
+h1,
+h2,
+h3,
+.h1,
+.h2,
+.h3 {
+  font-family: "Manrope", "Inter", system-ui, sans-serif;
 }

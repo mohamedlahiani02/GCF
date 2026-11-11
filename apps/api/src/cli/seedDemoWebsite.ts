@@ -57,13 +57,13 @@ export async function seedWebsite({ call, publicCall, db, centreId, today, cowor
   const images = {} as Record<keyof typeof ILLUSTRATIONS, string>;
   for (const [key, { file, alt }] of Object.entries(ILLUSTRATIONS) as [keyof typeof ILLUSTRATIONS, (typeof ILLUSTRATIONS)[keyof typeof ILLUSTRATIONS]][])
     images[key] = await upload(file, alt, "site");
-  const logo = await upload("logo.png", "Centre Avenir", "identite");
-  const favicon = await upload("logo-mark.png", "Monogramme du Centre Avenir", "identite");
+  const logo = await upload("logo.png", "AXÉLIA", "identite");
+  const favicon = await upload("logo-mark.png", "Symbole AXÉLIA", "identite");
 
   await call("PUT", "/site/settings", {
     theme: "corporate",
-    primaryColor: "#1d4ed8",
-    secondaryColor: "#0f766e",
+    primaryColor: "#3d4ee0",
+    secondaryColor: "#0e1a36",
     font: "inter",
     radius: "small",
     colorScheme: "light",
@@ -71,16 +71,16 @@ export async function seedWebsite({ call, publicCall, db, centreId, today, cowor
     faviconMediaId: favicon,
     languages: ["fr", "en"],
     defaultLanguage: "fr",
-    siteName: "Centre Avenir",
+    siteName: "AXÉLIA",
     tagline: "Formation et coworking au cœur de Tunis",
-    contactEmail: "contact@centre-avenir.example.com",
+    contactEmail: "contact@axelia.example.com",
     contactPhone: "71 234 567",
     address: "12, rue de Carthage, 1000 Tunis",
     mapUrl: "https://www.openstreetmap.org/?mlat=36.8008&mlon=10.1800#map=17/36.8008/10.1800",
-    facebookUrl: "https://www.facebook.com/centre.avenir.example",
-    linkedinUrl: "https://www.linkedin.com/company/centre-avenir-example",
+    facebookUrl: "https://www.facebook.com/axelia.example",
+    linkedinUrl: "https://www.linkedin.com/company/axelia-example",
     seoDescription: "Postes en open space, salles de réunion, bureaux privés et domiciliation à Tunis.",
-    footerText: "Centre Avenir, formation professionnelle et espace de coworking.",
+    footerText: "AXÉLIA, formation professionnelle et espace de coworking.",
   });
 
   const page = async (body: Record<string, unknown>) => (await call("POST", "/site/pages", body)).id;
@@ -109,7 +109,7 @@ export async function seedWebsite({ call, publicCall, db, centreId, today, cowor
   await draft(pages.home, "fr", {
     title: "Accueil",
     seoTitle: "Coworking et formation à Tunis",
-    seoDescription: "Réservez un poste, une salle de réunion ou un bureau privé au Centre Avenir.",
+    seoDescription: "Réservez un poste, une salle de réunion ou un bureau privé au AXÉLIA.",
     sections: [
       {
         id: "bienvenue",
@@ -156,8 +156,8 @@ export async function seedWebsite({ call, publicCall, db, centreId, today, cowor
         type: "testimonials",
         title: "Ils travaillent ici",
         items: [
-          { quote: "Un cadre calme et une équipe toujours disponible.", author: "Meriem J.", role: "Développeuse, Atlas Digital" },
-          { quote: "La domiciliation et le courrier sont gérés sans souci.", author: "Anis K.", role: "Consultant, Medina Conseil" },
+          { quote: "Un cadre calme et une équipe toujours disponible.", author: "Meriem S.", role: "Développeuse, Orbite Studio" },
+          { quote: "La domiciliation et le courrier sont gérés sans souci.", author: "Anis K.", role: "Consultant, Cabinet Valmer" },
         ],
       },
       { id: "actualites", type: "articles", title: "Actualités", limit: 3 },
@@ -173,7 +173,7 @@ export async function seedWebsite({ call, publicCall, db, centreId, today, cowor
   await draft(pages.home, "en", {
     title: "Home",
     seoTitle: "Coworking and training in Tunis",
-    seoDescription: "Book a desk, a meeting room or a private office at Centre Avenir.",
+    seoDescription: "Book a desk, a meeting room or a private office at AXÉLIA.",
     sections: [
       {
         id: "bienvenue",
@@ -220,8 +220,8 @@ export async function seedWebsite({ call, publicCall, db, centreId, today, cowor
         type: "testimonials",
         title: "They work here",
         items: [
-          { quote: "A quiet place and a team that is always there to help.", author: "Meriem J.", role: "Developer, Atlas Digital" },
-          { quote: "Registered address and mail handled without a hitch.", author: "Anis K.", role: "Consultant, Medina Conseil" },
+          { quote: "A quiet place and a team that is always there to help.", author: "Meriem S.", role: "Developer, Orbite Studio" },
+          { quote: "Registered address and mail handled without a hitch.", author: "Anis K.", role: "Consultant, Cabinet Valmer" },
         ],
       },
       { id: "actualites", type: "articles", title: "News", limit: 3 },
@@ -337,12 +337,12 @@ export async function seedWebsite({ call, publicCall, db, centreId, today, cowor
   };
   await draft(pages.gallery, "fr", {
     title: "Galerie",
-    seoDescription: "Les photos du Centre Avenir : espaces de travail, détente, événements.",
+    seoDescription: "Les photos du AXÉLIA : espaces de travail, détente, événements.",
     sections: albums("fr"),
   });
   await draft(pages.gallery, "en", {
     title: "Gallery",
-    seoDescription: "Photos of Centre Avenir: workspaces, lounge and events.",
+    seoDescription: "Photos of AXÉLIA: workspaces, lounge and events.",
     sections: albums("en"),
   });
 
@@ -398,7 +398,7 @@ export async function seedWebsite({ call, publicCall, db, centreId, today, cowor
   if (publicCall) {
     await publicCall("POST", "/public/leads", {
       kind: "visit",
-      name: "Yassine Gharbi",
+      name: "Yassine Delvaux",
       email: "yassine.gharbi@example.com",
       phone: "23 778 410",
       message: "Je souhaite visiter l'espace avec mon associé.",
@@ -409,7 +409,7 @@ export async function seedWebsite({ call, publicCall, db, centreId, today, cowor
     });
     await publicCall("POST", "/public/leads", {
       kind: "quote",
-      name: "Sarah Miller",
+      name: "Sarah Whitlow",
       email: "sarah.miller@example.com",
       company: "Northwind",
       message: "We need four desks for three months from next month.",

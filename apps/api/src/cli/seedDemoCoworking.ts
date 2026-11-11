@@ -289,18 +289,18 @@ export async function seedCoworking({ call, db, centreId, userId, today }: Conte
 
   const company = async (name: string, taxId: string, email: string) => (await call("POST", "/coworking/companies", { name, taxId, email })).id;
   const companies = {
-    atlas: await company("Atlas Digital", "1456789/A/M/000", "contact@atlas-digital.example.com"),
-    medina: await company("Medina Conseil", "1398765/B/N/000", "bonjour@medina-conseil.example.com"),
+    atlas: await company("Orbite Studio", "1456789/A/M/000", "contact@orbite-studio.example.com"),
+    medina: await company("Cabinet Valmer", "1398765/B/N/000", "bonjour@valmer-conseil.example.com"),
   };
   const member = async (firstName: string, lastName: string, email: string, phone: string, extra: Record<string, unknown> = {}) =>
     (await call("POST", "/coworking/members", { kind: "member", firstName, lastName, email, phone, ...extra })).id;
   const members = {
-    sami: await member("Sami", "Ben Ali", "sami.benali@atlas-digital.example.com", "22 410 300", { companyId: companies.atlas, companyRole: "admin" }),
-    meriem: await member("Meriem", "Jlassi", "meriem.jlassi@atlas-digital.example.com", "98 220 145", { companyId: companies.atlas, companyRole: "member" }),
-    anis: await member("Anis", "Kooli", "anis.kooli@medina-conseil.example.com", "55 901 233", { companyId: companies.medina, companyRole: "admin" }),
-    ons: await member("Ons", "Hammami", "ons.hammami@example.com", "29 117 880"),
-    fares: await member("Farès", "Chaabane", "fares.chaabane@example.com", "21 665 409"),
-    lina: await member("Lina", "Riahi", "lina.riahi@example.com", "50 334 712"),
+    sami: await member("Sami", "Ardel", "sami.ardel@orbite-studio.example.com", "22 410 300", { companyId: companies.atlas, companyRole: "admin" }),
+    meriem: await member("Meriem", "Soravel", "meriem.soravel@orbite-studio.example.com", "98 220 145", { companyId: companies.atlas, companyRole: "member" }),
+    anis: await member("Anis", "Belcour", "anis.belcour@valmer-conseil.example.com", "55 901 233", { companyId: companies.medina, companyRole: "admin" }),
+    ons: await member("Ons", "Verdane", "ons.verdane@example.com", "29 117 880"),
+    fares: await member("Farès", "Montclair", "fares.montclair@example.com", "21 665 409"),
+    lina: await member("Lina", "Fabrel", "lina.fabrel@example.com", "50 334 712"),
   };
   const guest = (await call("POST", "/coworking/members", { kind: "guest", firstName: "Rim", lastName: "Saidi", phone: "97 450 128" })).id;
 
