@@ -171,7 +171,8 @@ export function useActionQueue() {
   const queries = [dashboard, members, requests, proposals, leads].filter((q) => q.isEnabled);
   return {
     items,
-    total: items.reduce((sum, i) => sum + i.count, 0),
+    /** Tasks to handle, not rows: thirty overdue instalments are one thing to do. */
+    total: items.length,
     more: items.some((i) => i.more),
     memberCount,
     requestCount: bookingRows.length,

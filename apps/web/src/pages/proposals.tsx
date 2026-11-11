@@ -220,12 +220,12 @@ function ProposalCard({ proposal }: { proposal: Proposal }) {
 }
 
 export function ProposalsPage() {
-  usePage(["Propositions"]);
+  usePage(["À valider"]);
   const [tab, setTab] = useState<"pending" | "decided">("pending");
   const list = useQuery({ queryKey: ["proposals", tab], queryFn: () => api.get<Proposal[]>("/automations/proposals", { status: tab }) });
   return (
     <>
-      <PageHeader title="Propositions" subtitle="Le travail préparé par les automatisations du centre, à confirmer ou à refuser." />
+      <PageHeader title="À valider" subtitle="Le travail préparé par les automatisations du centre : confirmez-le ou refusez-le." />
       <Tabs
         value={tab}
         onChange={setTab}

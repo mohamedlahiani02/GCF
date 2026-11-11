@@ -39,20 +39,52 @@ function ActionTile({ item }: { item: WorkspaceAction }) {
   );
 }
 
-function Shortcuts({ userId }: { userId: string }) {
-  const { can } = useSession();
+const storageKeyOf = (userId: string) => `gcf.shortcuts.v1.${userId}`;
+export const longDate = () => new Intl.DateTimeFormat("fr-TN", { weekday: "long", day: "numeric", month: "long" }).format(new Date());
+
+/** The shortcuts a user may see, and the ones they chose (or the advised ones while they chose nothing). */
+function shortcutChoice(userId: string, can: (permission: string) => boolean) {
   const available = ACTIONS.filter((i) => permitted(i.permission, can));
   const defaults = DEFAULT_SHORTCUTS.filter((id) => available.some((i) => i.id === id));
-  const storageKey = `gcf.shortcuts.v1.${userId}`;
-  const [ids, setIds] = useState<string[]>(() => {
-    try {
-      const saved: unknown = JSON.parse(localStorage.getItem(storageKey) ?? "null");
-      if (Array.isArray(saved) && saved.every((id) => typeof id === "string")) return [...new Set(saved)].slice(0, 8);
-    } catch {
-      /* Storage unavailable: keep the preference for this visit. */
-    }
-    return defaults.length ? defaults : available.slice(0, 8).map((i) => i.id);
-  });
+  const fallback = defaults.length ? defaults : available.slice(0, 8).map((i) => i.id);
+  let ids = fallback;
+  try {
+    const saved: unknown = JSON.parse(localStorage.getItem(storageKeyOf(userId)) ?? "null");
+    if (Array.isArray(saved) && saved.every((id) => typeof id === "string")) ids = [...new Set(saved as string[])].slice(0, 8);
+  } catch {
+    /* Storage unavailable: keep the advised shortcuts for this visit. */
+  }
+  return { available, fallback, ids };
+}
+
+/** The user's shortcuts on the home page, in a compact row; the full page lets them choose and search. */
+export function HomeShortcuts({ userId }: { userId: string }) {
+  const { can } = useSession();
+  const { available, ids } = shortcutChoice(userId, can);
+  const selected = ids.map((id) => available.find((i) => i.id === id)).filter((i) => i !== undefined);
+  if (selected.length === 0) return null;
+  return (
+    <section className="home-shortcuts" aria-labelledby="home-shortcuts-title">
+      <div className="home-shortcuts-head">
+        <h2 id="home-shortcuts-title">Mes raccourcis</h2>
+        <Link to="/raccourcis">Toutes les actions et personnalisation</Link>
+      </div>
+      <div className="home-shortcuts-grid">
+        {selected.map((i) => (
+          <ActionTile key={i.id} item={i} />
+        ))}
+      </div>
+    </section>
+  );
+}
+
+function Shortcuts({ userId }: { userId: string }) {
+  const { can } = useSession();
+  const choice = shortcutChoice(userId, can);
+  const { available } = choice;
+  const defaults = choice.fallback;
+  const storageKey = storageKeyOf(userId);
+  const [ids, setIds] = useState<string[]>(choice.ids);
   const [notice, setNotice] = useState("");
   const [params, setParams] = useSearchParams();
   const search = params.get("q") ?? "";
@@ -117,7 +149,7 @@ function Shortcuts({ userId }: { userId: string }) {
                     ))}
                 </fieldset>
               ))}
-              <button type="button" className="btn" onClick={() => update(defaults.length ? defaults : available.slice(0, 8).map((i) => i.id))}>
+              <button type="button" className="btn" onClick={() => update(defaults)}>
                 Rétablir les raccourcis conseillés
               </button>
             </div>
@@ -213,7 +245,7 @@ export function LaunchpadPage() {
           <h1>Bonjour{session?.user.fullName.trim() ? `, ${session.user.fullName.trim().split(/\s+/)[0]}` : ""}.</h1>
           <p>Que souhaitez-vous faire aujourd’hui ?</p>
         </div>
-        <span className="launch-date">{new Intl.DateTimeFormat("fr-TN", { weekday: "long", day: "numeric", month: "long" }).format(new Date())}</span>
+        <span className="launch-date">{longDate()}</span>
       </header>
       {session ? <Shortcuts key={session.user.id} userId={session.user.id} /> : null}
     </div>

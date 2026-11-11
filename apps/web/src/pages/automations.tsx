@@ -35,13 +35,13 @@ const TEXT: Record<Key, { title: string; text: string; propose?: string; auto: s
   overdue_reminders: {
     title: "Relances d'impayés de la semaine",
     text: "Chaque semaine, la liste des élèves en retard de paiement, au-delà du délai de grâce du centre.",
-    propose: "La liste attend dans Propositions ; un membre du secrétariat la confirme et les e-mails partent.",
+    propose: "La liste attend dans « À valider » ; un membre du secrétariat la confirme et les e-mails partent.",
     auto: "Les e-mails partent sans confirmation, tracés au journal d'audit.",
   },
   payroll_month: {
     title: "Paie du mois",
     text: "Le mois précédent : les éléments que les règles produisent, et les points à vérifier (prof / formateur sans règle, feuille non validée).",
-    propose: "Le calcul attend dans Propositions ; la comptabilité le confirme.",
+    propose: "Le calcul attend dans « À valider » ; la comptabilité le confirme.",
     auto: "Les éléments sont calculés. Leur validation reste toujours une décision de la comptabilité.",
   },
   daily_digest: {

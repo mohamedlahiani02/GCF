@@ -188,7 +188,7 @@ function GroupLine({ g, showInstructor, showOffer }: { g: GroupRow; showInstruct
         {can("attendance:write") ? (
           <button
             type="button"
-            className="btn btn-g"
+            className={attendanceTarget ? "btn" : "btn btn-g"}
             disabled={!attendanceTarget}
             title={attendanceTarget ? undefined : "Aucune séance à saisir"}
             onClick={() => navigate(`/presences/${attendanceTarget}`)}
@@ -298,7 +298,7 @@ export function GroupsPage() {
               />
             </>
           ) : (
-            <span className="cap">Groupes regroupés par enseignant</span>
+            <span className="cap">Groupes regroupés par prof / formateur</span>
           )}
           <select className="input" style={{ width: 140 }} aria-label="Statut" value={status} onChange={(e) => setStatus(e.target.value as typeof status)}>
             <option value="active">Actifs</option>

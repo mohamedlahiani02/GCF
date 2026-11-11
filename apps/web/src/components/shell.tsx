@@ -201,10 +201,9 @@ export function Shell() {
   const spaces = WORKSPACES.filter((w) => w.items.some(allowed));
   const inSettings = location.pathname === "/parametres" || SETTINGS_LINKS.some((l) => isUnder(location.pathname, l.to));
   const sidebar: ActionLink[] = [
-    { to: "/", label: "Tableau de bord", icon: ICONS.dashboard, permission: [] },
-    { to: "/raccourcis", label: "Mes raccourcis", icon: ICONS.home, permission: [] },
+    { to: "/", label: "Accueil", icon: ICONS.home, permission: [], also: ["/raccourcis"] },
     ...spaces.map((w) => ({ to: w.to, label: w.label, icon: w.icon, permission: [], also: w.items.filter(allowed).flatMap((i) => [i.to, ...(i.also ?? [])]) })),
-    { to: "/propositions", label: "Propositions", icon: ICONS.proposals, permission: ["reminders:send", "payroll:calculate"], badge: "proposals" },
+    { to: "/propositions", label: "À valider", icon: ICONS.proposals, permission: ["reminders:send", "payroll:calculate"], badge: "proposals" },
   ];
   const client = useQueryClient();
   const navigate = useNavigate();

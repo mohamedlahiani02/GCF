@@ -9,6 +9,7 @@ import { frDate, frTime, percent, tnd, todayIso } from "../lib/format";
 import { useActionQueue } from "../lib/action-queue";
 import { ActionNotices } from "../components/notifications";
 import type { PlanningDay } from "./coworking/api";
+import { HomeShortcuts, longDate } from "./launchpad";
 
 import type { Dashboard, Granularity } from "../lib/dashboard";
 
@@ -71,7 +72,7 @@ function Chart({ series, granularity, today }: { series: { bucket: string; total
 }
 
 export function DashboardPage() {
-  usePage(["Tableau de bord"]);
+  usePage(["Accueil"]);
   const { session, can } = useSession();
   const queue = useActionQueue();
   const [granularity, setGranularity] = useState<Granularity>("day");
@@ -111,7 +112,7 @@ export function DashboardPage() {
         .map(([id, b]) => [id, b]),
     ).values(),
   ];
-  const urgent = queue.items.filter((i) => i.priority === "urgent").reduce((sum, i) => sum + i.count, 0);
+  const urgent = queue.items.filter((i) => i.priority === "urgent").length;
   const [priority, setPriority] = useState<"all" | "urgent" | "attention" | "info">("all");
   const notices = queue.items.filter((i) => priority === "all" || priority === i.priority);
   const agenda = [
@@ -140,16 +141,14 @@ export function DashboardPage() {
           <p>Bonjour{session?.user.fullName ? ` ${session.user.fullName.split(/\s+/)[0]}` : ""}. Retrouvez les priorités et l’activité du centre.</p>
         </div>
         <div className="dashboard-header-actions">
-          <span className="launch-date">{frDate(today)}</span>
-          <Link className="btn" to="/raccourcis">
-            Mes raccourcis
-          </Link>
+          <span className="launch-date">{longDate()}</span>
           <button type="button" className="btn btn-g" onClick={refresh}>
             Actualiser
           </button>
         </div>
       </header>
       <ErrorBanner error={queue.error ?? data.error ?? coworking.error} retry={refresh} />
+      {session ? <HomeShortcuts userId={session.user.id} /> : null}
       <section className="dashboard-kpis" aria-label="Indicateurs du centre" aria-busy={queue.busy}>
         {f ? (
           <>
@@ -162,7 +161,7 @@ export function DashboardPage() {
               label="Impayés"
               value={<span className="num">{tnd(f.unpaidTotal)}</span>}
               sub={`TND · ${f.unpaidPayers} payeur(s) en retard`}
-              tone={f.unpaidTotal > 0 ? "red" : undefined}
+              tone={f.unpaidTotal > 0 ? "amber" : undefined}
             />
           </>
         ) : canDashboard && data.isPending ? (
@@ -208,7 +207,7 @@ export function DashboardPage() {
               <p>
                 {queue.busy
                   ? "Actualisation des actions…"
-                  : `${queue.total}${queue.more ? "+" : ""} ${queue.total === 1 ? "action en attente" : "actions en attente"}${urgent ? `, dont ${urgent} ${urgent === 1 ? "urgente" : "urgentes"}` : ""}`}
+                  : `${queue.total} ${queue.total === 1 ? "action en attente" : "actions en attente"}${urgent ? `, dont ${urgent} ${urgent === 1 ? "urgente" : "urgentes"}` : ""}`}
               </p>
             </div>
             <span className={`dashboard-priority-total${urgent ? " urgent" : ""}`}>

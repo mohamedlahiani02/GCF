@@ -259,7 +259,6 @@
   width: min(420px, calc(100vw - 32px));
   padding: 18px;
   border: 1px solid var(--notice-border);
-  border-inline-start: 4px solid var(--notice-color);
   border-radius: 10px;
   background: var(--notice-bg);
   box-shadow: 0 8px 24px #17233224;
@@ -463,5 +462,30 @@
   .action-notices > li {
     padding: 12px;
     gap: 9px;
+  }
+}
+
+/* Links in table cells: the colour marks them; the underline appears on hover and keyboard focus. */
+.tbl td a:not(.btn) {
+  text-decoration: none;
+}
+.tbl td a:not(.btn):hover,
+.tbl td a:not(.btn):focus-visible {
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+/* Phone header: search on one line, actions on the next; the account name shortens instead of wrapping. */
+@media (max-width: 540px) {
+  .top > .row {
+    flex-wrap: nowrap;
+    width: 100%;
+  }
+  .top .account-btn {
+    min-width: 0;
+    margin-inline-start: auto;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
 }

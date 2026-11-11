@@ -804,3 +804,63 @@
 .cw-walkin-plan .cw-plan-expanded .cw-plan-viewport {
   height: auto;
 }
+
+/* Home page: the user's shortcuts in one compact row above the indicators. */
+.home-shortcuts {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.home-shortcuts-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px 16px;
+}
+.home-shortcuts-head h2 {
+  margin: 0;
+  font-size: 1.05rem;
+}
+.home-shortcuts-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px;
+}
+@media (max-width: 1100px) {
+  .home-shortcuts-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+@media (max-width: 540px) {
+  .home-shortcuts-grid {
+    gap: 8px;
+  }
+  .home-shortcuts-grid .action-tile {
+    min-height: 56px;
+    padding: 8px 10px;
+    font-size: 0.9rem;
+  }
+  .home-shortcuts-grid .action-icon {
+    width: 32px;
+    height: 32px;
+    flex-shrink: 0;
+  }
+}
+.home-shortcuts-grid .action-tile {
+  flex-direction: row;
+  align-items: center;
+  gap: 12px;
+  min-height: 64px;
+  padding: 12px 14px;
+}
+.home-shortcuts-grid .action-copy > span,
+.home-shortcuts-grid .action-arrow {
+  display: none;
+}
+.shortcut-personalize summary {
+  list-style: none;
+}
+.shortcut-personalize summary::-webkit-details-marker {
+  display: none;
+}
