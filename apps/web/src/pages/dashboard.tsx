@@ -38,12 +38,12 @@ function Chart({ series, granularity, today }: { series: { bucket: string; total
   const bar = Math.min(48, slot * 0.6);
   return (
     <svg viewBox={`0 0 ${width} 220`} width="100%" role="img" aria-label="Encaissements par période">
-      <g stroke="#DDE1E8" strokeWidth="1">
+      <g style={{ stroke: "var(--line)" }} strokeWidth="1">
         {[0, 1, 2, 3].map((i) => (
           <line key={i} x1={left} y1={20 + i * 50} x2={width - 10} y2={20 + i * 50} />
         ))}
       </g>
-      <g fill="#566274" fontSize="11" textAnchor="end">
+      <g style={{ fill: "var(--muted)" }} fontSize="11" textAnchor="end">
         {[0, 1, 2, 3].map((i) => (
           <text key={i} x={left - 6} y={24 + i * 50}>
             {axis((top * (3 - i)) / 3)}
@@ -55,13 +55,13 @@ function Chart({ series, granularity, today }: { series: { bucket: string; total
         const x = left + i * slot + (slot - bar) / 2;
         return (
           <g key={s.bucket}>
-            <rect x={x} y={170 - h} width={bar} height={h} rx={3} fill="#0E5A8A" />
+            <rect x={x} y={170 - h} width={bar} height={h} rx={3} style={{ fill: "var(--accent)" }} />
             {s.total > 0 ? (
-              <text x={x + bar / 2} y={164 - h} fontSize="11" textAnchor="middle" fontWeight="600" fill="#1B2430">
+              <text x={x + bar / 2} y={164 - h} fontSize="11" textAnchor="middle" fontWeight="600" style={{ fill: "var(--ink)" }}>
                 {axis(s.total)}
               </text>
             ) : null}
-            <text x={x + bar / 2} y={192} fontSize="11" textAnchor="middle" fill="#566274">
+            <text x={x + bar / 2} y={192} fontSize="11" textAnchor="middle" style={{ fill: "var(--muted)" }}>
               {bucketLabel(s.bucket, granularity, today)}
             </text>
           </g>
@@ -280,7 +280,7 @@ export function DashboardPage() {
       </div>
       {f && d ? (
         <Card
-          title="Évolution des encaissements"
+          title="Évolution des encaissements (TND)"
           actions={
             <Segmented
               label="Période du graphique"
@@ -295,7 +295,11 @@ export function DashboardPage() {
           }
         >
           <div className="card-b dashboard-chart">
-            <Chart series={f.series} granularity={granularity} today={d.today} />
+            {f.series.some((point) => point.total > 0) ? (
+              <Chart series={f.series} granularity={granularity} today={d.today} />
+            ) : (
+              <Empty title="Aucun encaissement sur la période" text="Changez de période avec Jour, Semaine ou Mois." />
+            )}
           </div>
         </Card>
       ) : null}

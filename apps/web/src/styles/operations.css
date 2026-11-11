@@ -221,6 +221,11 @@
 }
 .dashboard-chart {
   max-width: 880px;
+  overflow-x: auto;
+}
+/* On a narrow screen the chart keeps its size and scrolls sideways, so its figures stay readable. */
+.dashboard-chart svg {
+  min-width: 560px;
 }
 .notification-wrap {
   position: relative;
@@ -487,5 +492,61 @@
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
+  }
+}
+
+/* Payroll: the three steps, each with what waits there and its one action. */
+.pay-steps {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.pay-step {
+  display: flex;
+  gap: 12px;
+  padding: 16px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--surface);
+}
+.pay-step.waiting {
+  border-color: var(--accent);
+}
+.pay-step-number {
+  display: inline-flex;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border-radius: 999px;
+  background: var(--soft);
+  color: var(--muted);
+  font-weight: 600;
+}
+.pay-step.waiting .pay-step-number {
+  background: var(--accent);
+  color: var(--on-accent);
+}
+.pay-step-body {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 6px;
+  min-width: 0;
+}
+.pay-step-state {
+  font-weight: 600;
+}
+.pay-step-state.done {
+  color: var(--muted);
+  font-weight: 400;
+}
+@media (max-width: 900px) {
+  .pay-steps {
+    grid-template-columns: minmax(0, 1fr);
   }
 }
