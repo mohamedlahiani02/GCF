@@ -156,8 +156,8 @@ export async function seedWebsite({ call, publicCall, db, centreId, today, cowor
         type: "testimonials",
         title: "Ils travaillent ici",
         items: [
-          { quote: "Un cadre calme et une équipe toujours disponible.", author: "Meriem J.", role: "Développeuse, Atlas Digital" },
-          { quote: "La domiciliation et le courrier sont gérés sans souci.", author: "Anis K.", role: "Consultant, Medina Conseil" },
+          { quote: "Un cadre calme et une équipe toujours disponible.", author: "Meriem S.", role: "Développeuse, Orbite Studio" },
+          { quote: "La domiciliation et le courrier sont gérés sans souci.", author: "Anis K.", role: "Consultant, Cabinet Valmer" },
         ],
       },
       { id: "actualites", type: "articles", title: "Actualités", limit: 3 },
@@ -220,8 +220,8 @@ export async function seedWebsite({ call, publicCall, db, centreId, today, cowor
         type: "testimonials",
         title: "They work here",
         items: [
-          { quote: "A quiet place and a team that is always there to help.", author: "Meriem J.", role: "Developer, Atlas Digital" },
-          { quote: "Registered address and mail handled without a hitch.", author: "Anis K.", role: "Consultant, Medina Conseil" },
+          { quote: "A quiet place and a team that is always there to help.", author: "Meriem S.", role: "Developer, Orbite Studio" },
+          { quote: "Registered address and mail handled without a hitch.", author: "Anis K.", role: "Consultant, Cabinet Valmer" },
         ],
       },
       { id: "actualites", type: "articles", title: "News", limit: 3 },
@@ -398,7 +398,7 @@ export async function seedWebsite({ call, publicCall, db, centreId, today, cowor
   if (publicCall) {
     await publicCall("POST", "/public/leads", {
       kind: "visit",
-      name: "Yassine Gharbi",
+      name: "Yassine Delvaux",
       email: "yassine.gharbi@example.com",
       phone: "23 778 410",
       message: "Je souhaite visiter l'espace avec mon associé.",
@@ -409,7 +409,7 @@ export async function seedWebsite({ call, publicCall, db, centreId, today, cowor
     });
     await publicCall("POST", "/public/leads", {
       kind: "quote",
-      name: "Sarah Miller",
+      name: "Sarah Whitlow",
       email: "sarah.miller@example.com",
       company: "Northwind",
       message: "We need four desks for three months from next month.",
