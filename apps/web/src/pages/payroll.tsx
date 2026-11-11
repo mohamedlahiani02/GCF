@@ -1,6 +1,6 @@
 import { computePay, PayrollError, type PayRule } from "@gcf/shared";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useState } from "react";
+import { useState, type ReactNode } from "react";
 import { Link, useNavigate, useParams, useSearchParams } from "react-router";
 import { api } from "../api/client";
 import type { GroupRow, Instructor, Study } from "../api/types";
@@ -622,6 +622,42 @@ interface SummaryRow {
   groupsWithoutRule: number;
 }
 
+/** The payroll path in plain words: what each step means, how much waits there, and its one action. */
+interface PayStep {
+  title: string;
+  text: string;
+  waiting: string | null;
+  action?: ReactNode;
+}
+function PaySteps({ steps }: { steps: PayStep[] }) {
+  return (
+    <ol className="pay-steps" aria-label="Étapes de la paie">
+      {steps.map((step, index) => (
+        <li key={step.title} className={step.waiting ? "pay-step waiting" : "pay-step"}>
+          <span className="pay-step-number" aria-hidden="true">
+            {index + 1}
+          </span>
+          <div className="pay-step-body">
+            <strong>{step.title}</strong>
+            <span className="cap">{step.text}</span>
+            <span className={step.waiting ? "pay-step-state" : "pay-step-state done"}>{step.waiting ?? "Rien à faire"}</span>
+            {step.action}
+          </div>
+        </li>
+      ))}
+    </ol>
+  );
+}
+
+/** What to do next for one instructor of the monthly follow-up. */
+function nextStep(r: SummaryRow): { label: string; tone: "red" | "amber" | "blue" | "green" } {
+  if (r.groupsWithoutRule) return { label: `Ajouter une règle (${r.groupsWithoutRule} groupe(s))`, tone: "red" };
+  if (r.sessionsToCalculate) return { label: `Calculer ${r.sessionsToCalculate} séance(s)`, tone: "amber" };
+  if (r.toValidate) return { label: `Vérifier ${r.toValidate} élément(s)`, tone: "blue" };
+  if (r.outstanding) return { label: `Payer ${tnd(r.outstanding)} TND`, tone: "amber" };
+  return { label: "À jour", tone: "green" };
+}
+
 function SummaryTab() {
   const navigate = useNavigate();
   const [params, setParams] = useSearchParams();
@@ -634,6 +670,9 @@ function SummaryTab() {
       }),
   });
   const t = summary.data?.totals;
+  const rows = summary.data?.instructors ?? [];
+  const toCalculate = rows.filter((r) => r.sessionsToCalculate || r.groupsWithoutRule).length;
+  const toCheck = rows.reduce((sum, r) => sum + r.toValidate, 0);
   return (
     <>
       <div className="row between center">
@@ -645,26 +684,34 @@ function SummaryTab() {
           value={month}
           onChange={(e) => e.target.value && setParams({ mois: e.target.value })}
         />
-        <span className="cap">Vue de suivi : chaque prof / formateur est calculé, validé et réglé séparément, sans validation globale du mois.</span>
+        <span className="cap">Ouvrez un prof / formateur pour calculer, vérifier et payer sa paie.</span>
       </div>
       {t ? (
-        <div className="grid4">
-          <Kpi label="Calculé, à valider" value={<span className="num">{tnd(t.calculated)}</span>} sub={`TND, ${monthLabel(month)}`} />
-          <Kpi label="Validé" value={<span className="num">{tnd(t.validated)}</span>} sub={`TND, ${monthLabel(month)}`} />
-          <Kpi label="Payé" value={<span className="num">{tnd(t.paid)}</span>} sub={`TND, éléments de ${monthLabel(month)}`} />
-          <Kpi
-            label="Reste à payer"
-            value={<span className="num">{tnd(t.outstanding)}</span>}
-            sub="TND, tous mois confondus"
-            tone={t.outstanding > 0 ? "amber" : undefined}
-          />
-        </div>
+        <PaySteps
+          steps={[
+            {
+              title: "Calculer",
+              text: "La paie se calcule à partir des séances dont l'appel est validé.",
+              waiting: toCalculate ? `${toCalculate} prof(s) / formateur(s) avec des séances à calculer` : null,
+            },
+            {
+              title: "Vérifier",
+              text: "Chaque montant calculé est relu puis validé, ou annulé s'il est faux.",
+              waiting: toCheck ? `${toCheck} élément(s) à vérifier, ${tnd(t.calculated)} TND` : null,
+            },
+            {
+              title: "Payer",
+              text: "Un montant validé se paie en une ou plusieurs fois, avec un justificatif.",
+              waiting: t.outstanding > 0 ? `${tnd(t.outstanding)} TND à payer, tous mois confondus` : null,
+            },
+          ]}
+        />
       ) : null}
       <Card title={`Profs / Formateurs, ${monthLabel(month)}`}>
         <ErrorBanner error={summary.error} retry={() => summary.refetch()} />
         {summary.isPending ? (
           <Loading />
-        ) : summary.data?.instructors.length === 0 ? (
+        ) : rows.length === 0 ? (
           <Empty title="Aucun prof / formateur" />
         ) : (
           <div className="xs">
@@ -672,38 +719,38 @@ function SummaryTab() {
               <thead>
                 <tr>
                   <th>Prof / Formateur</th>
-                  <th>À calculer</th>
-                  <th className="num">À valider (TND)</th>
-                  <th className="num">Validé (TND)</th>
-                  <th className="num">Payé (TND)</th>
-                  <th className="num">Reste du mois (TND)</th>
-                  <th className="num">Reste total (TND)</th>
+                  <th>Étape suivante</th>
+                  <th className="num">Paie du mois (TND)</th>
+                  <th className="num">Déjà payé (TND)</th>
+                  <th className="num">Reste à payer (TND)</th>
                 </tr>
               </thead>
               <tbody>
-                {summary.data?.instructors.map((r) => (
-                  <tr key={r.id} className="clickable" onClick={() => navigate(`/paie/intervenants/${r.id}?mois=${month}`)}>
-                    <td>
-                      <Link to={`/paie/intervenants/${r.id}?mois=${month}`} onClick={(e) => e.stopPropagation()}>
-                        {r.lastName} {r.firstName}
-                      </Link>
-                      <div className="cap">{EMPLOYMENT[r.employment]}</div>
-                    </td>
-                    <td>
-                      {r.sessionsToCalculate ? <Badge tone="amber">{r.sessionsToCalculate} séance(s)</Badge> : null}{" "}
-                      {r.groupsWithoutRule ? <Badge tone="red">{r.groupsWithoutRule} groupe(s) sans règle</Badge> : null}
-                      {!r.sessionsToCalculate && !r.groupsWithoutRule ? <span className="cap">-</span> : null}
-                    </td>
-                    <td className="num">
-                      {tnd(r.calculated)}
-                      {r.toValidate ? <div className="cap">{r.toValidate} élément(s)</div> : null}
-                    </td>
-                    <td className="num">{tnd(r.validated)}</td>
-                    <td className="num">{tnd(r.paid)}</td>
-                    <td className="num">{tnd(r.remaining)}</td>
-                    <td className="num">{r.outstanding ? <strong>{tnd(r.outstanding)}</strong> : tnd(0)}</td>
-                  </tr>
-                ))}
+                {rows.map((r) => {
+                  const step = nextStep(r);
+                  return (
+                    <tr key={r.id} className="clickable" onClick={() => navigate(`/paie/intervenants/${r.id}?mois=${month}`)}>
+                      <td>
+                        <Link to={`/paie/intervenants/${r.id}?mois=${month}`} onClick={(e) => e.stopPropagation()}>
+                          {r.lastName} {r.firstName}
+                        </Link>
+                        <div className="cap">{EMPLOYMENT[r.employment]}</div>
+                      </td>
+                      <td>
+                        <Badge tone={step.tone}>{step.label}</Badge>
+                      </td>
+                      <td className="num">
+                        {tnd(r.calculated + r.validated)}
+                        {r.calculated ? <div className="cap">dont {tnd(r.calculated)} à vérifier</div> : null}
+                      </td>
+                      <td className="num">{tnd(r.paid)}</td>
+                      <td className="num">
+                        {r.outstanding ? <strong>{tnd(r.outstanding)}</strong> : tnd(0)}
+                        {r.outstanding !== r.remaining ? <div className="cap">dont {tnd(r.outstanding - r.remaining)} des mois précédents</div> : null}
+                      </td>
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           </div>
@@ -719,7 +766,7 @@ export function PayrollPage() {
   const tab = params.get("onglet") === "regles" || params.get("intervenant") ? "rules" : "summary";
   return (
     <>
-      <PageHeader title="Paie des profs / formateurs" subtitle="Paie = Base × facteur de présence, sur les séances tenues dont les présences sont validées" />
+      <PageHeader title="Paie des profs / formateurs" subtitle="Trois étapes pour chaque prof / formateur : calculer, vérifier, payer." />
       <Tabs
         value={tab}
         onChange={(t) => setParams(t === "rules" ? { onglet: "regles" } : {})}
@@ -797,8 +844,8 @@ interface CalculationResult {
 }
 
 const ITEM_STATUS: Record<PayItem["status"], { label: string; tone: "blue" | "teal" | "gray" }> = {
-  calculated: { label: "Calculé", tone: "blue" },
-  validated: { label: "Validé", tone: "teal" },
+  calculated: { label: "À vérifier", tone: "blue" },
+  validated: { label: "Validé, à payer", tone: "teal" },
   cancelled: { label: "Annulé", tone: "gray" },
 };
 
@@ -1130,6 +1177,9 @@ export function InstructorPayPage() {
   const chosen = data.items.filter((i) => selected.includes(i.id));
   const toValidate = chosen.filter((i) => i.status === "calculated" && i.dueOn <= data.today);
   const toSettle = chosen.filter((i) => i.status === "validated" && i.remaining !== 0);
+  const checkable = data.items.filter((i) => i.status === "calculated" && i.dueOn <= data.today);
+  const checkLater = data.items.filter((i) => i.status === "calculated" && i.dueOn > data.today).length;
+  const payable = data.items.filter((i) => i.status === "validated" && i.remaining !== 0);
   const sum = (list: PayItem[], pick: (i: PayItem) => number) => list.reduce((s, i) => s + pick(i), 0);
   const active = data.items.filter((i) => i.status !== "cancelled" && !i.earlierMonth);
   const toggle = (itemId: string, on: boolean) => setSelected((list) => (on ? [...list, itemId] : list.filter((x) => x !== itemId)));
@@ -1192,7 +1242,7 @@ export function InstructorPayPage() {
                   ) : null}
                   {writable && i.status === "validated" && i.remaining !== 0 ? (
                     <button type="button" className="btn btn-g" onClick={() => setSettling([i])}>
-                      Régler
+                      Payer
                     </button>
                   ) : null}
                   {writable && (i.status === "calculated" || (i.status === "validated" && i.paid === 0)) ? (
@@ -1230,64 +1280,54 @@ export function InstructorPayPage() {
               onChange={(e) => e.target.value && (setParams({ mois: e.target.value }), setSelected([]))}
             />
             {writable ? (
-              <>
-                <button type="button" className="btn btn-p" disabled={calculate.isPending} onClick={() => calculate.mutate()}>
-                  Calculer
-                </button>
-                <button type="button" className="btn" onClick={() => setAdjusting(true)}>
-                  + Prime ou retenue
-                </button>
-              </>
+              <button type="button" className="btn" onClick={() => setAdjusting(true)}>
+                + Prime ou retenue
+              </button>
             ) : null}
           </>
         }
       />
-      <div className="grid4">
-        <Kpi
-          label="Calculé, à valider"
-          value={
-            <span className="num">
-              {tnd(
-                sum(
-                  active.filter((i) => i.status === "calculated"),
-                  (i) => i.amount,
-                ),
-              )}
-            </span>
-          }
-          sub={`TND, ${monthLabel(month)}`}
-        />
-        <Kpi
-          label="Validé"
-          value={
-            <span className="num">
-              {tnd(
-                sum(
-                  active.filter((i) => i.status === "validated"),
-                  (i) => i.amount,
-                ),
-              )}
-            </span>
-          }
-          sub="TND"
-        />
-        <Kpi label="Déjà payé" value={<span className="num">{tnd(sum(active, (i) => i.paid))}</span>} sub="TND" />
-        <Kpi
-          label="Reste à payer"
-          value={
-            <span className="num">
-              {tnd(
-                sum(
-                  data.items.filter((i) => i.status === "validated"),
-                  (i) => i.remaining,
-                ),
-              )}
-            </span>
-          }
-          sub="TND, ce mois et les mois précédents"
-          tone={data.items.some((i) => i.status === "validated" && i.remaining !== 0) ? "amber" : undefined}
-        />
-      </div>
+      <PaySteps
+        steps={[
+          {
+            title: "Calculer",
+            text: "À partir des séances de ce mois dont l'appel est validé. Recalculer ne double jamais un montant.",
+            waiting: active.length === 0 ? "Aucun montant calculé ce mois-ci" : null,
+            action: writable ? (
+              <button type="button" className={active.length === 0 ? "btn btn-p" : "btn"} disabled={calculate.isPending} onClick={() => calculate.mutate()}>
+                {active.length === 0 ? "Calculer la paie" : "Recalculer"}
+              </button>
+            ) : undefined,
+          },
+          {
+            title: "Vérifier",
+            text: "Relisez chaque montant, puis validez-le. Un montant faux s'annule avec un motif.",
+            waiting: checkable.length
+              ? `${checkable.length} élément(s) à vérifier, ${tnd(sum(checkable, (i) => i.amount))} TND`
+              : checkLater
+                ? `${checkLater} élément(s) à vérifier à leur échéance`
+                : null,
+            action:
+              writable && checkable.length ? (
+                <button type="button" className="btn btn-p" disabled={validate.isPending} onClick={() => validate.mutate(checkable.map((i) => i.id))}>
+                  Tout valider
+                </button>
+              ) : undefined,
+          },
+          {
+            title: "Payer",
+            text: "Un montant validé se paie en une ou plusieurs fois ; chaque paiement a son justificatif.",
+            waiting: payable.length ? `${tnd(sum(payable, (i) => i.remaining))} TND à payer, mois précédents compris` : null,
+            action:
+              writable && payable.length ? (
+                <button type="button" className="btn btn-p" onClick={() => setSettling(payable)}>
+                  Payer
+                </button>
+              ) : undefined,
+          },
+        ]}
+      />
+      <p className="cap">Déjà payé ce mois : {tnd(sum(active, (i) => i.paid))} TND.</p>
       {data.rules.length === 0 ? (
         <div className="ban ban-amber">
           <span>Aucune règle de rémunération en vigueur ce mois-ci : rien ne peut être calculé.</span>
@@ -1332,7 +1372,7 @@ export function InstructorPayPage() {
                   Valider la sélection ({toValidate.length})
                 </button>
                 <button type="button" className="btn btn-p" disabled={!toSettle.length} onClick={() => setSettling(toSettle)}>
-                  Régler la sélection ({toSettle.length})
+                  Payer la sélection ({toSettle.length})
                 </button>
               </>
             ) : null}
@@ -1342,7 +1382,7 @@ export function InstructorPayPage() {
         {current.length === 0 ? (
           <Empty
             title="Aucun élément ce mois-ci"
-            text="« Calculer » produit les éléments dus : chaque séance validée pour une règle à la séance, le mois pour une règle mensuelle, la formation à sa fin."
+            text="« Calculer la paie » produit les montants dus : un par séance, par mois ou par formation, selon la règle de rémunération."
           />
         ) : (
           table(current)

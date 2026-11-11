@@ -9,6 +9,7 @@ import { frDate, frTime, percent, tnd, todayIso } from "../lib/format";
 import { useActionQueue } from "../lib/action-queue";
 import { ActionNotices } from "../components/notifications";
 import type { PlanningDay } from "./coworking/api";
+import { longDate } from "./launchpad";
 
 import type { Dashboard, Granularity } from "../lib/dashboard";
 
@@ -37,12 +38,12 @@ function Chart({ series, granularity, today }: { series: { bucket: string; total
   const bar = Math.min(48, slot * 0.6);
   return (
     <svg viewBox={`0 0 ${width} 220`} width="100%" role="img" aria-label="Encaissements par période">
-      <g stroke="#DDE1E8" strokeWidth="1">
+      <g style={{ stroke: "var(--line)" }} strokeWidth="1">
         {[0, 1, 2, 3].map((i) => (
           <line key={i} x1={left} y1={20 + i * 50} x2={width - 10} y2={20 + i * 50} />
         ))}
       </g>
-      <g fill="#566274" fontSize="11" textAnchor="end">
+      <g style={{ fill: "var(--muted)" }} fontSize="11" textAnchor="end">
         {[0, 1, 2, 3].map((i) => (
           <text key={i} x={left - 6} y={24 + i * 50}>
             {axis((top * (3 - i)) / 3)}
@@ -54,13 +55,13 @@ function Chart({ series, granularity, today }: { series: { bucket: string; total
         const x = left + i * slot + (slot - bar) / 2;
         return (
           <g key={s.bucket}>
-            <rect x={x} y={170 - h} width={bar} height={h} rx={3} fill="#0E5A8A" />
+            <rect x={x} y={170 - h} width={bar} height={h} rx={3} style={{ fill: "var(--accent)" }} />
             {s.total > 0 ? (
-              <text x={x + bar / 2} y={164 - h} fontSize="11" textAnchor="middle" fontWeight="600" fill="#1B2430">
+              <text x={x + bar / 2} y={164 - h} fontSize="11" textAnchor="middle" fontWeight="600" style={{ fill: "var(--ink)" }}>
                 {axis(s.total)}
               </text>
             ) : null}
-            <text x={x + bar / 2} y={192} fontSize="11" textAnchor="middle" fill="#566274">
+            <text x={x + bar / 2} y={192} fontSize="11" textAnchor="middle" style={{ fill: "var(--muted)" }}>
               {bucketLabel(s.bucket, granularity, today)}
             </text>
           </g>
@@ -111,7 +112,7 @@ export function DashboardPage() {
         .map(([id, b]) => [id, b]),
     ).values(),
   ];
-  const urgent = queue.items.filter((i) => i.priority === "urgent").reduce((sum, i) => sum + i.count, 0);
+  const urgent = queue.items.filter((i) => i.priority === "urgent").length;
   const [priority, setPriority] = useState<"all" | "urgent" | "attention" | "info">("all");
   const notices = queue.items.filter((i) => priority === "all" || priority === i.priority);
   const agenda = [
@@ -140,7 +141,7 @@ export function DashboardPage() {
           <p>Bonjour{session?.user.fullName ? ` ${session.user.fullName.split(/\s+/)[0]}` : ""}. Retrouvez les priorités et l’activité du centre.</p>
         </div>
         <div className="dashboard-header-actions">
-          <span className="launch-date">{frDate(today)}</span>
+          <span className="launch-date">{longDate()}</span>
           <Link className="btn" to="/raccourcis">
             Mes raccourcis
           </Link>
@@ -156,13 +157,13 @@ export function DashboardPage() {
             <Kpi
               label="Encaissé ce mois"
               value={<span className="num">{tnd(f.collectionsMonth)}</span>}
-              sub={`TND · ${tnd(f.collectionsToday)} TND aujourd’hui`}
+              sub={`TND · ${tnd(f.collectionsToday)} TND aujourd’hui${f.cafeMonth > 0 ? ` · dont café ${tnd(f.cafeMonth)} TND ce mois` : ""}`}
             />
             <Kpi
               label="Impayés"
               value={<span className="num">{tnd(f.unpaidTotal)}</span>}
               sub={`TND · ${f.unpaidPayers} payeur(s) en retard`}
-              tone={f.unpaidTotal > 0 ? "red" : undefined}
+              tone={f.unpaidTotal > 0 ? "amber" : undefined}
             />
           </>
         ) : canDashboard && data.isPending ? (
@@ -208,7 +209,7 @@ export function DashboardPage() {
               <p>
                 {queue.busy
                   ? "Actualisation des actions…"
-                  : `${queue.total}${queue.more ? "+" : ""} ${queue.total === 1 ? "action en attente" : "actions en attente"}${urgent ? `, dont ${urgent} ${urgent === 1 ? "urgente" : "urgentes"}` : ""}`}
+                  : `${queue.total} ${queue.total === 1 ? "action en attente" : "actions en attente"}${urgent ? `, dont ${urgent} ${urgent === 1 ? "urgente" : "urgentes"}` : ""}`}
               </p>
             </div>
             <span className={`dashboard-priority-total${urgent ? " urgent" : ""}`}>
@@ -279,7 +280,7 @@ export function DashboardPage() {
       </div>
       {f && d ? (
         <Card
-          title="Évolution des encaissements"
+          title="Évolution des encaissements (TND)"
           actions={
             <Segmented
               label="Période du graphique"
@@ -294,7 +295,11 @@ export function DashboardPage() {
           }
         >
           <div className="card-b dashboard-chart">
-            <Chart series={f.series} granularity={granularity} today={d.today} />
+            {f.series.some((point) => point.total > 0) ? (
+              <Chart series={f.series} granularity={granularity} today={d.today} />
+            ) : (
+              <Empty title="Aucun encaissement sur la période" text="Changez de période avec Jour, Semaine ou Mois." />
+            )}
           </div>
         </Card>
       ) : null}

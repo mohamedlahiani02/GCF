@@ -9,13 +9,15 @@ export interface SessionUser {
   role: "admin" | "secretariat" | "accountant" | "editor";
 }
 
-export type Module = "training" | "coworking" | "website";
+export type Module = "training" | "coworking" | "website" | "cafe";
 
 interface Session {
   user: SessionUser;
   permissions: string[];
   /** Modules the centre subscribed to; permissions of the other modules are never granted. */
   modules: Module[];
+  /** The user's own shortcuts in their order; null while they never chose. */
+  shortcuts: string[] | null;
 }
 
 interface SessionContextValue {

@@ -3,6 +3,9 @@ import { RequirePermission, Shell } from "./components/shell";
 import { AdminPage } from "./pages/admin";
 import { AttendanceDayPage, AttendanceSheetPage } from "./pages/attendance";
 import { AutomationsPage } from "./pages/automations";
+import { CafePosPage } from "./pages/cafe/pos";
+import { CafeStockPage } from "./pages/cafe/stock";
+import { CafeTillPage } from "./pages/cafe/till";
 import { CashPage } from "./pages/cash";
 import { StudyFormulasPage, StudiesPage, TrainingPage, TrainingsPage } from "./pages/catalogue";
 import { LaunchpadPage, WorkspacePage } from "./pages/launchpad";
@@ -74,6 +77,9 @@ export const router = createBrowserRouter([
       { path: "/locations/:id", element: guard("catalogue:read", <RentalPage />) },
       { path: "/planning", element: guard("catalogue:read", <PlanningPage />) },
       { path: "/caisse", element: guard("cash:read", <CashPage />) },
+      { path: "/cafe", element: guard("cafe:read", <CafePosPage />) },
+      { path: "/cafe/produits", element: guard("cafe:read", <CafeStockPage />) },
+      { path: "/cafe/caisse", element: guard("cafe:read", <CafeTillPage />) },
       { path: "/rapports", element: <ReportsPage /> },
       { path: "/administration", element: guard("centre:read", <AdminPage />) },
       { path: "/integrations", element: guard("centre:manage", <IntegrationsPage />) },

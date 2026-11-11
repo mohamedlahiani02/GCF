@@ -82,6 +82,16 @@ describe("cash", () => {
     expect(res.body.payments).toHaveLength(3);
   });
 
+  it("adds the morning's float to the expected cash, and lets it be corrected until the closing", async () => {
+    expect((await h.call("GET", `/api/cash/journal?date=${today}`, secretariat)).body).toMatchObject({ openingFloat: 0, openingRecorded: false });
+    expect((await h.call("PUT", "/api/cash/opening", secretariat, { day: today, amount: 20_000 })).status).toBe(200);
+    const journal = (await h.call("GET", `/api/cash/journal?date=${today}`, secretariat)).body;
+    expect(journal).toMatchObject({ openingFloat: 20_000, openingRecorded: true, expectedCash: 120_000 });
+    expect(journal.totals.cash).toBe(100_000);
+    expect((await h.call("PUT", "/api/cash/opening", accountant, { day: today, amount: 0 })).body.amount).toBe(0);
+    expect((await h.call("GET", `/api/cash/journal?date=${today}`, secretariat)).body.expectedCash).toBe(100_000);
+  });
+
   it("requires a comment for a difference and lets only the accountant or admin close", async () => {
     expect((await h.call("POST", "/api/cash/closings", secretariat, { day: today, countedCash: 100_000 })).status).toBe(403);
     const noComment = await h.call("POST", "/api/cash/closings", accountant, { day: today, countedCash: 99_000 });
@@ -90,6 +100,7 @@ describe("cash", () => {
     expect(closed.status).toBe(201);
     expect(closed.body).toMatchObject({ expectedCash: 100_000, countedCash: 99_000, difference: -1_000 });
     expect((await h.call("POST", "/api/cash/closings", admin, { day: today, countedCash: 100_000 })).status).toBe(409);
+    expect((await h.call("PUT", "/api/cash/opening", admin, { day: today, amount: 5_000 })).body.code).toBe("already_closed");
   });
 
   it("locks the closed day: no new payment, no change to the closing", async () => {

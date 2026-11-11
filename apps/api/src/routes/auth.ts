@@ -19,6 +19,16 @@ const changePasswordBody = z.object({
 
 const invalidCredentials = () => new HttpError(401, "invalid_credentials", "email or password is incorrect");
 
+const shortcutsBody = z
+  .object({
+    ids: z
+      .array(z.string().regex(/^[a-z0-9-]{1,40}$/))
+      .max(12)
+      .refine((ids) => new Set(ids).size === ids.length, "a shortcut appears once")
+      .nullable(),
+  })
+  .strict();
+
 export const authRoutes: FastifyPluginAsync = async (app) => {
   const { db, config } = app;
 
@@ -78,11 +88,22 @@ export const authRoutes: FastifyPluginAsync = async (app) => {
   app.get("/session", async (request) => {
     const user = request.user;
     if (!user) throw unauthenticated();
+    const { shortcuts } = await db.selectFrom("users").select("shortcuts").where("id", "=", user.userId).executeTakeFirstOrThrow();
     return {
       user: { id: user.userId, email: user.email, fullName: user.fullName, role: user.role },
       permissions: permissionsOf(user),
       modules: user.modules,
+      shortcuts,
     };
+  });
+
+  /** The user's own shortcuts, in their order; null goes back to the advised ones. A personal preference, not audited. */
+  app.put("/shortcuts", async (request) => {
+    const user = request.user;
+    if (!user) throw unauthenticated();
+    const { ids } = shortcutsBody.parse(request.body);
+    await db.updateTable("users").set({ shortcuts: ids }).where("id", "=", user.userId).execute();
+    return { shortcuts: ids };
   });
 
   app.post("/password", async (request, reply) => {

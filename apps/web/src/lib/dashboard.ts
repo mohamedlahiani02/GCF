@@ -5,6 +5,9 @@ export interface Dashboard {
   financial?: {
     collectionsToday: number;
     collectionsMonth: number;
+    /** The café share of the two totals above; its till is separate. */
+    cafeToday: number;
+    cafeMonth: number;
     unpaidTotal: number;
     unpaidPayers: number;
     postponedInstallments: number;

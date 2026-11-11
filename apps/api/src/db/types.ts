@@ -1,4 +1,5 @@
 import type { ColumnType, Generated, Insertable, Selectable, Updateable } from "kysely";
+import type { CafeTables } from "./types.cafe.js";
 import type { CoworkingTables } from "./types.coworking.js";
 import type { WebsiteTables } from "./types.website.js";
 
@@ -8,7 +9,7 @@ export type Json = ColumnType<unknown, string | null | undefined, string | null>
 export type Role = "admin" | "secretariat" | "accountant" | "editor";
 
 /** Modules a centre subscribed to (see src/modules.ts). */
-export type Module = "training" | "coworking" | "website";
+export type Module = "training" | "coworking" | "website" | "cafe";
 
 export interface CentresTable {
   id: Generated<string>;
@@ -49,6 +50,7 @@ export interface UsersTable {
   failed_login_count: Generated<number>;
   locked_until: ColumnType<Date | null, Date | string | null | undefined, Date | string | null>;
   last_login_at: ColumnType<Date | null, Date | string | null | undefined, Date | string | null>;
+  shortcuts: ColumnType<string[] | null, string[] | null | undefined, string[] | null>;
   created_at: Timestamp;
   updated_at: Timestamp;
 }
@@ -615,10 +617,24 @@ export interface RentalSlotsTable {
   ends_at: ColumnType<Date, Date | string, Date | string>;
 }
 
+export type Till = "centre" | "cafe";
+
+export interface CashOpeningsTable {
+  id: Generated<string>;
+  centre_id: string;
+  till: Till;
+  day: DateColumn;
+  amount: number;
+  opened_by: string;
+  opened_at: Timestamp;
+  updated_at: Timestamp;
+}
+
 export interface CashClosingsTable {
   id: Generated<string>;
   centre_id: string;
   day: DateColumn;
+  opening_float: Generated<number>;
   expected_cash: number;
   counted_cash: number;
   difference: number;
@@ -628,7 +644,7 @@ export interface CashClosingsTable {
   closed_at: Timestamp;
 }
 
-export interface Database extends CoworkingTables, WebsiteTables {
+export interface Database extends CoworkingTables, WebsiteTables, CafeTables {
   centres: CentresTable;
   users: UsersTable;
   sessions: SessionsTable;
@@ -671,6 +687,7 @@ export interface Database extends CoworkingTables, WebsiteTables {
   rentals: RentalsTable;
   rental_slots: RentalSlotsTable;
   cash_closings: CashClosingsTable;
+  cash_openings: CashOpeningsTable;
   companies: CompaniesTable;
   members: MembersTable;
   member_sessions: MemberSessionsTable;

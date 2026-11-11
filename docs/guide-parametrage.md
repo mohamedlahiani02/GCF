@@ -125,7 +125,30 @@ Précisions :
 - Chaque exécution figure sous sa tâche, avec son résultat. Les événements `reminders.sent`, `proposal.*`,
   `automation.*` et `cw_mail_item.notified` peuvent être relayés vers n8n (voir `docs/integrations-n8n.md`).
 
-## 6. Modules
+## 6. Café et point de vente (Café > Produits et stock > Réglages du café)
 
-Les modules formation, coworking et site web s'activent avec la commande `modules`, réservée à l'éditeur du
+Le café a sa propre caisse, séparée de la caisse du centre : ses ventes n'entrent pas dans le journal de caisse
+des encaissements, et sa clôture est indépendante.
+
+| Réglage                   | Effet                                                                                                                                                                                       | Défaut  |
+| ------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------- |
+| Fond de caisse habituel   | Proposé chaque matin au café. Le fond réellement mis en caisse se saisit jour par jour, pour la caisse du centre comme pour celle du café ; la clôture attend ce fond + les espèces du jour | 0       |
+| Vente en rupture de stock | Autorisée : la vente passe et le stock devient négatif. Refusée : la vente est bloquée                                                                                                      | Refusée |
+| Préfixe des tickets       | Début du numéro de ticket (`CAF-2026-000001`), numérotation par année                                                                                                                       | `CAF`   |
+| Impression du ticket      | Aucune (centre sans imprimante), imprimante de bureau, ou imprimante à tickets 58 / 80 mm                                                                                                   | Aucune  |
+| Achats                    | Réception simple ; réception avec fournisseur obligatoire ; ou bons de commande (brouillon, envoyé, reçu) seuls à faire entrer du stock                                                     | Simple  |
+| Produit : suivre le stock | Décoché pour ce qui se prépare sur place (café express) : aucune quantité n'est décomptée                                                                                                   | Coché   |
+| Produit : seuil d'alerte  | Le produit est signalé « stock bas » quand la quantité atteint ce nombre                                                                                                                    | Aucun   |
+
+Règles fixes : le prix d'une vente est lu sur le serveur au moment de la vente ; un mouvement de stock n'est jamais
+modifié (une erreur se corrige par un inventaire, avec motif) ; une journée clôturée n'accepte plus ni vente ni
+annulation ; un écart de caisse exige un commentaire. Chaque opération est tracée au journal d'audit
+(`cafe.*`), donc disponible pour les webhooks.
+
+Droits : le secrétariat vend et consulte ; la comptabilité consulte et clôture ; l'administrateur gère les produits,
+le stock, les réglages et annule une vente.
+
+## 7. Modules
+
+Les modules formation, coworking, site web et café s'activent avec la commande `modules`, réservée à l'éditeur du
 logiciel et journalisée.

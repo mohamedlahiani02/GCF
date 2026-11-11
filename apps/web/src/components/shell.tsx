@@ -204,7 +204,7 @@ export function Shell() {
     { to: "/", label: "Tableau de bord", icon: ICONS.dashboard, permission: [] },
     { to: "/raccourcis", label: "Mes raccourcis", icon: ICONS.home, permission: [] },
     ...spaces.map((w) => ({ to: w.to, label: w.label, icon: w.icon, permission: [], also: w.items.filter(allowed).flatMap((i) => [i.to, ...(i.also ?? [])]) })),
-    { to: "/propositions", label: "Propositions", icon: ICONS.proposals, permission: ["reminders:send", "payroll:calculate"], badge: "proposals" },
+    { to: "/propositions", label: "À valider", icon: ICONS.proposals, permission: ["reminders:send", "payroll:calculate"], badge: "proposals" },
   ];
   const client = useQueryClient();
   const navigate = useNavigate();
@@ -334,7 +334,8 @@ export function Shell() {
                   <header className="top">
                     <GlobalSearch />
                     <nav className="crumbs" aria-label="Fil d'Ariane">
-                      {crumbs.map((c, i) => (i === crumbs.length - 1 ? <strong key={i}>{c}</strong> : <span key={i}>{c} ›</span>))}
+                      {/* A single crumb only repeats the page title below; the trail shows once there is a path to follow. */}
+                      {crumbs.length > 1 ? crumbs.map((c, i) => (i === crumbs.length - 1 ? <strong key={i}>{c}</strong> : <span key={i}>{c} ›</span>)) : null}
                     </nav>
                     <div className="row center" style={{ gap: 8 }}>
                       {can("payments:write") ? (
