@@ -110,6 +110,61 @@ try {
     await seedWebsite({ call, publicCall, db, centreId: admin.centreId, today, coworking: modules.includes("coworking") });
     console.log(publicCall ? "website demonstration data created" : "website demonstration data created, without visitor requests (PUBLIC_ORIGIN is not set)");
   }
+  if (modules.includes("cafe")) {
+    await seedCafe();
+    console.log("café demonstration data created");
+  }
+
+  /** A small counter: products, a first delivery and a few sales of the day. */
+  async function seedCafe(): Promise<void> {
+    await call("PUT", "/cafe/settings", { openingFloat: 50_000, allowNegativeStock: false, ticketPrefix: "CAF" });
+    const products: Record<string, string> = {};
+    for (const [key, name, category, price, stock] of [
+      ["express", "Café express", "Boissons chaudes", 2_500, null],
+      ["capucin", "Capucin", "Boissons chaudes", 3_000, null],
+      ["the", "Thé à la menthe", "Boissons chaudes", 2_000, null],
+      ["eau", "Eau minérale 0,5 L", "Boissons fraîches", 1_000, 48],
+      ["jus", "Jus d'orange", "Boissons fraîches", 4_500, 12],
+      ["croissant", "Croissant", "Snacks", 1_800, 10],
+      ["sandwich", "Sandwich thon", "Snacks", 6_500, 4],
+    ] as const) {
+      const product = await call("POST", "/cafe/products", {
+        name,
+        category,
+        price,
+        trackStock: stock !== null,
+        lowStockThreshold: stock === null ? null : 5,
+      });
+      products[key] = product.id;
+      if (stock !== null) await call("POST", `/cafe/products/${product.id}/stock`, { kind: "purchase", quantity: stock, reason: "Stock de départ" });
+    }
+    const sale = (lines: [string, number][], method: "cash" | "card", expectedTotal: number) =>
+      call("POST", "/cafe/sales", { lines: lines.map(([key, quantity]) => ({ productId: products[key], quantity })), method, expectedTotal });
+    await sale(
+      [
+        ["express", 2],
+        ["croissant", 2],
+      ],
+      "cash",
+      8_600,
+    );
+    await sale(
+      [
+        ["capucin", 1],
+        ["eau", 1],
+      ],
+      "card",
+      4_000,
+    );
+    await sale(
+      [
+        ["sandwich", 1],
+        ["jus", 1],
+      ],
+      "cash",
+      11_000,
+    );
+  }
 
   async function seedTraining(): Promise<void> {
     const room = async (name: string, capacity: number) => (await call("POST", "/catalogue/rooms", { name, capacity })).id;

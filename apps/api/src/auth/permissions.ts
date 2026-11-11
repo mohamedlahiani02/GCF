@@ -44,6 +44,11 @@ export const PERMISSIONS = [
   "website:edit",
   "website:publish",
   "website:leads",
+  "cafe:read",
+  "cafe:sell",
+  "cafe:cancel",
+  "cafe:manage",
+  "cafe:close",
 ] as const;
 export type Permission = (typeof PERMISSIONS)[number];
 
@@ -69,6 +74,8 @@ const ROLE_PERMISSIONS: Record<Role, ReadonlySet<Permission>> = {
     "coworking:read",
     "coworking:write",
     "website:leads",
+    "cafe:read",
+    "cafe:sell",
   ]),
   accountant: new Set<Permission>([
     "centre:read",
@@ -86,6 +93,8 @@ const ROLE_PERMISSIONS: Record<Role, ReadonlySet<Permission>> = {
     "dashboard:financial",
     "coworking:read",
     "coworking:reports",
+    "cafe:read",
+    "cafe:close",
   ]),
   editor: new Set<Permission>(["centre:read", "website:edit", "website:publish", "website:leads"]),
 };
@@ -117,6 +126,11 @@ const PERMISSION_MODULE: Partial<Record<Permission, Module>> = {
   "website:edit": "website",
   "website:publish": "website",
   "website:leads": "website",
+  "cafe:read": "cafe",
+  "cafe:sell": "cafe",
+  "cafe:cancel": "cafe",
+  "cafe:manage": "cafe",
+  "cafe:close": "cafe",
 };
 
 /** Who is asking: a role, within a centre that runs some modules. */

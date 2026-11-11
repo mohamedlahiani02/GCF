@@ -1,4 +1,5 @@
 import type { ColumnType, Generated, Insertable, Selectable, Updateable } from "kysely";
+import type { CafeTables } from "./types.cafe.js";
 import type { CoworkingTables } from "./types.coworking.js";
 import type { WebsiteTables } from "./types.website.js";
 
@@ -8,7 +9,7 @@ export type Json = ColumnType<unknown, string | null | undefined, string | null>
 export type Role = "admin" | "secretariat" | "accountant" | "editor";
 
 /** Modules a centre subscribed to (see src/modules.ts). */
-export type Module = "training" | "coworking" | "website";
+export type Module = "training" | "coworking" | "website" | "cafe";
 
 export interface CentresTable {
   id: Generated<string>;
@@ -628,7 +629,7 @@ export interface CashClosingsTable {
   closed_at: Timestamp;
 }
 
-export interface Database extends CoworkingTables, WebsiteTables {
+export interface Database extends CoworkingTables, WebsiteTables, CafeTables {
   centres: CentresTable;
   users: UsersTable;
   sessions: SessionsTable;

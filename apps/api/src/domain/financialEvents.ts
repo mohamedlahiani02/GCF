@@ -18,7 +18,10 @@ export type FinancialEventType =
   | "payroll_cancelled"
   | "payroll_paid"
   | "payroll_payment_cancelled"
-  | "cash_closed";
+  | "cash_closed"
+  | "cafe_sale"
+  | "cafe_sale_cancelled"
+  | "cafe_cash_closed";
 
 export interface FinancialEvent {
   centreId: string;

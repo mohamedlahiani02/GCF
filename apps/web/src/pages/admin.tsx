@@ -422,6 +422,10 @@ function Users() {
 }
 
 const OBJECT_TYPES: Record<string, string> = {
+  cafe_sale: "Vente du café",
+  cafe_product: "Produit du café",
+  cafe_closing: "Clôture du café",
+  cafe_settings: "Réglages du café",
   student: "Élève",
   enrolment: "Inscription",
   payment: "Paiement",

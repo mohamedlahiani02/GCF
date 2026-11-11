@@ -5,6 +5,7 @@ import "./styles/app.css";
 import "./styles/layout.css";
 import "./styles/workspace.css";
 import "./styles/operations.css";
+import "./styles/cafe.css";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
