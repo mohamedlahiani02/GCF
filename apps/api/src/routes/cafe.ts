@@ -3,8 +3,10 @@ import { z } from "zod";
 import { writeAudit } from "../audit.js";
 import { activeSupplier, assertCafeOpen, cafeDay, cafeSettings, lockCafeTill, moveStock, nextSaleNumber } from "../domain/cafe.js";
 import { recordFinancialEvents } from "../domain/financialEvents.js";
+import { openingFloat, setOpeningFloat } from "../domain/cash.js";
 import { centreClock } from "../domain/ledger.js";
-import { conflict, notFound, unprocessable } from "../errors.js";
+import { can } from "../auth/permissions.js";
+import { conflict, forbidden, notFound, unauthenticated, unprocessable } from "../errors.js";
 import { idParam, isoDate, millimes, optionalText, reason, requiredText, uuid } from "../validation.js";
 
 const quantity = z.number().int().min(1).max(100_000);
@@ -432,8 +434,25 @@ export const cafeRoutes: FastifyPluginAsync = async (app) => {
       .where("cafe_closings.centre_id", "=", centreId)
       .where("cafe_closings.day", "=", date)
       .executeTakeFirst();
-    const openingFloat = closing ? closing.openingFloat : (await cafeSettings(db, centreId)).openingFloat;
-    return { ...(await cafeDay(db, centreId, date, openingFloat)), closing: closing ?? null };
+    const opening = await openingFloat(db, centreId, "cafe", date, (await cafeSettings(db, centreId)).openingFloat);
+    // A closed day keeps the float it was closed with.
+    const day = await cafeDay(db, centreId, date, closing ? closing.openingFloat : opening.amount);
+    return { ...day, openingRecorded: opening.recorded, suggestedFloat: opening.suggested, closing: closing ?? null };
+  });
+
+  /** The cash put in the café till that morning; it can be corrected until the day is closed. */
+  app.put("/opening", async (request) => {
+    const actor = request.user;
+    if (!actor) throw unauthenticated();
+    if (!can(actor, "cafe:sell") && !can(actor, "cafe:close")) throw forbidden();
+    const body = z.object({ day: isoDate, amount: millimes }).strict().parse(request.body);
+    return db.transaction().execute(async (trx) => {
+      await lockCafeTill(trx, actor.centreId);
+      const { today } = await centreClock(trx, actor.centreId);
+      await assertCafeOpen(trx, actor.centreId, body.day);
+      const fallback = (await cafeSettings(trx, actor.centreId)).openingFloat;
+      return setOpeningFloat(trx, { centreId: actor.centreId, till: "cafe", day: body.day, amount: body.amount, userId: actor.userId, today, fallback });
+    });
   });
 
   /** Locks the café day: expected cash is the opening float plus the cash sales, recomputed on the server. */
@@ -451,8 +470,9 @@ export const cafeRoutes: FastifyPluginAsync = async (app) => {
         .where("day", "=", body.day)
         .executeTakeFirst();
       if (existing) throw conflict("already_closed", "this day is already closed");
-      const { openingFloat } = await cafeSettings(trx, actor.centreId);
-      const day = await cafeDay(trx, actor.centreId, body.day, openingFloat);
+      // The float entered that morning, or the café's usual float when nobody entered one.
+      const { amount: float } = await openingFloat(trx, actor.centreId, "cafe", body.day, (await cafeSettings(trx, actor.centreId)).openingFloat);
+      const day = await cafeDay(trx, actor.centreId, body.day, float);
       const difference = body.countedCash - day.expectedCash;
       if (difference !== 0 && !body.comment) throw unprocessable("comment_required", "explain the difference between expected and counted cash");
       const closing = await trx
@@ -460,7 +480,7 @@ export const cafeRoutes: FastifyPluginAsync = async (app) => {
         .values({
           centre_id: actor.centreId,
           day: body.day,
-          opening_float: openingFloat,
+          opening_float: float,
           expected_cash: day.expectedCash,
           counted_cash: body.countedCash,
           difference,
@@ -476,7 +496,7 @@ export const cafeRoutes: FastifyPluginAsync = async (app) => {
           type: "cafe_cash_closed",
           amount: difference,
           userId: actor.userId,
-          payload: { day: body.day, openingFloat, expected: day.expectedCash, counted: body.countedCash, totals: day.totals },
+          payload: { day: body.day, openingFloat: float, expected: day.expectedCash, counted: body.countedCash, totals: day.totals },
         },
       ]);
       await writeAudit(trx, {

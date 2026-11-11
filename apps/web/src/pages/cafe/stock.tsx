@@ -283,8 +283,8 @@ function SettingsModal({ settings, onClose }: { settings: CafeSettings; onClose:
     >
       <div className="grid2">
         <Field
-          label="Fond de caisse (TND)"
-          hint="Les espèces laissées dans la caisse du café chaque matin."
+          label="Fond de caisse habituel (TND)"
+          hint="Proposé chaque matin, et utilisé si personne ne saisit le fond du jour."
           error={openingFloat === null ? "Montant invalide" : null}
         >
           <input className="input num" inputMode="decimal" value={floatText} onChange={(e) => setFloatText(e.target.value)} />

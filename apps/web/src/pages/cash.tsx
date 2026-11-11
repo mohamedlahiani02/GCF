@@ -3,6 +3,7 @@ import { useState } from "react";
 import { Link, useSearchParams } from "react-router";
 import { api } from "../api/client";
 import { useSession } from "../auth/session";
+import { OpeningFloat } from "../components/opening-float";
 import { usePage } from "../components/shell";
 import { useToast } from "../components/toasts";
 import { Badge, Card, Empty, ErrorBanner, Field, Kpi, Loading, Modal, PageHeader } from "../components/ui";
@@ -72,6 +73,9 @@ interface Journal {
   }[];
   totals: Record<Method, number>;
   byActivity: Record<Activity, Record<Method, number>>;
+  openingFloat: number;
+  openingRecorded: boolean;
+  suggestedFloat: number;
   expectedCash: number;
   closing: { expectedCash: number; countedCash: number; difference: number; comment: string | null; closedAt: string; closedBy: string | null } | null;
 }
@@ -129,6 +133,9 @@ function CloseModal({ journal, onClose }: { journal: Journal; onClose: () => voi
           <div className="lab">Espèces attendues</div>
           <div className="amt-s num" style={{ textAlign: "start" }}>
             {tnd(journal.expectedCash)} TND
+          </div>
+          <div className="cap">
+            Fond de caisse {tnd(journal.openingFloat)} + espèces encaissées {tnd(journal.totals.cash)}
           </div>
         </div>
         <Field label="Espèces comptées (TND)" error={countedText && counted === null ? "Montant invalide" : null}>
@@ -205,11 +212,22 @@ export function CashPage() {
       ) : j ? (
         <>
           <div className="grid4">
-            <Kpi label="Espèces" value={<span className="num">{tnd(j.totals.cash)}</span>} sub="TND attendus en caisse" />
+            <Kpi label="Espèces" value={<span className="num">{tnd(j.totals.cash)}</span>} sub="TND encaissés ce jour" />
             <Kpi label="Chèques" value={<span className="num">{tnd(j.totals.cheque)}</span>} sub="TND" />
             <Kpi label="Cartes" value={<span className="num">{tnd(j.totals.card)}</span>} sub="TND" />
             <Kpi label="Virements" value={<span className="num">{tnd(j.totals.transfer)}</span>} sub="TND" />
           </div>
+          <OpeningFloat
+            endpoint="/cash/opening"
+            till="caisse du centre"
+            day={j.day}
+            amount={j.openingFloat}
+            recorded={j.openingRecorded}
+            suggested={j.suggestedFloat}
+            expectedCash={j.expectedCash}
+            editable={!j.closing && (can("payments:write") || can("cash:close"))}
+            queryKey="cash-journal"
+          />
           {j.closing ? (
             <div className={j.closing.difference === 0 ? "ban ban-green" : "ban ban-amber"}>
               <strong>Clôturée le {frDateTime(j.closing.closedAt)}</strong>

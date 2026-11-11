@@ -1,13 +1,15 @@
 import type { FastifyPluginAsync } from "fastify";
 import { z } from "zod";
 import { writeAudit } from "../audit.js";
-import { cashDay } from "../domain/cash.js";
+import { cashDay, lockTill, openingFloat, setOpeningFloat } from "../domain/cash.js";
 import { recordFinancialEvents } from "../domain/financialEvents.js";
 import { centreClock } from "../domain/ledger.js";
-import { conflict, unprocessable } from "../errors.js";
+import { can } from "../auth/permissions.js";
+import { conflict, forbidden, unauthenticated, unprocessable } from "../errors.js";
 import { isoDate, millimes } from "../validation.js";
 
 const dayQuery = z.object({ date: isoDate });
+const openingBody = z.object({ day: isoDate, amount: millimes }).strict();
 const closeBody = z.object({ day: isoDate, countedCash: millimes, comment: z.string().trim().max(1000).optional() }).strict();
 
 export const cashRoutes: FastifyPluginAsync = async (app) => {
@@ -16,11 +18,11 @@ export const cashRoutes: FastifyPluginAsync = async (app) => {
   app.get("/journal", { preHandler: app.requirePermission("cash:read") }, async (request) => {
     const centreId = request.user!.centreId;
     const { date } = dayQuery.parse(request.query);
-    const day = await cashDay(db, centreId, date);
     const closing = await db
       .selectFrom("cash_closings")
       .leftJoin("users", "users.id", "cash_closings.closed_by")
       .select([
+        "cash_closings.opening_float as openingFloat",
         "cash_closings.expected_cash as expectedCash",
         "cash_closings.counted_cash as countedCash",
         "cash_closings.difference",
@@ -31,7 +33,26 @@ export const cashRoutes: FastifyPluginAsync = async (app) => {
       .where("cash_closings.centre_id", "=", centreId)
       .where("cash_closings.day", "=", date)
       .executeTakeFirst();
-    return { ...day, closing: closing ?? null };
+    const opening = await openingFloat(db, centreId, "centre", date, 0);
+    // A closed day keeps the float it was closed with.
+    const day = await cashDay(db, centreId, date, closing ? closing.openingFloat : opening.amount);
+    return { ...day, openingRecorded: opening.recorded, suggestedFloat: opening.suggested, closing: closing ?? null };
+  });
+
+  /** The cash put in the centre's till that morning; it can be corrected until the day is closed. */
+  app.put("/opening", async (request) => {
+    const actor = request.user;
+    if (!actor) throw unauthenticated();
+    // The front desk opens the till in the morning; whoever closes it may correct the float.
+    if (!can(actor, "payments:write") && !can(actor, "cash:close")) throw forbidden();
+    const body = openingBody.parse(request.body);
+    return db.transaction().execute(async (trx) => {
+      await lockTill(trx, actor.centreId, "centre");
+      const { today } = await centreClock(trx, actor.centreId);
+      const closed = await trx.selectFrom("cash_closings").select("id").where("centre_id", "=", actor.centreId).where("day", "=", body.day).executeTakeFirst();
+      if (closed) throw conflict("already_closed", "this day is already closed");
+      return setOpeningFloat(trx, { centreId: actor.centreId, till: "centre", day: body.day, amount: body.amount, userId: actor.userId, today, fallback: 0 });
+    });
   });
 
   /** Locks the day: expected cash is recomputed on the server, a difference needs a comment. */
@@ -39,6 +60,7 @@ export const cashRoutes: FastifyPluginAsync = async (app) => {
     const actor = request.user!;
     const body = closeBody.parse(request.body);
     const result = await db.transaction().execute(async (trx) => {
+      await lockTill(trx, actor.centreId, "centre");
       const { today } = await centreClock(trx, actor.centreId);
       if (body.day > today) throw unprocessable("future_day", "a day can only be closed once it has started");
       const existing = await trx
@@ -48,7 +70,7 @@ export const cashRoutes: FastifyPluginAsync = async (app) => {
         .where("day", "=", body.day)
         .executeTakeFirst();
       if (existing) throw conflict("already_closed", "this day is already closed");
-      const day = await cashDay(trx, actor.centreId, body.day);
+      const day = await cashDay(trx, actor.centreId, body.day, (await openingFloat(trx, actor.centreId, "centre", body.day, 0)).amount);
       const difference = body.countedCash - day.expectedCash;
       if (difference !== 0 && !body.comment) throw unprocessable("comment_required", "explain the difference between expected and counted cash");
       const closing = await trx
@@ -56,6 +78,7 @@ export const cashRoutes: FastifyPluginAsync = async (app) => {
         .values({
           centre_id: actor.centreId,
           day: body.day,
+          opening_float: day.openingFloat,
           expected_cash: day.expectedCash,
           counted_cash: body.countedCash,
           difference,
@@ -63,7 +86,7 @@ export const cashRoutes: FastifyPluginAsync = async (app) => {
           totals: JSON.stringify(day.totals),
           closed_by: actor.userId,
         })
-        .returning(["id", "day", "expected_cash as expectedCash", "counted_cash as countedCash", "difference", "comment"])
+        .returning(["id", "day", "opening_float as openingFloat", "expected_cash as expectedCash", "counted_cash as countedCash", "difference", "comment"])
         .executeTakeFirstOrThrow();
       await recordFinancialEvents(trx, [
         {
@@ -71,7 +94,7 @@ export const cashRoutes: FastifyPluginAsync = async (app) => {
           type: "cash_closed",
           amount: difference,
           userId: actor.userId,
-          payload: { day: body.day, expected: day.expectedCash, counted: body.countedCash, totals: day.totals },
+          payload: { day: body.day, openingFloat: day.openingFloat, expected: day.expectedCash, counted: body.countedCash, totals: day.totals },
         },
       ]);
       await writeAudit(trx, {
@@ -95,6 +118,7 @@ export const cashRoutes: FastifyPluginAsync = async (app) => {
       .select([
         "cash_closings.id",
         "cash_closings.day",
+        "cash_closings.opening_float as openingFloat",
         "cash_closings.expected_cash as expectedCash",
         "cash_closings.counted_cash as countedCash",
         "cash_closings.difference",

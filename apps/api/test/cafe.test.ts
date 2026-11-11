@@ -173,6 +173,18 @@ describe("café till", () => {
     expect(journal.closing).toBeNull();
   });
 
+  it("uses the float entered that morning instead of the usual one, and proposes it the next time", async () => {
+    expect((await h.call("GET", `/api/cafe/journal?date=${today}`, admin)).body).toMatchObject({ openingRecorded: false, suggestedFloat: 50000 });
+    expect((await h.call("PUT", "/api/cafe/opening", accountant, { day: today, amount: 30000 })).status).toBe(200);
+    expect((await h.call("GET", `/api/cafe/journal?date=${today}`, admin)).body).toMatchObject({
+      openingFloat: 30000,
+      openingRecorded: true,
+      expectedCash: 38000,
+    });
+    expect((await h.call("PUT", "/api/cafe/opening", secretariat, { day: "2999-01-01", amount: 1 })).body.code).toBe("future_day");
+    expect((await h.call("PUT", "/api/cafe/opening", secretariat, { day: today, amount: 50000 })).body.amount).toBe(50000);
+  });
+
   it("closes the day once, asks for a comment on a difference, then refuses sales and cancellations", async () => {
     expect((await h.call("POST", "/api/cafe/closings", secretariat, { day: today, countedCash: 58000 })).status).toBe(403);
     expect((await h.call("POST", "/api/cafe/closings", accountant, { day: today, countedCash: 57000 })).body.code).toBe("comment_required");
@@ -184,6 +196,7 @@ describe("café till", () => {
     expect(sale.body.code).toBe("cafe_closed");
     const first = (await h.call("GET", `/api/cafe/journal?date=${today}`, admin)).body.sales[0];
     expect((await h.call("POST", `/api/cafe/sales/${first.id}/cancel`, admin, { reason: "Trop tard" })).body.code).toBe("cafe_closed");
+    expect((await h.call("PUT", "/api/cafe/opening", admin, { day: today, amount: 1000 })).body.code).toBe("cafe_closed");
     await expect(sql`delete from cafe_closings`.execute(h.db)).rejects.toThrow(/locked/);
   });
 

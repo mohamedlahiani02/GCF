@@ -3,6 +3,7 @@ import { useState } from "react";
 import { Link, useSearchParams } from "react-router";
 import { api } from "../../api/client";
 import { useSession } from "../../auth/session";
+import { OpeningFloat } from "../../components/opening-float";
 import { usePage } from "../../components/shell";
 import { useToast } from "../../components/toasts";
 import { Badge, Card, Empty, ErrorBanner, Field, Kpi, Loading, Modal, PageHeader, ReasonDialog } from "../../components/ui";
@@ -34,6 +35,8 @@ interface Journal {
   sales: Sale[];
   totals: Record<CafeMethod, number>;
   openingFloat: number;
+  openingRecorded: boolean;
+  suggestedFloat: number;
   expectedCash: number;
   closing: ClosingSummary | null;
 }
@@ -168,9 +171,24 @@ export function CafeTillPage() {
           <div className="grid4">
             <Kpi label="Ventes en espèces" value={<span className="num">{tnd(j.totals.cash)}</span>} sub="TND" />
             <Kpi label="Ventes par carte" value={<span className="num">{tnd(j.totals.card)}</span>} sub="TND" />
-            <Kpi label="Fond de caisse" value={<span className="num">{tnd(j.openingFloat)}</span>} sub="TND laissés le matin" />
+            <Kpi
+              label="Fond de caisse"
+              value={<span className="num">{tnd(j.openingFloat)}</span>}
+              sub={j.openingRecorded ? "TND saisis ce matin" : "TND, montant habituel"}
+            />
             <Kpi label="Espèces attendues" value={<span className="num">{tnd(j.expectedCash)}</span>} sub={`TND · ${valid} vente(s)`} />
           </div>
+          <OpeningFloat
+            endpoint="/cafe/opening"
+            till="caisse du café"
+            day={j.day}
+            amount={j.openingFloat}
+            recorded={j.openingRecorded}
+            suggested={j.suggestedFloat}
+            expectedCash={j.expectedCash}
+            editable={!j.closing && (can("cafe:sell") || can("cafe:close"))}
+            queryKey="cafe-journal"
+          />
           {j.closing ? (
             <div className={j.closing.difference === 0 ? "ban ban-green" : "ban ban-amber"}>
               <strong>Clôturée le {frDateTime(j.closing.closedAt)}</strong>

@@ -130,15 +130,15 @@ Précisions :
 Le café a sa propre caisse, séparée de la caisse du centre : ses ventes n'entrent pas dans le journal de caisse
 des encaissements, et sa clôture est indépendante.
 
-| Réglage                   | Effet                                                                                                                                   | Défaut  |
-| ------------------------- | --------------------------------------------------------------------------------------------------------------------------------------- | ------- |
-| Fond de caisse            | Espèces laissées chaque matin ; espèces attendues à la clôture = fond + ventes en espèces                                               | 0       |
-| Vente en rupture de stock | Autorisée : la vente passe et le stock devient négatif. Refusée : la vente est bloquée                                                  | Refusée |
-| Préfixe des tickets       | Début du numéro de ticket (`CAF-2026-000001`), numérotation par année                                                                   | `CAF`   |
-| Impression du ticket      | Aucune (centre sans imprimante), imprimante de bureau, ou imprimante à tickets 58 / 80 mm                                               | Aucune  |
-| Achats                    | Réception simple ; réception avec fournisseur obligatoire ; ou bons de commande (brouillon, envoyé, reçu) seuls à faire entrer du stock | Simple  |
-| Produit : suivre le stock | Décoché pour ce qui se prépare sur place (café express) : aucune quantité n'est décomptée                                               | Coché   |
-| Produit : seuil d'alerte  | Le produit est signalé « stock bas » quand la quantité atteint ce nombre                                                                | Aucun   |
+| Réglage                   | Effet                                                                                                                                                                                       | Défaut  |
+| ------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------- |
+| Fond de caisse habituel   | Proposé chaque matin au café. Le fond réellement mis en caisse se saisit jour par jour, pour la caisse du centre comme pour celle du café ; la clôture attend ce fond + les espèces du jour | 0       |
+| Vente en rupture de stock | Autorisée : la vente passe et le stock devient négatif. Refusée : la vente est bloquée                                                                                                      | Refusée |
+| Préfixe des tickets       | Début du numéro de ticket (`CAF-2026-000001`), numérotation par année                                                                                                                       | `CAF`   |
+| Impression du ticket      | Aucune (centre sans imprimante), imprimante de bureau, ou imprimante à tickets 58 / 80 mm                                                                                                   | Aucune  |
+| Achats                    | Réception simple ; réception avec fournisseur obligatoire ; ou bons de commande (brouillon, envoyé, reçu) seuls à faire entrer du stock                                                     | Simple  |
+| Produit : suivre le stock | Décoché pour ce qui se prépare sur place (café express) : aucune quantité n'est décomptée                                                                                                   | Coché   |
+| Produit : seuil d'alerte  | Le produit est signalé « stock bas » quand la quantité atteint ce nombre                                                                                                                    | Aucun   |
 
 Règles fixes : le prix d'une vente est lu sur le serveur au moment de la vente ; un mouvement de stock n'est jamais
 modifié (une erreur se corrige par un inventaire, avec motif) ; une journée clôturée n'accepte plus ni vente ni

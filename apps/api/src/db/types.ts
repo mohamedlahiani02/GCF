@@ -617,10 +617,24 @@ export interface RentalSlotsTable {
   ends_at: ColumnType<Date, Date | string, Date | string>;
 }
 
+export type Till = "centre" | "cafe";
+
+export interface CashOpeningsTable {
+  id: Generated<string>;
+  centre_id: string;
+  till: Till;
+  day: DateColumn;
+  amount: number;
+  opened_by: string;
+  opened_at: Timestamp;
+  updated_at: Timestamp;
+}
+
 export interface CashClosingsTable {
   id: Generated<string>;
   centre_id: string;
   day: DateColumn;
+  opening_float: Generated<number>;
   expected_cash: number;
   counted_cash: number;
   difference: number;
@@ -673,6 +687,7 @@ export interface Database extends CoworkingTables, WebsiteTables, CafeTables {
   rentals: RentalsTable;
   rental_slots: RentalSlotsTable;
   cash_closings: CashClosingsTable;
+  cash_openings: CashOpeningsTable;
   companies: CompaniesTable;
   members: MembersTable;
   member_sessions: MemberSessionsTable;
