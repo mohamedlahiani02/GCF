@@ -11,6 +11,8 @@
   },
   "dependencies": {
     "@fontsource/ibm-plex-sans": "5.3.0",
+    "@fontsource/inter": "5.2.8",
+    "@fontsource/manrope": "5.2.8",
     "@gcf/floorplan": "workspace:*",
     "@gcf/shared": "workspace:*",
     "@tanstack/react-query": "5.104.3",

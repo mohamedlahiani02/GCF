@@ -1,6 +1,8 @@
-import "@fontsource/ibm-plex-sans/400.css";
-import "@fontsource/ibm-plex-sans/500.css";
-import "@fontsource/ibm-plex-sans/600.css";
+import "@fontsource/inter/400.css";
+import "@fontsource/inter/500.css";
+import "@fontsource/inter/600.css";
+import "@fontsource/manrope/600.css";
+import "@fontsource/manrope/700.css";
 import "../../web/src/styles/app.css";
 import "./styles/portal.css";
 import { QueryCache, QueryClient, QueryClientProvider } from "@tanstack/react-query";

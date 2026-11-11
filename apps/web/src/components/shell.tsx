@@ -269,12 +269,10 @@ export function Shell() {
                         <img src={api.fileUrl("/centre/logo", { v: centre.data.logoVersion })} alt="" />
                       </span>
                     ) : (
-                      <span className="logo" aria-hidden="true">
-                        {initials(centre.data?.name ?? "Gestion du centre")}
-                      </span>
+                      <img className="brand-mark" src="/axelia-mark.svg" alt="" width={40} height={40} />
                     )}
                     <span className="lbl brand-text">
-                      <strong>{centre.data?.name ?? "Gestion du centre"}</strong>
+                      <strong>{centre.data?.name ?? "AXÉLIA"}</strong>
                       <span className="cap">Back-office</span>
                     </span>
                     <button

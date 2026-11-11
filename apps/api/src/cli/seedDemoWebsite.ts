@@ -57,13 +57,13 @@ export async function seedWebsite({ call, publicCall, db, centreId, today, cowor
   const images = {} as Record<keyof typeof ILLUSTRATIONS, string>;
   for (const [key, { file, alt }] of Object.entries(ILLUSTRATIONS) as [keyof typeof ILLUSTRATIONS, (typeof ILLUSTRATIONS)[keyof typeof ILLUSTRATIONS]][])
     images[key] = await upload(file, alt, "site");
-  const logo = await upload("logo.png", "Centre Avenir", "identite");
-  const favicon = await upload("logo-mark.png", "Monogramme du Centre Avenir", "identite");
+  const logo = await upload("logo.png", "AXÉLIA", "identite");
+  const favicon = await upload("logo-mark.png", "Symbole AXÉLIA", "identite");
 
   await call("PUT", "/site/settings", {
     theme: "corporate",
-    primaryColor: "#1d4ed8",
-    secondaryColor: "#0f766e",
+    primaryColor: "#3d4ee0",
+    secondaryColor: "#0e1a36",
     font: "inter",
     radius: "small",
     colorScheme: "light",
@@ -71,16 +71,16 @@ export async function seedWebsite({ call, publicCall, db, centreId, today, cowor
     faviconMediaId: favicon,
     languages: ["fr", "en"],
     defaultLanguage: "fr",
-    siteName: "Centre Avenir",
+    siteName: "AXÉLIA",
     tagline: "Formation et coworking au cœur de Tunis",
-    contactEmail: "contact@centre-avenir.example.com",
+    contactEmail: "contact@axelia.example.com",
     contactPhone: "71 234 567",
     address: "12, rue de Carthage, 1000 Tunis",
     mapUrl: "https://www.openstreetmap.org/?mlat=36.8008&mlon=10.1800#map=17/36.8008/10.1800",
-    facebookUrl: "https://www.facebook.com/centre.avenir.example",
-    linkedinUrl: "https://www.linkedin.com/company/centre-avenir-example",
+    facebookUrl: "https://www.facebook.com/axelia.example",
+    linkedinUrl: "https://www.linkedin.com/company/axelia-example",
     seoDescription: "Postes en open space, salles de réunion, bureaux privés et domiciliation à Tunis.",
-    footerText: "Centre Avenir, formation professionnelle et espace de coworking.",
+    footerText: "AXÉLIA, formation professionnelle et espace de coworking.",
   });
 
   const page = async (body: Record<string, unknown>) => (await call("POST", "/site/pages", body)).id;
@@ -109,7 +109,7 @@ export async function seedWebsite({ call, publicCall, db, centreId, today, cowor
   await draft(pages.home, "fr", {
     title: "Accueil",
     seoTitle: "Coworking et formation à Tunis",
-    seoDescription: "Réservez un poste, une salle de réunion ou un bureau privé au Centre Avenir.",
+    seoDescription: "Réservez un poste, une salle de réunion ou un bureau privé au AXÉLIA.",
     sections: [
       {
         id: "bienvenue",
@@ -173,7 +173,7 @@ export async function seedWebsite({ call, publicCall, db, centreId, today, cowor
   await draft(pages.home, "en", {
     title: "Home",
     seoTitle: "Coworking and training in Tunis",
-    seoDescription: "Book a desk, a meeting room or a private office at Centre Avenir.",
+    seoDescription: "Book a desk, a meeting room or a private office at AXÉLIA.",
     sections: [
       {
         id: "bienvenue",
@@ -337,12 +337,12 @@ export async function seedWebsite({ call, publicCall, db, centreId, today, cowor
   };
   await draft(pages.gallery, "fr", {
     title: "Galerie",
-    seoDescription: "Les photos du Centre Avenir : espaces de travail, détente, événements.",
+    seoDescription: "Les photos du AXÉLIA : espaces de travail, détente, événements.",
     sections: albums("fr"),
   });
   await draft(pages.gallery, "en", {
     title: "Gallery",
-    seoDescription: "Photos of Centre Avenir: workspaces, lounge and events.",
+    seoDescription: "Photos of AXÉLIA: workspaces, lounge and events.",
     sections: albums("en"),
   });
 
