@@ -88,7 +88,7 @@ export async function issueReceipt(trx: Transaction<Database>, input: IssueRecei
     amount: input.kind === "cancellation" ? -payment.amount : payment.amount,
     lines: input.lines,
     creditAfter: await payerCredit(trx, payer),
-    remainingAfter: totals.due,
+    remainingAfter: totals.totalRemaining,
     cancels: input.cancels ? { number: input.cancels.number, reason: input.cancels.reason } : null,
   };
   const pdf = await renderReceipt(snapshot, { format: "A4", duplicate: false });

@@ -15,12 +15,12 @@ La roadmap du mini-ERP reste dans `docs/roadmap-mini-erp.md` et est amendée par
 
 ## Isolation de la recette
 
-| Ressource | Démo habituelle | Recette PR |
-| --- | --- | --- |
-| Serveur | http://localhost:3000 | http://localhost:3010 |
-| Base | `gcf_demo_20261107` | `gcf_pr12_review` — copie de la démo |
-| Base des tests automatisés | Non utilisée | `gcf_pr12_test` — jetable |
-| n8n | Aucun | http://localhost:5678 |
+| Ressource                  | Démo habituelle       | Recette PR                           |
+| -------------------------- | --------------------- | ------------------------------------ |
+| Serveur                    | http://localhost:3000 | http://localhost:3010                |
+| Base                       | `gcf_demo_20261107`   | `gcf_pr12_review` — copie de la démo |
+| Base des tests automatisés | Non utilisée          | `gcf_pr12_test` — jetable            |
+| n8n                        | Aucun                 | http://localhost:5678                |
 
 - Les migrations `0016_integrations` et `0017_automations` sont appliquées uniquement sur la copie de recette et dans la suite de tests.
 - Le code, la configuration et la base de la démo habituelle ne sont pas remplacés.
@@ -32,17 +32,17 @@ La roadmap du mini-ERP reste dans `docs/roadmap-mini-erp.md` et est amendée par
 
 ## Résultats exécutés
 
-| Contrôle | Résultat |
-| --- | --- |
-| Installation avec lockfile figé | Réussie |
-| Migrations de la copie | `0016` et `0017` appliquées |
-| `pnpm typecheck` | Réussi sur les cinq packages applicatifs/partagés |
-| `pnpm build` | Back-office et portail compilés |
-| Tests partagés | 33 réussis |
-| Tests API sur PostgreSQL 16 | 231 réussis dans 21 fichiers |
-| Total tests automatisés | 264 réussis |
-| Authentification sur le serveur de recette | Réussie |
-| Workflow n8n publié et exécuté réellement | Réussi |
+| Contrôle                                   | Résultat                                          |
+| ------------------------------------------ | ------------------------------------------------- |
+| Installation avec lockfile figé            | Réussie                                           |
+| Migrations de la copie                     | `0016` et `0017` appliquées                       |
+| `pnpm typecheck`                           | Réussi sur les cinq packages applicatifs/partagés |
+| `pnpm build`                               | Back-office et portail compilés                   |
+| Tests partagés                             | 33 réussis                                        |
+| Tests API sur PostgreSQL 16                | 231 réussis dans 21 fichiers                      |
+| Total tests automatisés                    | 264 réussis                                       |
+| Authentification sur le serveur de recette | Réussie                                           |
+| Workflow n8n publié et exécuté réellement  | Réussi                                            |
 
 Les tests API incluent notamment : restrictions de rôle et de lecture seule des jetons, révocation/expiration, attribution de l'audit au jeton, mise en file et signature des webhooks, délais de nouvelles tentatives, renvoi manuel, réception indisponible et concurrence des dispatchers. Les scénarios d'automatisation couvrent les valeurs par défaut, les droits, les périodes, les exclusions de relance, la relecture du solde, le calcul sans validation de paie, les propositions et l'avis de courrier.
 
@@ -79,12 +79,12 @@ Ce workflow est une recette de lecture. Il ne transmet aucun message à un tiers
 
 ## Écrans à tester
 
-| Écran | Adresse |
-| --- | --- |
-| Intégrations | http://localhost:3010/integrations |
+| Écran           | Adresse                               |
+| --------------- | ------------------------------------- |
+| Intégrations    | http://localhost:3010/integrations    |
 | Automatisations | http://localhost:3010/automatisations |
-| Propositions | http://localhost:3010/propositions |
-| n8n | http://localhost:5678 |
+| Propositions    | http://localhost:3010/propositions    |
+| n8n             | http://localhost:5678                 |
 
 Connexion GCF : `admin@demo.tn`, mot de passe de la démo fourni dans la conversation.
 
@@ -94,21 +94,21 @@ Les automatisations sont laissées désactivées. La boîte Propositions peut do
 
 ## Compatibilité avec le mini-ERP
 
-| Élément de roadmap | Apport de ces PR | État |
-| --- | --- | --- |
-| Comptes techniques | Jetons restreints, révocables, expirables et jamais Admin | Première implémentation utilisable |
-| Traçabilité | Action attribuée au créateur et au nom du jeton | Implémenté et vérifié |
-| Événements sortants | File transactionnelle issue du journal d'audit | Implémenté pour les événements audités couverts |
-| Livraison asynchrone | Signature, tentatives, historique et renvoi manuel | Implémenté, durcissement à prévoir |
-| Intégration n8n | Déploiement local et recette événement→lecture API | Vérifié avec instance réelle |
-| Autonomie | Catalogue de quatre tâches avec modes contrôlés | Implémenté, catalogue fixe |
-| Approbation humaine | Propositions, droits et identité du décideur | Implémenté, reprise après interruption à renforcer |
-| Framework générique de workflows | Éditeur de déclencheurs/conditions/actions et versionnement | Non fourni par ces PR |
-| Framework consultant | Packs, import, recette→production, documentation des configurations | Reste à construire |
-| API ERP versionnée / SDK | Contrats publics, scopes fins et modèles de connecteur | Reste à construire |
-| Finco, stock et comptabilité | Aucun moteur commercial/comptable nouveau | Roadmap inchangée |
-| Agent IA / MCP | Non livré dans ces branches | À venir, sous les mêmes droits et propositions |
-| WhatsApp parents | Non relié | Différé jusqu'au cadrage des données personnelles et des canaux |
+| Élément de roadmap               | Apport de ces PR                                                    | État                                                            |
+| -------------------------------- | ------------------------------------------------------------------- | --------------------------------------------------------------- |
+| Comptes techniques               | Jetons restreints, révocables, expirables et jamais Admin           | Première implémentation utilisable                              |
+| Traçabilité                      | Action attribuée au créateur et au nom du jeton                     | Implémenté et vérifié                                           |
+| Événements sortants              | File transactionnelle issue du journal d'audit                      | Implémenté pour les événements audités couverts                 |
+| Livraison asynchrone             | Signature, tentatives, historique et renvoi manuel                  | Implémenté, durcissement à prévoir                              |
+| Intégration n8n                  | Déploiement local et recette événement→lecture API                  | Vérifié avec instance réelle                                    |
+| Autonomie                        | Catalogue de quatre tâches avec modes contrôlés                     | Implémenté, catalogue fixe                                      |
+| Approbation humaine              | Propositions, droits et identité du décideur                        | Implémenté, reprise après interruption à renforcer              |
+| Framework générique de workflows | Éditeur de déclencheurs/conditions/actions et versionnement         | Non fourni par ces PR                                           |
+| Framework consultant             | Packs, import, recette→production, documentation des configurations | Reste à construire                                              |
+| API ERP versionnée / SDK         | Contrats publics, scopes fins et modèles de connecteur              | Reste à construire                                              |
+| Finco, stock et comptabilité     | Aucun moteur commercial/comptable nouveau                           | Roadmap inchangée                                               |
+| Agent IA / MCP                   | Non livré dans ces branches                                         | À venir, sous les mêmes droits et propositions                  |
+| WhatsApp parents                 | Non relié                                                           | Différé jusqu'au cadrage des données personnelles et des canaux |
 
 Conclusion : compatibles avec la cible. Ces PR constituent une version initiale des intégrations et automatisations, pas l'ensemble du framework ERP.
 
