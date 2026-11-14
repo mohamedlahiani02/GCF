@@ -309,3 +309,184 @@ describe("reminders", () => {
     expect(mailer.sent.at(-1)!.text).toContain("septembre 2026");
   });
 });
+
+describe("financial activity and receipt filters", () => {
+  const filterIds: Record<string, string> = {};
+
+  async function create(url: string, payload: unknown) {
+    const response = await h.call("POST", url, admin, payload);
+    expect(response.status, JSON.stringify(response.body)).toBe(201);
+    return response.body;
+  }
+
+  beforeAll(async () => {
+    await h.setModules(["training", "coworking"]);
+    filterIds.student = (await create("/api/students", { firstName: "Archive", lastName: "Payeur", email: "archive@client.test" })).id;
+    await create("/api/enrolments", {
+      studentId: filterIds.student,
+      groupId: ids.gA,
+      effectiveDate: "2026-09-01",
+      paymentMode: "monthly",
+      firstDueDate: "2026-09-05",
+      proratePartialMonths: false,
+    });
+    await create("/api/enrolments", { studentId: filterIds.student, groupId: ids.gT, effectiveDate: "2026-10-01", planId: ids.fullPlan });
+    const schedule = (await account(filterIds.student)).installments;
+    const studyCharge = schedule.find((item: { label: string }) => item.label.includes("septembre"));
+    const trainingCharge = schedule.find((item: { label: string }) => item.label.includes("Anglais professionnel"));
+    const mixed = await create("/api/payments", {
+      studentId: filterIds.student,
+      amount: 60_000,
+      method: "cash",
+      installmentIds: [studyCharge.id, trainingCharge.id],
+    });
+    filterIds.mixedPayment = mixed.paymentId;
+    filterIds.mixedReceipt = mixed.receipt.id;
+    filterIds.mixedNumber = mixed.receipt.number;
+
+    filterIds.advanceStudent = (await create("/api/students", { firstName: "Avance", lastName: "Libre" })).id;
+    filterIds.advance = (await create("/api/payments", { studentId: filterIds.advanceStudent, amount: 50_000, method: "cash" })).paymentId;
+
+    filterIds.member = (await create("/api/coworking/members", { kind: "member", firstName: "Client", lastName: "Coworking", email: "cw@client.test" })).id;
+    const plan = await create("/api/coworking/plans", {
+      name: "Domiciliation test filtres",
+      period: "month",
+      price: 100_000,
+      billing: "upfront",
+      includesDomiciliation: true,
+    });
+    await create("/api/coworking/subscriptions", { memberId: filterIds.member, planId: plan.id, startsOn: "2026-09-01" });
+    const memberPayment = await create("/api/payments", { memberId: filterIds.member, amount: 20_000, method: "cash" });
+    filterIds.memberPayment = memberPayment.paymentId;
+    filterIds.memberReceipt = memberPayment.receipt.id;
+
+    filterIds.renter = (await create("/api/renters", { name: "Studio location", email: "location@client.test" })).id;
+    const room = await create("/api/catalogue/rooms", { name: "Salle filtres", capacity: 12 });
+    expect((await h.call("PUT", `/api/rooms/${room.id}/rates`, admin, { rates: [{ unit: "month", amount: 50_000 }] })).status).toBe(200);
+    await create("/api/rentals", {
+      renterId: filterIds.renter,
+      roomId: room.id,
+      unit: "month",
+      periods: 2,
+      pattern: { from: "2026-09-01", to: "2026-10-31", weekdays: [1], startTime: "09:00", endTime: "10:00" },
+      paymentMode: "recurring",
+    });
+    filterIds.renterPayment = (await create("/api/payments", { renterId: filterIds.renter, amount: 10_000, method: "cash" })).paymentId;
+  });
+
+  it("classifies a mixed payment once in each matching activity and keeps unallocated advances distinct", async () => {
+    for (const activity of ["study", "training"]) {
+      const filtered = await h.call("GET", `/api/payments?activity=${activity}&studentId=${filterIds.student}`, admin);
+      expect(filtered.status).toBe(200);
+      expect(filtered.body.items.map((payment: { id: string }) => payment.id)).toEqual([filterIds.mixedPayment]);
+      expect(filtered.body.items[0].activities).toEqual(["study", "training"]);
+    }
+    const advance = await h.call("GET", `/api/payments?studentId=${filterIds.advanceStudent}`, admin);
+    expect(advance.body.items[0].activities).toEqual([]);
+    expect((await h.call("GET", `/api/payments?activity=study&studentId=${filterIds.advanceStudent}`, admin)).body.items).toEqual([]);
+    expect((await h.call("GET", "/api/payments?activity=coworking", admin)).body.items.map((payment: { id: string }) => payment.id)).toEqual([
+      filterIds.memberPayment,
+    ]);
+    expect((await h.call("GET", "/api/payments?activity=rental", admin)).body.items.map((payment: { id: string }) => payment.id)).toEqual([
+      filterIds.renterPayment,
+    ]);
+  });
+
+  it("filters overdue items and bounds a student's reminder to the selected activity", async () => {
+    for (const activity of ["study", "training", "coworking", "rental"]) {
+      const filtered = await h.call("GET", `/api/payments/overdue?activity=${activity}`, admin);
+      expect(filtered.status).toBe(200);
+      expect(filtered.body.items.length).toBeGreaterThan(0);
+      expect(filtered.body.items.every((item: { activity: string }) => item.activity === activity)).toBe(true);
+    }
+    const study = (await h.call("GET", "/api/reminders?activity=study", admin)).body.find((entry: { payerId: string }) => entry.payerId === filterIds.student);
+    const training = (await h.call("GET", "/api/reminders?activity=training", admin)).body.find(
+      (entry: { payerId: string }) => entry.payerId === filterIds.student,
+    );
+    expect(study.total).toBe(40_000);
+    expect(training.total).toBe(80_000);
+    const sent = await h.call("POST", "/api/reminders/send", admin, { studentIds: [filterIds.student], activity: "study" });
+    expect(sent.body.results).toEqual([{ studentId: filterIds.student, status: "sent" }]);
+    expect(mailer.sent.at(-1)!.text).toContain("Total : 40,000 TND");
+    expect(mailer.sent.at(-1)!.text).not.toContain("Anglais professionnel");
+  });
+
+  it("lists and sends reminders for members and renters, recording the matching payer in the mail journal", async () => {
+    for (const [activity, id, field] of [
+      ["coworking", filterIds.member, "memberIds"],
+      ["rental", filterIds.renter, "renterIds"],
+    ] as const) {
+      const list = await h.call("GET", `/api/reminders?activity=${activity}`, admin);
+      expect(list.status).toBe(200);
+      expect(list.body).toHaveLength(1);
+      expect(list.body[0].payerId).toBe(id);
+      const sent = await h.call("POST", "/api/reminders/send", admin, { [field]: [id], activity });
+      expect(sent.status).toBe(200);
+      expect(sent.body.results[0].status).toBe("sent");
+    }
+    const memberMail = await h.db
+      .selectFrom("mail_dispatches")
+      .select(["member_id", "student_id", "renter_id"])
+      .where("member_id", "=", filterIds.member)
+      .where("kind", "=", "reminder")
+      .execute();
+    expect(memberMail).toEqual([{ member_id: filterIds.member, student_id: null, renter_id: null }]);
+    const excluded = await h.call("POST", "/api/reminders/send", admin, { memberIds: [filterIds.member], activity: "rental" });
+    expect(excluded.body.results).toEqual([{ memberId: filterIds.member, status: "nothing_due" }]);
+  });
+
+  it("searches archived payer names and receipt numbers with activity, date and dispatch filters", async () => {
+    expect((await h.call("PATCH", `/api/students/${filterIds.student}`, admin, { firstName: "Nouveau", lastName: "Nom" })).status).toBe(200);
+    const byName = await h.call("GET", "/api/receipts?q=Archive%20Payeur&activity=training&kind=payment&from=2026-10-20&to=2026-10-20", admin);
+    expect(byName.status).toBe(200);
+    expect(byName.body.items.map((receipt: { id: string }) => receipt.id)).toEqual([filterIds.mixedReceipt]);
+    expect(byName.body.items[0].payerName).toBe("Archive Payeur");
+    expect((await h.call("GET", "/api/receipts?q=Nouveau%20Nom", admin)).body.items.map((receipt: { id: string }) => receipt.id)).toEqual([
+      filterIds.mixedReceipt,
+    ]);
+    expect((await h.call("GET", `/api/receipts?q=${filterIds.mixedNumber}&from=2026-10-21`, admin)).body.items).toEqual([]);
+    const memberReceipt = await h.call("GET", "/api/receipts?q=Client%20Coworking&activity=coworking", admin);
+    expect(memberReceipt.body.items[0]).toMatchObject({ id: filterIds.memberReceipt, payerName: "Client Coworking" });
+    await h.db
+      .insertInto("mail_dispatches")
+      .values([
+        {
+          centre_id: h.centreId,
+          kind: "receipt",
+          receipt_id: filterIds.mixedReceipt,
+          recipient: "archive@client.test",
+          status: "sent",
+          sent_at: "2026-10-20T07:00:00Z",
+        },
+        {
+          centre_id: h.centreId,
+          kind: "receipt",
+          receipt_id: filterIds.mixedReceipt,
+          recipient: "archive@client.test",
+          status: "failed",
+          sent_at: "2026-10-20T07:01:00Z",
+        },
+      ])
+      .execute();
+    expect((await h.call("GET", `/api/receipts?q=${filterIds.mixedNumber}&dispatch=sent`, admin)).body.items).toEqual([]);
+    expect((await h.call("GET", `/api/receipts?q=${filterIds.mixedNumber}&dispatch=failed`, admin)).body.items).toHaveLength(1);
+    expect((await h.call("GET", "/api/receipts?q=Client%20Coworking&dispatch=not_sent", admin)).body.items).toHaveLength(1);
+  });
+
+  it("filters refunds and cancellation receipts separately from cancelled originals", async () => {
+    await create("/api/payments/refunds", { studentId: filterIds.advanceStudent, amount: 10_000, method: "cash", reason: "Restitution avance" });
+    const refund = await h.call("GET", "/api/receipts?q=Avance%20Libre&kind=refund&status=valid", admin);
+    expect(refund.body.items).toHaveLength(1);
+    expect(refund.body.items[0].kind).toBe("refund");
+    const toCancel = await create("/api/payments", { studentId: filterIds.advanceStudent, amount: 10_000, method: "cash" });
+    expect((await h.call("POST", `/api/payments/${toCancel.paymentId}/cancel`, admin, { reason: "Annulation test des filtres" })).status).toBe(200);
+    const cancelled = await h.call("GET", "/api/receipts?q=Avance%20Libre&status=cancelled", admin);
+    expect(cancelled.body.items).toHaveLength(1);
+    expect(cancelled.body.items[0].kind).toBe("payment");
+    const cancellation = await h.call("GET", "/api/receipts?q=Avance%20Libre&kind=cancellation&status=cancellation", admin);
+    expect(cancellation.body.items).toHaveLength(1);
+    expect(cancellation.body.items[0].kind).toBe("cancellation");
+    expect((await h.call("GET", "/api/payments?activity=unknown", admin)).status).toBe(400);
+    expect((await h.call("GET", "/api/receipts?kind=unknown", admin)).status).toBe(400);
+  });
+});

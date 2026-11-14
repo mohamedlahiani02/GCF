@@ -252,7 +252,10 @@ export const websiteRoutes: FastifyPluginAsync = async (app) => {
 
   /* Settings */
 
-  app.get("/settings", { preHandler: edit }, async (request) => presentSettings(await ensureSiteSettings(db, request.user!.centreId)));
+  app.get("/settings", { preHandler: edit }, async (request) => ({
+    ...presentSettings(await ensureSiteSettings(db, request.user!.centreId)),
+    publicOrigin: app.config.publicOrigin,
+  }));
 
   app.put("/settings", { preHandler: edit }, async (request) => {
     const actor = request.user!;

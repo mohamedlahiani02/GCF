@@ -177,15 +177,15 @@ export async function handlePublicGet(app: FastifyInstance, request: FastifyRequ
   const query = new URLSearchParams(rawQuery);
 
   if (pathname === "/espace" || pathname.startsWith(PORTAL_PATH)) {
-    const served = await servePortal(app, reply, centre, pathname);
-    if (served) return served;
+    await servePortal(app, reply, centre, pathname);
+    if (reply.sent) return reply;
     return notFoundPage(app, reply, centre.modules.includes("website") ? await loadSiteState(db, centre.id) : undefined, pathname);
   }
 
   const media = /^\/media\/([^/]+)$/.exec(pathname);
   if (media) {
-    const served = await serveMedia(db, reply, centre.id, media[1]!);
-    if (served) return served;
+    await serveMedia(db, reply, centre.id, media[1]!);
+    if (reply.sent) return reply;
     return reply.status(404).type("text/plain; charset=utf-8").send("Not found");
   }
 

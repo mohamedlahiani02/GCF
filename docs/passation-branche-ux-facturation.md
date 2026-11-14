@@ -346,3 +346,37 @@ Une période entamée reste au montant déjà convenu, éventuellement proratis�
 - Recette navigateur avec Admin sur Maths Bac A : démarrage le 10 novembre, formule de fin de mois à 80 TND. L’option est cochée par défaut ; novembre affiche 21 jours sur 30 et 56 TND, puis 80 TND quand la case est décochée, à la même date d’exigibilité. L’option a été réactivée dans l’aperçu laissé ouvert. Aucune inscription ni aucun paiement n’a été enregistré par cette recette. Captures locales : `review-ux/inscription-prorata-option.jpg` et `review-ux/inscription-prorata-novembre.jpg`.
 - Résultats consolidés : 205 tests réussis dans les 19 autres fichiers de la suite PostgreSQL, puis 38 tests réussis lors de la relance des trois fichiers ajustés (`catalogue`, `payments`, `cash-reports`) : 243 tests couverts sur l’état final. Le scénario d’encaissement au tarif complet désactive explicitement le prorata ; le rapport et le catalogue vérifient les montants proratisés. Typage et compilation web réussis.
 - Pour récupérer le lot, exécuter `git fetch origin feat/enrolment-proration`, puis `git diff db83189...FETCH_HEAD`. Examiner la migration `0020_enrolment_proration` avec la séquence de migrations de la branche cible.
+
+## 15. Activation du Café sur le centre de test — 11 novembre 2026
+
+Les migrations `0021` à `0024` étaient appliquées à la base locale `gcf_pr12_review`. Le centre `ENV DE TEST` avait les modules `training`, `coworking` et `website` actifs. Le module `cafe` a été activé avec la CLI du projet, qui enregistre cette modification dans le journal d’audit.
+
+Après actualisation de la page, l’espace Café donne accès à la vente (`/cafe`), aux produits et au stock (`/cafe/produits`), ainsi qu’à la caisse (`/cafe/caisse`).
+
+Les contrôles sur le serveur local du port 3010 utilisent une session temporaire, supprimée ensuite. `/api/auth/session`, `/api/cafe/settings` et `/api/cafe/products` répondent en HTTP 200. Le compte administrateur reçoit les cinq permissions Café. Le catalogue du centre est vide lors de ce contrôle. Le seed global est réservé aux centres vierges et refuse ce centre déjà utilisé.
+
+## 16. Préparation de la démonstration AXELIA — 13 novembre 2026
+
+La récupération de `origin/main` confirme la version `30c9de6`, déjà présente dans le checkout. Le serveur local a été relancé sur le port 3010 et `/healthz` répond en HTTP 200. Les données lues comprennent 16 élèves, 7 groupes et 11 clients coworking. Les quatre modules sont actifs, le café et les locations sont vides, et seul le rôle Admin est représenté dans le personnel.
+
+Le porteur du projet retient la marque AXELIA et fournit deux variantes du symbole ainsi que sept photographies de coworking. La [proposition de démonstration](proposition-demo-axelia-2026-11-13.md) décrit les données à préparer pour chaque module, les opérations à présenter en direct, le plan du site et l’affectation des images. Les volumes et tarifs sont des propositions. Le chargement du nouveau jeu et l’intégration du site correspondent à l’étape de réalisation suivante.
+
+Le journal du serveur signale que SMTP est absent pour le programme du lendemain. La recette des envois et du workflow n8n reste à effectuer sur les services de test configurés. Les préparatifs Heroku/Supabase demeurent à l’état local documenté dans la branche `feat/heroku-client-demos`.
+
+## 17. Paie anticipée, filtres financiers et seed AXELIA — 13 novembre 2026
+
+Le porteur du projet demande la validation et le règlement de la paie à tout moment. Cette décision remplace la condition de date décrite dans les précédentes sections. `validateItems` accepte un élément calculé avant `due_on` et conserve cette échéance dans l’audit. La sélection reste cochée après validation pour passer au paiement. Les statuts, les montants déjà réglés et les contrôles contre le sur-règlement continuent de gouverner le parcours.
+
+La branche de revue `feat/finance-demo-axelia` est créée depuis `origin/main` au commit `30c9de6`, dans le checkout `gcf-finance-demo`. Les préparatifs de déploiement du checkout `gcf-n8n-review` constituent un lot distinct.
+
+Les filtres Formation, Cours particuliers, Coworking et Location s’appliquent aux paiements, impayés et relances. Les activités proviennent des affectations et échéances réellement concernées. Les paiements mixtes montrent plusieurs activités, les avances élèves sans affectation restent identifiées comme telles. Les relances manuelles prennent également en charge les membres et loueurs, avec relecture des soldes et du périmètre au moment de l’envoi.
+
+Les reçus se recherchent par numéro, nom archivé ou nom actuel du payeur, avec activité, type, dates, statut et état d’envoi. Le payeur coworking est affiché. Le tri des relances est stabilisé par nom, prénom et identifiant, puis par échéance.
+
+Le bouton « Visiter le site web » est présent à l’entrée de l’espace Site web et dans la liste des pages. L’adresse publique vient du GET des réglages du site et le lien ouvre un nouvel onglet. La surface publique vérifie `reply.sent` après les helpers des médias et du portail, ce qui corrige les doubles réponses observées durant le seed.
+
+Le GO utilisateur autorise le seed complet et l’emploi des deux symboles et sept photos fournis. Le profil `--profile axelia` complète les seeds existants, contrôle ses prérequis avant écriture et crée les comptes avec un mot de passe fourni par l’environnement local. Le jeu a été chargé dans `gcf_axelia_demo_20261113`, puis le serveur de cette branche a été lancé sur le port 3010. Le [guide de démonstration](guide-demo-axelia.md) donne les volumes, les parcours, les comptes et la sauvegarde de référence.
+
+La recette Chromium confirme les filtres, la sélection de paie avant échéance et le nouveau lien public. Les photos du site chargent sur ordinateur et mobile. La base jetable des tests est `gcf_finance_tests_20261113`. Les compilations du back-office et du portail, ainsi que le typage des packages, réussissent. Les secrets sont conservés dans les fichiers locaux d’accès et de configuration.
+
+Contrôle final de la suite API complète sur l’état corrigé, 23 fichiers et 271 tests réussis. La recette du site et du client statique couvre également 27 tests lors d’un passage ciblé. Le formatage des fichiers modifiés et `git diff --check` réussissent. Le cas Lina Belleval est contrôlé par `payerTotals`, avec 50 TND exigibles, 240 TND futurs et un crédit nul.

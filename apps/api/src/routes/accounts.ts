@@ -5,13 +5,26 @@ import { z } from "zod";
 import { writeAudit } from "../audit.js";
 import { can } from "../auth/permissions.js";
 import { centreClock, installmentBalances, lockPayer, payerTotals, studentTotals } from "../domain/ledger.js";
-import { overdueByStudent, sendReminders } from "../domain/reminders.js";
+import { overdueByPayer, sendPayerReminders, type ReminderPayer } from "../domain/reminders.js";
+import { financialActivity } from "../domain/paymentActivity.js";
 import { conflict, HttpError, notFound, unprocessable } from "../errors.js";
 import { idParam, isoDate, reason, uuid } from "../validation.js";
 
 const postponeBody = z.object({ toDate: isoDate, reason }).strict();
 const decisionBody = z.object({ approve: z.boolean(), reason: reason.optional() }).strict();
-const remindersSendBody = z.object({ studentIds: z.array(uuid).min(1).max(500) }).strict();
+const remindersQuery = z.object({ activity: financialActivity.optional() });
+const remindersSendBody = z
+  .object({
+    studentIds: z.array(uuid).max(500).default([]),
+    memberIds: z.array(uuid).max(500).default([]),
+    renterIds: z.array(uuid).max(500).default([]),
+    activity: financialActivity.optional(),
+  })
+  .strict()
+  .refine((body) => {
+    const count = body.studentIds.length + body.memberIds.length + body.renterIds.length;
+    return count >= 1 && count <= 500;
+  }, "select between 1 and 500 payers");
 
 const NARROW_NBSP = String.fromCharCode(0x202f);
 const tnd = (amount: number) => `${formatTnd(amount, "fr").split(NARROW_NBSP).join(" ")} TND`;
@@ -317,12 +330,20 @@ export const accountRoutes: FastifyPluginAsync = async (app) => {
     });
   });
 
-  app.get("/reminders", { preHandler: app.requirePermission("payments:read") }, async (request) => overdueByStudent(db, request.user!.centreId));
+  app.get("/reminders", { preHandler: app.requirePermission("payments:read") }, async (request) => {
+    const { activity } = remindersQuery.parse(request.query);
+    return overdueByPayer(db, request.user!.centreId, activity);
+  });
 
   app.post("/reminders/send", { preHandler: app.requirePermission("reminders:send") }, async (request) => {
     const actor = request.user!;
     const body = remindersSendBody.parse(request.body);
     if (!app.mailer) throw new HttpError(503, "mail_not_configured", "outgoing e-mail is not configured on this server");
-    return { results: await sendReminders(db, app.mailer, actor.centreId, body.studentIds, actor.userId) };
+    const payers: ReminderPayer[] = [
+      ...body.studentIds.map((id) => ({ kind: "student" as const, id })),
+      ...body.memberIds.map((id) => ({ kind: "member" as const, id })),
+      ...body.renterIds.map((id) => ({ kind: "renter" as const, id })),
+    ];
+    return { results: await sendPayerReminders(db, app.mailer, actor.centreId, payers, actor.userId, null, body.activity) };
   });
 };

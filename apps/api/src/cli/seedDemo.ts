@@ -18,6 +18,8 @@ import { createDb } from "../db/client.js";
 import { centreClock } from "../domain/ledger.js";
 import { seedCoworking } from "./seedDemoCoworking.js";
 import { seedWebsite } from "./seedDemoWebsite.js";
+import { seedAxeliaExtras } from "./seedAxeliaExtras.js";
+import { seedAxeliaWebsite } from "./seedAxeliaWebsite.js";
 
 type Method = "GET" | "POST" | "PUT" | "PATCH";
 export type Call = <T = { id: string }>(method: Method, url: string, payload?: unknown) => Promise<T>;
@@ -38,13 +40,19 @@ interface PayItem {
   label: string;
 }
 
-const { values } = parseArgs({ options: { email: { type: "string" } } });
+const { values } = parseArgs({ options: { email: { type: "string" }, profile: { type: "string" } } });
 if (!values.email) {
   console.error("usage: seed:demo --email <administrator e-mail>");
   process.exit(2);
 }
+if (values.profile !== undefined && values.profile !== "axelia") throw new Error("the supported demonstration profile is axelia");
+const axelia = values.profile === "axelia";
+if (axelia && (!process.env.DEMO_ACCOUNT_PASSWORD || process.env.DEMO_ACCOUNT_PASSWORD.length < 10)) {
+  throw new Error("DEMO_ACCOUNT_PASSWORD must contain at least 10 characters for the AXELIA staff and portal accounts");
+}
 
 const config = loadConfig();
+if (axelia && !config.publicOrigin) throw new Error("PUBLIC_ORIGIN is required for the AXELIA profile");
 const db = createDb(config.databaseUrl);
 let sessionId: string | undefined;
 
@@ -56,6 +64,9 @@ try {
     .executeTakeFirst();
   if (!admin || admin.role !== "admin" || !admin.active) throw new Error("no active administrator with this e-mail");
   const { modules } = await db.selectFrom("centres").select("modules").where("id", "=", admin.centreId).executeTakeFirstOrThrow();
+  if (axelia && ["training", "coworking", "website", "cafe"].some((module) => !modules.includes(module as (typeof modules)[number]))) {
+    throw new Error("the AXELIA profile requires training, coworking, website and cafe to be enabled");
+  }
   const training = modules.includes("training");
   const existing = training && (await db.selectFrom("students").select("id").where("centre_id", "=", admin.centreId).executeTakeFirst());
   if (existing) throw new Error("this centre already has students: demonstration data only goes into an empty centre");
@@ -107,12 +118,17 @@ try {
     console.log("coworking demonstration data created");
   }
   if (modules.includes("website")) {
-    await seedWebsite({ call, publicCall, db, centreId: admin.centreId, today, coworking: modules.includes("coworking") });
+    const seedSite = axelia ? seedAxeliaWebsite : seedWebsite;
+    await seedSite({ call, publicCall, db, centreId: admin.centreId, today, coworking: modules.includes("coworking") });
     console.log(publicCall ? "website demonstration data created" : "website demonstration data created, without visitor requests (PUBLIC_ORIGIN is not set)");
   }
   if (modules.includes("cafe")) {
     await seedCafe();
     console.log("café demonstration data created");
+  }
+  if (axelia) {
+    await seedAxeliaExtras({ call, publicCall, db, centreId: admin.centreId, today, start, end, password: process.env.DEMO_ACCOUNT_PASSWORD! });
+    console.log("AXELIA staff, portal, rentals, training and café scenarios created");
   }
 
   /** A small counter: products, a first delivery and a few sales of the day. */
@@ -185,11 +201,11 @@ try {
     const rooms = {
       one: await room("Salle 1", 20),
       two: await room("Salle 2", 14),
-      sewing: await room("Atelier couture", 10),
+      sewing: await room(axelia ? "Salle innovation" : "Atelier couture", 10),
       computers: await room("Salle informatique", 12),
     };
     const subject = async (name: string) => (await call("POST", "/catalogue/subjects", { name })).id;
-    const subjects = { maths: await subject("Mathématiques"), french: await subject("Français"), english: await subject("Anglais") };
+    const subjects = { maths: await subject("Mathématiques"), french: await subject(axelia ? "Physique" : "Français"), english: await subject("Anglais") };
 
     const instructor = async (firstName: string, lastName: string, kind: "teacher" | "trainer", employment: string, subjectIds: string[]) =>
       (await call("POST", "/instructors", { firstName, lastName, kind, employment, subjectIds, availability: [] })).id;
@@ -210,16 +226,28 @@ try {
       sessionsPerWeek: number,
     ) => (await call("POST", "/catalogue/studies", { subjectId, name, billingMode, price, absenceBilled, sessionsPerWeek, capacity: 12 })).id;
     const studies = {
-      maths: await study(subjects.maths, "Maths Bac", "monthly", 80_000, true, 2),
-      french: await study(subjects.french, "Français 9e année", "per_session", 15_000, false, 1),
-      english: await study(subjects.english, "Anglais conversation", "monthly", 60_000, true, 1),
+      maths: await study(subjects.maths, axelia ? "Mathématiques – Bac" : "Maths Bac", "monthly", 80_000, true, 2),
+      french: await study(subjects.french, axelia ? "Physique – Bac" : "Français 9e année", "per_session", 15_000, false, 1),
+      english: await study(subjects.english, axelia ? "Anglais – Conversation" : "Anglais conversation", "monthly", 60_000, true, 1),
     };
 
     const sewing = (
-      await call("POST", "/catalogue/trainings", { title: "Couture et modélisme", category: "Métiers", durationHours: 120, price: 900_000, capacity: 10 })
+      await call("POST", "/catalogue/trainings", {
+        title: axelia ? "Intelligence artificielle" : "Couture et modélisme",
+        category: axelia ? "Numérique" : "Métiers",
+        durationHours: 120,
+        price: 900_000,
+        capacity: 10,
+      })
     ).id;
     const office = (
-      await call("POST", "/catalogue/trainings", { title: "Bureautique", category: "Informatique", durationHours: 40, price: 300_000, capacity: 12 })
+      await call("POST", "/catalogue/trainings", {
+        title: axelia ? "Cybersécurité" : "Bureautique",
+        category: "Informatique",
+        durationHours: 40,
+        price: 300_000,
+        capacity: 12,
+      })
     ).id;
     const plan = async (trainingId: string, body: Record<string, unknown>) => (await call("POST", `/catalogue/trainings/${trainingId}/plans`, body)).id;
     const formulas = {
@@ -248,7 +276,7 @@ try {
       mathsA: await group({
         kind: "study",
         studyId: studies.maths,
-        name: "Maths Bac A",
+        name: axelia ? "Mathématiques – Bac – Groupe A" : "Maths Bac A",
         instructorId: people.sana,
         roomId: rooms.one,
         slots: [slot(2, "14:00", "16:00"), slot(6, "09:00", "11:00")],
@@ -256,7 +284,7 @@ try {
       mathsB: await group({
         kind: "study",
         studyId: studies.maths,
-        name: "Maths Bac B",
+        name: axelia ? "Mathématiques – Bac – Groupe B" : "Maths Bac B",
         instructorId: people.sana,
         roomId: rooms.one,
         slots: [slot(4, "16:00", "18:00")],
@@ -264,7 +292,7 @@ try {
       french: await group({
         kind: "study",
         studyId: studies.french,
-        name: "Français 9e A",
+        name: axelia ? "Physique – Bac – Groupe A" : "Français 9e A",
         instructorId: people.ines,
         roomId: rooms.two,
         slots: [slot(3, "14:00", "15:30")],
@@ -280,7 +308,7 @@ try {
       sewing: await group({
         kind: "training",
         trainingSessionId: sessions.sewing,
-        name: "Couture A",
+        name: axelia ? "Intelligence artificielle – Groupe A" : "Couture A",
         instructorId: people.karim,
         roomId: rooms.sewing,
         slots: [slot(1, "09:00", "12:00"), slot(4, "09:00", "12:00")],
@@ -288,7 +316,7 @@ try {
       office: await group({
         kind: "training",
         trainingSessionId: sessions.office,
-        name: "Bureautique A",
+        name: axelia ? "Cybersécurité – Groupe A" : "Bureautique A",
         instructorId: people.leila,
         roomId: rooms.computers,
         slots: [slot(2, "17:00", "19:00")],

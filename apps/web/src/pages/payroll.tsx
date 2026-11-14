@@ -1070,7 +1070,7 @@ function ItemDetailModal({ itemId, onClose }: { itemId: string; onClose: () => v
           <div className="cap">{perimeter(d)}</div>
           {d.rule ? (
             <div className="cap">
-              Rythme : {PERIODICITY[d.rule.periodicity]}. Période du {frDate(d.periodStart)} au {frDate(d.periodEnd)}, validable dès le {frDate(d.dueOn)}.
+              Rythme {PERIODICITY[d.rule.periodicity]}. Période du {frDate(d.periodStart)} au {frDate(d.periodEnd)}, échéance prévue le {frDate(d.dueOn)}.
             </div>
           ) : null}
           {d.sessions.length ? (
@@ -1161,7 +1161,6 @@ export function InstructorPayPage() {
   const validate = useMutation({
     mutationFn: (itemIds: string[]) => api.post<{ validated: number }>("/payroll/items/validate", { itemIds }),
     onSuccess: async (r) => {
-      setSelected([]);
       await client.invalidateQueries();
       toast(`${r.validated} élément(s) validé(s).`);
     },
@@ -1175,10 +1174,9 @@ export function InstructorPayPage() {
   const current = visible.filter((i) => !i.earlierMonth);
   const earlier = visible.filter((i) => i.earlierMonth);
   const chosen = data.items.filter((i) => selected.includes(i.id));
-  const toValidate = chosen.filter((i) => i.status === "calculated" && i.dueOn <= data.today);
+  const toValidate = chosen.filter((i) => i.status === "calculated");
   const toSettle = chosen.filter((i) => i.status === "validated" && i.remaining !== 0);
-  const checkable = data.items.filter((i) => i.status === "calculated" && i.dueOn <= data.today);
-  const checkLater = data.items.filter((i) => i.status === "calculated" && i.dueOn > data.today).length;
+  const checkable = data.items.filter((i) => i.status === "calculated");
   const payable = data.items.filter((i) => i.status === "validated" && i.remaining !== 0);
   const sum = (list: PayItem[], pick: (i: PayItem) => number) => list.reduce((s, i) => s + pick(i), 0);
   const active = data.items.filter((i) => i.status !== "cancelled" && !i.earlierMonth);
@@ -1202,7 +1200,7 @@ export function InstructorPayPage() {
         <tbody>
           {items.map((i) => {
             const state = itemState(i);
-            const selectable = (i.status === "calculated" && i.dueOn <= data.today) || (i.status === "validated" && i.remaining !== 0);
+            const selectable = i.status === "calculated" || (i.status === "validated" && i.remaining !== 0);
             return (
               <tr key={i.id} className={i.status === "cancelled" ? "dim" : selected.includes(i.id) ? "sel" : ""}>
                 {writable ? (
@@ -1226,7 +1224,7 @@ export function InstructorPayPage() {
                 </td>
                 <td>
                   {frDate(i.dueOn)}
-                  {i.status === "calculated" && i.dueOn > data.today ? <div className="cap">validable dès cette date</div> : null}
+                  {selectable && i.dueOn > data.today ? <div className="cap">Règlement anticipé possible</div> : null}
                 </td>
                 <td>
                   <Badge tone={state.tone}>{state.label}</Badge>
@@ -1235,7 +1233,7 @@ export function InstructorPayPage() {
                 <td className="num">{i.status === "validated" ? tnd(i.paid) : ""}</td>
                 <td className="num">{i.status === "validated" ? tnd(i.remaining) : ""}</td>
                 <td style={{ textAlign: "right", whiteSpace: "nowrap" }}>
-                  {writable && i.status === "calculated" && i.dueOn <= data.today ? (
+                  {writable && i.status === "calculated" ? (
                     <button type="button" className="btn btn-g" disabled={validate.isPending} onClick={() => validate.mutate([i.id])}>
                       Valider
                     </button>
@@ -1301,12 +1299,8 @@ export function InstructorPayPage() {
           },
           {
             title: "Vérifier",
-            text: "Relisez chaque montant, puis validez-le. Un montant faux s'annule avec un motif.",
-            waiting: checkable.length
-              ? `${checkable.length} élément(s) à vérifier, ${tnd(sum(checkable, (i) => i.amount))} TND`
-              : checkLater
-                ? `${checkLater} élément(s) à vérifier à leur échéance`
-                : null,
+            text: "Relisez chaque montant, puis validez-le, y compris avant son échéance. Une correction s’effectue avec un motif.",
+            waiting: checkable.length ? `${checkable.length} élément(s) à vérifier, ${tnd(sum(checkable, (i) => i.amount))} TND` : null,
             action:
               writable && checkable.length ? (
                 <button type="button" className="btn btn-p" disabled={validate.isPending} onClick={() => validate.mutate(checkable.map((i) => i.id))}>

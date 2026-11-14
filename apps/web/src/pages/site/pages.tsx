@@ -10,6 +10,7 @@ import { Badge, Card, Drawer, Empty, ErrorBanner, Field, Loading, Modal, PageHea
 import { frDate, frDateTime, todayIso } from "../../lib/format";
 import { fetchPages, fetchSettings, flattenPages, PAGE_STATUS, pageTitle, siteKeys, SLUG_PATTERN, slugify, subtreeIds, type PageNode } from "./api";
 import { ConfirmDialog, MoveButtons, moveItem } from "./common";
+import { PublicSiteLink } from "./public-link";
 
 const slugError = (slug: string) => (slug && !SLUG_PATTERN.test(slug) ? "Lettres minuscules sans accent, chiffres et tirets uniquement." : null);
 
@@ -329,6 +330,7 @@ export function PagesPage() {
         subtitle="Pages et articles, dans l'ordre du menu. Le contenu se modifie dans l'éditeur de chaque page."
         actions={
           <>
+            <PublicSiteLink />
             <button type="button" className="btn" onClick={() => setCreating("article")}>
               + Nouvel article
             </button>

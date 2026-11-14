@@ -169,9 +169,8 @@ export async function calculateItems(
   return { created, unchanged, replaced, warnings };
 }
 
-/** Validates calculated items that have reached their due date (the session, the end of the month, the end of the group). */
+/** Validates calculated items at the operator's request, including before their planned due date. */
 export async function validateItems(trx: Trx, actor: Actor, itemIds: string[]): Promise<number> {
-  const { today } = await centreClock(trx, actor.centreId);
   const items = await trx
     .selectFrom("pay_items")
     .select(["id", "instructor_id as instructorId", "group_id as groupId", "status", "due_on as dueOn", "amount", "label", "kind"])
@@ -182,7 +181,6 @@ export async function validateItems(trx: Trx, actor: Actor, itemIds: string[]): 
   if (items.length !== new Set(itemIds).size) throw notFound("pay item");
   for (const item of items) {
     if (item.status !== "calculated") throw conflict("item_not_calculated", `${item.label} is not waiting for validation`);
-    if (item.dueOn > today) throw unprocessable("item_not_due", `${item.label} can be validated from ${item.dueOn}`);
   }
   await trx.updateTable("pay_items").set({ status: "validated", validated_at: new Date(), validated_by: actor.userId }).where("id", "in", itemIds).execute();
   for (const item of items) {
@@ -204,7 +202,7 @@ export async function validateItems(trx: Trx, actor: Actor, itemIds: string[]): 
     action: "pay_items.validated",
     objectType: "pay_item",
     objectId: itemIds.join(","),
-    after: items.map((i) => ({ id: i.id, label: i.label, amount: i.amount })),
+    after: items.map((i) => ({ id: i.id, label: i.label, amount: i.amount, dueOn: i.dueOn })),
   });
   return items.length;
 }

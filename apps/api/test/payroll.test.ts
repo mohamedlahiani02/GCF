@@ -185,13 +185,20 @@ describe("monthly items, calculated and validated per instructor", () => {
     expect((await instructorPay(ids.ines, "2026-09")).items[0].status).toBe("calculated");
   });
 
-  it("refuses to validate a month before its last day", async () => {
+  it("validates a calculated month before its planned due date", async () => {
     await h.call("POST", "/api/payroll/calculate", accountant, { instructorId: ids.ines, month: "2099-12" });
     const future = (await instructorPay(ids.ines, "2099-12")).items[0];
     expect(future).toMatchObject({ dueOn: "2099-12-31", amount: 405_000 });
     const res = await h.call("POST", "/api/payroll/items/validate", accountant, { itemIds: [future.id] });
-    expect(res.status).toBe(422);
-    expect(res.body.code).toBe("item_not_due");
+    expect(res.status).toBe(200);
+    expect((await instructorPay(ids.ines, "2099-12")).items.find((i: { id: string }) => i.id === future.id)).toMatchObject({
+      status: "validated",
+      dueOn: "2099-12-31",
+      remaining: 405_000,
+    });
+    expect((await h.call("POST", `/api/payroll/items/${future.id}/cancel`, accountant, { reason: "Fin du contrôle de validation anticipée" })).status).toBe(
+      200,
+    );
   });
 
   it("never pays a session twice: a later, more specific rule does not reopen validated sessions", async () => {
@@ -390,5 +397,44 @@ describe("corrections and history", () => {
     expect(res.body.warnings).toEqual([expect.objectContaining({ instructorId: other, code: "no_rule" })]);
     const summary = await h.call("GET", "/api/payroll/summary?month=2026-08", accountant);
     expect(summary.body.instructors.find((i: { id: string }) => i.id === other)).toMatchObject({ groupsWithoutRule: 1, sessionsToCalculate: 0 });
+  });
+});
+
+describe("advance settlements", () => {
+  it("pays a monthly item before its due date, preserves it on recalculation and protects its balance", async () => {
+    expect((await h.call("POST", "/api/payroll/calculate", accountant, { instructorId: ids.ines, month: "2026-10" })).status).toBe(200);
+    const item = (await instructorPay(ids.ines, "2026-10")).items.find((i: { label: string }) => i.label === "Forfait mensuel, octobre 2026");
+    expect(item).toMatchObject({ status: "calculated", dueOn: "2026-10-31", amount: 405_000 });
+    expect((await h.call("POST", "/api/payroll/items/validate", accountant, { itemIds: [item.id] })).status).toBe(200);
+
+    const settle = (amount: number) =>
+      h.call("POST", "/api/payroll/settlements", accountant, {
+        instructorId: ids.ines,
+        paidOn: "2026-10-20",
+        method: "transfer",
+        lines: [{ itemId: item.id, amount }],
+      });
+    const first = await settle(150_000);
+    expect(first.status).toBe(201);
+    expect(first.body.number).toMatch(/^REG-2026-\d{6}$/);
+    expect((await instructorPay(ids.ines, "2026-10")).items.find((i: { id: string }) => i.id === item.id)).toMatchObject({
+      status: "validated",
+      dueOn: "2026-10-31",
+      paid: 150_000,
+      remaining: 255_000,
+    });
+
+    expect((await h.call("POST", "/api/payroll/calculate", accountant, { instructorId: ids.ines, month: "2026-10" })).body).toMatchObject({
+      created: 0,
+      replaced: 0,
+    });
+    expect((await settle(255_001)).body.code).toBe("amount_above_remaining");
+    expect((await settle(255_000)).status).toBe(201);
+    expect((await settle(1)).body.code).toBe("already_paid");
+
+    const proof = await h.app.inject({ method: "GET", url: `/api/payroll/settlements/${first.body.id}/pdf`, headers: { cookie: accountant } });
+    expect(proof.statusCode).toBe(200);
+    expect(proof.headers["content-type"]).toContain("application/pdf");
+    expect(proof.rawPayload.subarray(0, 4).toString()).toBe("%PDF");
   });
 });

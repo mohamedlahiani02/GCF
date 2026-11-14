@@ -1,12 +1,13 @@
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useState } from "react";
-import { Link, useNavigate, useParams } from "react-router";
+import { useDeferredValue, useState } from "react";
+import { Link, useNavigate, useParams, useSearchParams } from "react-router";
 import { api } from "../api/client";
 import { useSession } from "../auth/session";
+import { ActivityFilter, FINANCIAL_ACTIVITY, type FinancialActivity } from "../components/activity-filter";
 import { usePage } from "../components/shell";
 import { useToast } from "../components/toasts";
 import { Badge, Card, Empty, ErrorBanner, Field, Loading, Modal, PageHeader, Pagination } from "../components/ui";
-import { frDateTime, tnd } from "../lib/format";
+import { frDateTime, tnd, todayIso } from "../lib/format";
 import { METHOD } from "../lib/labels";
 
 interface ReceiptRow {
@@ -17,6 +18,8 @@ interface ReceiptRow {
   firstName: string | null;
   lastName: string | null;
   renterName: string | null;
+  payerName: string;
+  activities: FinancialActivity[];
   amount: number;
   status: "valid" | "cancelled" | "cancellation";
   dispatch: "sent" | "failed" | "not_sent";
@@ -58,15 +61,53 @@ const DISPATCH: Record<ReceiptRow["dispatch"], { label: string; tone: "green" | 
   failed: { label: "Échec d'envoi", tone: "red" },
   not_sent: { label: "Non envoyé", tone: "neutral" },
 };
+const RECEIPT_MONTHS = Array.from({ length: 12 }, (_, index) => ({
+  value: String(index + 1).padStart(2, "0"),
+  label: new Intl.DateTimeFormat("fr-FR", { month: "long", timeZone: "UTC" }).format(new Date(Date.UTC(2000, index, 1))),
+}));
 
 export function ReceiptsPage() {
   usePage(["Reçus"]);
   const navigate = useNavigate();
-  const [q, setQ] = useState("");
-  const [page, setPage] = useState(1);
+  const [params, setParams] = useSearchParams();
+  const q = params.get("q") ?? "";
+  const deferredQuery = useDeferredValue(q);
+  const activity = (Object.keys(FINANCIAL_ACTIVITY) as FinancialActivity[]).find((value) => value === params.get("activite")) ?? "";
+  const kind = (Object.keys(KIND) as ReceiptRow["kind"][]).find((value) => value === params.get("type")) ?? "";
+  const status = (Object.keys(STATUS) as ReceiptRow["status"][]).find((value) => value === params.get("statut")) ?? "";
+  const dispatch = (Object.keys(DISPATCH) as ReceiptRow["dispatch"][]).find((value) => value === params.get("envoi")) ?? "";
+  const year = params.get("annee") ?? "";
+  const month = RECEIPT_MONTHS.find((value) => value.value === params.get("mois"))?.value ?? "";
+  const validYear = /^\d{4}$/.test(year) && Number(year) >= 1900;
+  const from = validYear ? `${year}-${month || "01"}-01` : undefined;
+  const lastDay = validYear ? new Date(Date.UTC(Number(year), Number(month || "12"), 0)).getUTCDate() : undefined;
+  const to = validYear ? `${year}-${month || "12"}-${String(lastDay).padStart(2, "0")}` : undefined;
+  const requestedPage = Number(params.get("page"));
+  const page = Number.isSafeInteger(requestedPage) && requestedPage > 0 ? requestedPage : 1;
+  const setFilter = (name: string, value: string) =>
+    setParams(
+      (current) => {
+        const next = new URLSearchParams(current);
+        if (value) next.set(name, value);
+        else next.delete(name);
+        if (name === "annee" && !value) next.delete("mois");
+        if (name === "mois" && value && !next.get("annee")) next.set("annee", todayIso().slice(0, 4));
+        next.delete("page");
+        return next;
+      },
+      { replace: true },
+    );
+  const setPage = (value: number) =>
+    setParams((current) => {
+      const next = new URLSearchParams(current);
+      if (value > 1) next.set("page", String(value));
+      else next.delete("page");
+      return next;
+    });
   const list = useQuery({
-    queryKey: ["receipts", q, page],
-    queryFn: () => api.get<{ items: ReceiptRow[]; hasMore: boolean }>("/receipts", { q, page, pageSize: 50 }),
+    queryKey: ["receipts", deferredQuery, activity, kind, status, dispatch, from, to, page],
+    queryFn: () =>
+      api.get<{ items: ReceiptRow[]; hasMore: boolean }>("/receipts", { q: deferredQuery, activity, kind, status, dispatch, from, to, page, pageSize: 50 }),
     placeholderData: keepPreviousData,
   });
   return (
@@ -77,14 +118,79 @@ export function ReceiptsPage() {
       />
       <Card
         title={
-          <input
-            className="input"
-            style={{ width: 260 }}
-            placeholder="Numéro REC-…"
-            aria-label="Rechercher un numéro"
-            value={q}
-            onChange={(e) => (setQ(e.target.value), setPage(1))}
-          />
+          <div className="row" style={{ gap: 12, alignItems: "end", width: "100%" }}>
+            <div style={{ flex: "1 1 220px" }}>
+              <Field label="Payeur ou numéro de reçu">
+                <input
+                  className="input"
+                  style={{ width: "100%" }}
+                  type="search"
+                  placeholder="Nom du payeur ou REC-…"
+                  value={q}
+                  onChange={(event) => setFilter("q", event.target.value)}
+                />
+              </Field>
+            </div>
+            <ActivityFilter value={activity} onChange={(value) => setFilter("activite", value)} />
+            <Field label="Type de reçu">
+              <select className="input" value={kind} onChange={(event) => setFilter("type", event.target.value)}>
+                <option value="">Tous les types</option>
+                {Object.entries(KIND).map(([value, label]) => (
+                  <option key={value} value={value}>
+                    {label}
+                  </option>
+                ))}
+              </select>
+            </Field>
+            <Field label="Année">
+              <input
+                className="input"
+                type="number"
+                min="1900"
+                max="9999"
+                step="1"
+                style={{ width: 100 }}
+                placeholder="Toutes"
+                value={year}
+                onChange={(event) => setFilter("annee", event.target.value)}
+              />
+            </Field>
+            <Field label="Mois">
+              <select className="input" value={month} onChange={(event) => setFilter("mois", event.target.value)}>
+                <option value="">Tous les mois</option>
+                {RECEIPT_MONTHS.map((value) => (
+                  <option key={value.value} value={value.value}>
+                    {value.label}
+                  </option>
+                ))}
+              </select>
+            </Field>
+            <Field label="Statut">
+              <select className="input" value={status} onChange={(event) => setFilter("statut", event.target.value)}>
+                <option value="">Tous les statuts</option>
+                {Object.entries(STATUS).map(([value, item]) => (
+                  <option key={value} value={value}>
+                    {item.label}
+                  </option>
+                ))}
+              </select>
+            </Field>
+            <Field label="Envoi">
+              <select className="input" value={dispatch} onChange={(event) => setFilter("envoi", event.target.value)}>
+                <option value="">Tous les envois</option>
+                {Object.entries(DISPATCH).map(([value, item]) => (
+                  <option key={value} value={value}>
+                    {item.label}
+                  </option>
+                ))}
+              </select>
+            </Field>
+            {q || activity || kind || year || month || status || dispatch ? (
+              <button className="btn" type="button" onClick={() => setParams({})}>
+                Réinitialiser
+              </button>
+            ) : null}
+          </div>
         }
         footer={list.data ? <Pagination page={page} hasMore={list.data.hasMore} onPage={setPage} /> : null}
       >
@@ -101,6 +207,7 @@ export function ReceiptsPage() {
                   <th>Numéro</th>
                   <th>Date</th>
                   <th>Payeur</th>
+                  <th>Activité</th>
                   <th>Type</th>
                   <th className="num">Montant (TND)</th>
                   <th>Statut</th>
@@ -116,7 +223,8 @@ export function ReceiptsPage() {
                       </Link>
                     </td>
                     <td>{frDateTime(r.issuedAt)}</td>
-                    <td>{r.renterName ?? `${r.lastName ?? ""} ${r.firstName ?? ""}`}</td>
+                    <td>{r.payerName}</td>
+                    <td>{r.activities.length ? r.activities.map((value) => FINANCIAL_ACTIVITY[value]).join(" · ") : "Sans affectation"}</td>
                     <td>{KIND[r.kind]}</td>
                     <td className="num">{tnd(r.amount)}</td>
                     <td>

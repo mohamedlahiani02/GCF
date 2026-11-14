@@ -4,6 +4,7 @@ import { writeAudit } from "../audit.js";
 import type { Database } from "../db/types.js";
 import type { Mailer } from "../mail.js";
 import { centreClock } from "./ledger.js";
+import { installmentActivity, type FinancialActivity } from "./paymentActivity.js";
 
 const NARROW_NBSP = String.fromCharCode(0x202f);
 const tnd = (amount: number) => `${formatTnd(amount, "fr").split(NARROW_NBSP).join(" ")} TND`;
@@ -21,19 +22,54 @@ export interface OverdueStudent {
 
 export type ReminderStatus = "sent" | "failed" | "no_recipient" | "nothing_due";
 
+export interface ReminderPayer {
+  kind: "student" | "member" | "renter";
+  id: string;
+}
+
+export interface OverduePayer {
+  payerKind: ReminderPayer["kind"];
+  payerId: string;
+  payerName: string;
+  studentId: string | null;
+  memberId: string | null;
+  renterId: string | null;
+  firstName: string;
+  lastName: string;
+  phone: string | null;
+  recipient: string | null;
+  total: number;
+  items: { installmentId: string; label: string; dueDate: string; remaining: number; activity: FinancialActivity }[];
+}
+
+export interface ReminderResult {
+  studentId?: string;
+  memberId?: string;
+  renterId?: string;
+  status: ReminderStatus;
+}
+
 /**
- * Overdue instalments grouped by student, after the centre's grace period. The reminder goes to the receipt
- * address when there is one, otherwise to the guardian of a minor or to the student.
+ * Overdue instalments grouped by payer, after the centre's grace period and within the selected activity.
+ * Student reminders use the receipt address, the guardian of a minor, or the student's own address.
  */
-export async function overdueByStudent(db: Kysely<Database>, centreId: string): Promise<OverdueStudent[]> {
+export async function overdueByPayer(
+  db: Kysely<Database>,
+  centreId: string,
+  activity?: FinancialActivity,
+  payerKind?: ReminderPayer["kind"],
+): Promise<OverduePayer[]> {
   const { today, graceDays } = await centreClock(db, centreId);
   const limit = new Date(`${today}T00:00:00Z`);
   limit.setUTCDate(limit.getUTCDate() - graceDays);
   const cutoff = limit.toISOString().slice(0, 10);
   const rows = await db
     .selectFrom("installments")
-    .innerJoin("enrolments", "enrolments.id", "installments.enrolment_id")
-    .innerJoin("students", "students.id", "enrolments.student_id")
+    .leftJoin("enrolments", "enrolments.id", "installments.enrolment_id")
+    .leftJoin("students", "students.id", "enrolments.student_id")
+    .leftJoin("rentals", "rentals.id", "installments.rental_id")
+    .leftJoin("renters", "renters.id", "rentals.renter_id")
+    .leftJoin("members", "members.id", "installments.member_id")
     .leftJoin(
       db
         .selectFrom("effective_allocations")
@@ -45,42 +81,80 @@ export async function overdueByStudent(db: Kysely<Database>, centreId: string): 
     )
     .select([
       "students.id as studentId",
-      "students.first_name as firstName",
-      "students.last_name as lastName",
-      "students.phone",
+      "members.id as memberId",
+      "renters.id as renterId",
+      sql<string>`coalesce(students.first_name, members.first_name, renters.name, '')`.as("firstName"),
+      sql<string>`coalesce(students.last_name, members.last_name, '')`.as("lastName"),
+      sql<string>`coalesce(students.first_name || ' ' || students.last_name, renters.name, concat_ws(' ', members.first_name, members.last_name))`.as(
+        "payerName",
+      ),
+      sql<string | null>`coalesce(students.phone, members.phone, renters.phone)`.as("phone"),
       "students.email",
+      "members.email as memberEmail",
+      "renters.email as renterEmail",
       "students.receipt_email as receiptEmail",
       "students.guardian_email as guardianEmail",
       "students.is_minor as isMinor",
       "installments.id as installmentId",
       "installments.label",
       "installments.due_date as dueDate",
+      installmentActivity.as("activity"),
       sql<number>`installments.amount - coalesce(p.paid, 0)`.as("remaining"),
     ])
     .where("installments.centre_id", "=", centreId)
+    .$if(activity !== undefined, (qb) => qb.where(installmentActivity, "=", activity!))
+    .$if(payerKind === "student", (qb) => qb.where("students.id", "is not", null))
+    .$if(payerKind === "member", (qb) => qb.where("members.id", "is not", null))
+    .$if(payerKind === "renter", (qb) => qb.where("renters.id", "is not", null))
     .where("installments.kind", "=", "charge")
     .where("installments.status", "=", "open")
     .where("installments.due_date", "<", cutoff)
     .where(sql<boolean>`installments.amount - coalesce(p.paid, 0) > 0`)
-    .orderBy("students.last_name")
+    .orderBy(sql`coalesce(students.last_name, members.last_name, renters.name)`)
+    .orderBy(sql`coalesce(students.first_name, members.first_name, renters.name)`)
+    .orderBy(sql`coalesce(students.id, members.id, renters.id)`)
     .orderBy("installments.due_date")
+    .orderBy("installments.id")
     .execute();
-  const byStudent = new Map<string, OverdueStudent>();
+  const byPayer = new Map<string, OverduePayer>();
   for (const r of rows) {
-    const entry = byStudent.get(r.studentId) ?? {
+    const kind = r.studentId ? "student" : r.memberId ? "member" : "renter";
+    const id = r.studentId ?? r.memberId ?? r.renterId;
+    if (!id) continue;
+    const key = `${kind}:${id}`;
+    const entry = byPayer.get(key) ?? {
+      payerKind: kind,
+      payerId: id,
+      payerName: r.payerName,
       studentId: r.studentId,
+      memberId: r.memberId,
+      renterId: r.renterId,
       firstName: r.firstName,
       lastName: r.lastName,
       phone: r.phone,
-      recipient: r.receiptEmail ?? (r.isMinor ? r.guardianEmail : r.email) ?? r.email,
+      recipient: r.studentId ? (r.receiptEmail ?? (r.isMinor ? r.guardianEmail : r.email) ?? r.email) : (r.memberEmail ?? r.renterEmail),
       total: 0,
       items: [],
     };
-    entry.items.push({ installmentId: r.installmentId, label: r.label, dueDate: r.dueDate, remaining: Number(r.remaining) });
+    entry.items.push({ installmentId: r.installmentId, label: r.label, dueDate: r.dueDate, remaining: Number(r.remaining), activity: r.activity });
     entry.total += Number(r.remaining);
-    byStudent.set(r.studentId, entry);
+    byPayer.set(key, entry);
   }
-  return [...byStudent.values()];
+  return [...byPayer.values()];
+}
+
+/** Existing student automations keep their student-only scope and result shape. */
+export async function overdueByStudent(db: Kysely<Database>, centreId: string): Promise<OverdueStudent[]> {
+  const list = await overdueByPayer(db, centreId, undefined, "student");
+  return list.map((entry) => ({
+    studentId: entry.studentId!,
+    firstName: entry.firstName,
+    lastName: entry.lastName,
+    phone: entry.phone,
+    recipient: entry.recipient,
+    total: entry.total,
+    items: entry.items.map(({ activity: _activity, ...item }) => item),
+  }));
 }
 
 /** When each student last received a reminder that was actually sent. */
@@ -110,17 +184,40 @@ export async function sendReminders(
   sentBy: string | null,
   reason: string | null = null,
 ): Promise<{ studentId: string; status: ReminderStatus }[]> {
+  const results = await sendPayerReminders(
+    db,
+    mailer,
+    centreId,
+    studentIds.map((id) => ({ kind: "student", id })),
+    sentBy,
+    reason,
+  );
+  return results.map((result) => ({ studentId: result.studentId!, status: result.status }));
+}
+
+/** Re-read the selected activity before sending so paid or out-of-scope charges never enter a reminder. */
+export async function sendPayerReminders(
+  db: Kysely<Database>,
+  mailer: Mailer,
+  centreId: string,
+  payers: ReminderPayer[],
+  sentBy: string | null,
+  reason: string | null = null,
+  activity?: FinancialActivity,
+): Promise<ReminderResult[]> {
   const centre = await db.selectFrom("centres").select("name").where("id", "=", centreId).executeTakeFirstOrThrow();
-  const list = await overdueByStudent(db, centreId);
-  const results: { studentId: string; status: ReminderStatus }[] = [];
-  for (const studentId of new Set(studentIds)) {
-    const entry = list.find((e) => e.studentId === studentId);
+  const list = await overdueByPayer(db, centreId, activity);
+  const results: ReminderResult[] = [];
+  const uniquePayers = new Map(payers.map((payer) => [`${payer.kind}:${payer.id}`, payer]));
+  for (const payer of uniquePayers.values()) {
+    const resultId = payer.kind === "student" ? { studentId: payer.id } : payer.kind === "member" ? { memberId: payer.id } : { renterId: payer.id };
+    const entry = list.find((e) => e.payerKind === payer.kind && e.payerId === payer.id);
     if (!entry) {
-      results.push({ studentId, status: "nothing_due" });
+      results.push({ ...resultId, status: "nothing_due" });
       continue;
     }
     if (!entry.recipient) {
-      results.push({ studentId, status: "no_recipient" });
+      results.push({ ...resultId, status: "no_recipient" });
       continue;
     }
     const lines = entry.items.map((i) => `- ${i.label} : ${tnd(i.remaining)}, échue le ${frDate(i.dueDate)}`).join("\n");
@@ -130,7 +227,7 @@ export async function sendReminders(
       await mailer.send({
         to: entry.recipient,
         subject: `${centre.name} : rappel d'échéance`,
-        text: `Bonjour,\n\nSauf erreur de notre part, les échéances suivantes de ${entry.firstName} ${entry.lastName} restent à régler :\n\n${lines}\n\nTotal : ${tnd(entry.total)}\n\nMerci de régulariser auprès du secrétariat. Si le règlement a déjà été effectué, veuillez ne pas tenir compte de ce message.\n\n${centre.name}`,
+        text: `Bonjour,\n\nSauf erreur de notre part, les échéances suivantes de ${entry.payerName} restent à régler :\n\n${lines}\n\nTotal : ${tnd(entry.total)}\n\nMerci de régulariser auprès du secrétariat. Si le règlement a déjà été effectué, veuillez ne pas tenir compte de ce message.\n\n${centre.name}`,
       });
     } catch (sendError) {
       status = "failed";
@@ -138,9 +235,19 @@ export async function sendReminders(
     }
     await db
       .insertInto("mail_dispatches")
-      .values({ centre_id: centreId, kind: "reminder", student_id: studentId, recipient: entry.recipient, status, error, sent_by: sentBy })
+      .values({
+        centre_id: centreId,
+        kind: "reminder",
+        student_id: entry.studentId,
+        member_id: entry.memberId,
+        renter_id: entry.renterId,
+        recipient: entry.recipient,
+        status,
+        error,
+        sent_by: sentBy,
+      })
       .execute();
-    results.push({ studentId, status });
+    results.push({ ...resultId, status });
   }
   await writeAudit(db, {
     centreId,
@@ -148,7 +255,7 @@ export async function sendReminders(
     action: "reminders.sent",
     objectType: "reminder",
     objectId: new Date().toISOString(),
-    after: results,
+    after: activity ? { activity, results } : results,
     reason,
   });
   return results;

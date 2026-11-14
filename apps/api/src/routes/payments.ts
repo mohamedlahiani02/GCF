@@ -17,6 +17,7 @@ import {
   type PlannedAllocation,
 } from "../domain/ledger.js";
 import { issueReceipt } from "../domain/receipts.js";
+import { financialActivity, installmentActivity, paymentActivities } from "../domain/paymentActivity.js";
 import { conflict, notFound, unprocessable } from "../errors.js";
 import { idParam, isoDate, millimes, optionalText, reason, uuid } from "../validation.js";
 
@@ -54,6 +55,7 @@ const refundBody = z
 const chequeStatusBody = z.object({ status: z.enum(["deposited", "cashed", "bounced"]), reason: reason.optional() }).strict();
 const cancelBody = z.object({ reason }).strict();
 const listQuery = z.object({
+  activity: financialActivity.optional(),
   from: isoDate.optional(),
   to: isoDate.optional(),
   method: z.enum(["cash", "transfer", "cheque", "card"]).optional(),
@@ -136,8 +138,12 @@ export const paymentRoutes: FastifyPluginAsync = async (app) => {
 
   /** Every payer's overdue charges, with the same grace-period boundary as the dashboard. */
   app.get("/overdue", { preHandler: read }, async (request) => {
-    const { page, pageSize } = z
-      .object({ page: z.coerce.number().int().min(1).default(1), pageSize: z.coerce.number().int().min(1).max(200).default(50) })
+    const { page, pageSize, activity } = z
+      .object({
+        activity: financialActivity.optional(),
+        page: z.coerce.number().int().min(1).default(1),
+        pageSize: z.coerce.number().int().min(1).max(200).default(50),
+      })
       .parse(request.query);
     const centreId = request.user!.centreId;
     const { today, graceDays } = await centreClock(db, centreId);
@@ -164,12 +170,14 @@ export const paymentRoutes: FastifyPluginAsync = async (app) => {
         "enrolments.student_id as studentId",
         "rentals.renter_id as renterId",
         "installments.member_id as memberId",
+        installmentActivity.as("activity"),
         sql<string>`coalesce(students.first_name || ' ' || students.last_name, renters.name, concat_ws(' ', members.first_name, members.last_name))`.as(
           "payerName",
         ),
         sql<number>`installments.amount - coalesce(p.paid, 0)`.as("remaining"),
       ])
       .where("installments.centre_id", "=", centreId)
+      .$if(activity !== undefined, (qb) => qb.where(installmentActivity, "=", activity!))
       .where("installments.kind", "=", "charge")
       .where("installments.status", "=", "open")
       .where(sql<boolean>`installments.due_date + ${graceDays}::integer < ${today}::date`)
@@ -309,6 +317,7 @@ export const paymentRoutes: FastifyPluginAsync = async (app) => {
       .select([
         "payments.id",
         "payments.kind",
+        paymentActivities.as("activities"),
         "payments.received_at as receivedAt",
         "payments.student_id as studentId",
         "payments.renter_id as renterId",
@@ -326,6 +335,7 @@ export const paymentRoutes: FastifyPluginAsync = async (app) => {
         "users.full_name as createdBy",
       ])
       .where("payments.centre_id", "=", centreId)
+      .$if(query.activity !== undefined, (qb) => qb.where(sql<boolean>`${query.activity!} = any(${paymentActivities})`))
       .$if(query.from !== undefined, (qb) => qb.where(sql<string>`(payments.received_at at time zone ${centre.timezone})::date`, ">=", query.from!))
       .$if(query.to !== undefined, (qb) => qb.where(sql<string>`(payments.received_at at time zone ${centre.timezone})::date`, "<=", query.to!))
       .$if(query.method !== undefined, (qb) => qb.where("payments.method", "=", query.method!))

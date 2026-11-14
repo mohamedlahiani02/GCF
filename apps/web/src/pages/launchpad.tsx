@@ -6,6 +6,7 @@ import { useSession } from "../auth/session";
 import { NavIcon } from "../components/nav-icon";
 import { useCollect, usePage, useWalkIn } from "../components/shell";
 import { ACTIONS, DEFAULT_SHORTCUTS, ICONS, WORKSPACES, permitted, type WorkspaceAction } from "../lib/navigation";
+import { PublicSiteLink } from "./site/public-link";
 
 const normalize = (text: string) =>
   text
@@ -278,6 +279,11 @@ export function WorkspacePage() {
         <div>
           <h1>{workspace.title}</h1>
           <p>{workspace.text}</p>
+          {workspace.id === "website" ? (
+            <div className="row" style={{ marginTop: 16 }}>
+              <PublicSiteLink />
+            </div>
+          ) : null}
         </div>
         <span className={`workspace-emblem workspace-${workspace.id}`}>
           <NavIcon d={workspace.icon} />

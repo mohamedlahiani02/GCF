@@ -12,6 +12,7 @@ export type ColorScheme = "light" | "dark";
 export type LeadStatus = "new" | "handled" | "spam";
 
 export interface SiteSettings {
+  publicOrigin?: string | null;
   online: boolean;
   theme: SiteTheme;
   primaryColor: string;

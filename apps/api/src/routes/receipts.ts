@@ -3,16 +3,41 @@ import { sql } from "kysely";
 import { z } from "zod";
 import { writeAudit } from "../audit.js";
 import { renderReceipt, type ReceiptSnapshot } from "../domain/receiptPdf.js";
+import { financialActivity, paymentActivities } from "../domain/paymentActivity.js";
 import { HttpError, notFound } from "../errors.js";
-import { idParam, optionalEmail } from "../validation.js";
+import { idParam, isoDate, optionalEmail } from "../validation.js";
 
 const listQuery = z.object({
-  q: z.string().trim().max(40).optional(),
+  q: z.string().trim().max(100).optional(),
+  activity: financialActivity.optional(),
+  kind: z.enum(["payment", "refund", "cancellation"]).optional(),
+  status: z.enum(["valid", "cancelled", "cancellation"]).optional(),
+  dispatch: z.enum(["sent", "failed", "not_sent"]).optional(),
+  from: isoDate.optional(),
+  to: isoDate.optional(),
   page: z.coerce.number().int().min(1).default(1),
   pageSize: z.coerce.number().int().min(1).max(200).default(50),
 });
 const pdfQuery = z.object({ format: z.enum(["A4", "A5"]).default("A4") });
 const sendBody = z.object({ to: optionalEmail }).strict();
+
+const currentPayerName = sql<string>`coalesce(
+  nullif(concat_ws(' ', students.first_name, students.last_name), ''),
+  renters.name,
+  concat_ws(' ', members.first_name, members.last_name)
+)`;
+const payerName = sql<string>`coalesce(nullif(receipts.snapshot->'payer'->>'name', ''), ${currentPayerName})`;
+const lastDispatch = sql<string | null>`(
+  select mail_dispatches.status from mail_dispatches
+  where mail_dispatches.receipt_id = receipts.id
+  order by mail_dispatches.sent_at desc, mail_dispatches.id desc
+  limit 1
+)`;
+const receiptStatus = sql<string>`case
+  when receipts.kind = 'cancellation' then 'cancellation'
+  when payments.status = 'cancelled' then 'cancelled'
+  else 'valid'
+end`;
 
 export const receiptRoutes: FastifyPluginAsync = async (app) => {
   const { db } = app;
@@ -20,33 +45,40 @@ export const receiptRoutes: FastifyPluginAsync = async (app) => {
 
   app.get("/", { preHandler: read }, async (request) => {
     const query = listQuery.parse(request.query);
+    const centreId = request.user!.centreId;
+    const centre = await db.selectFrom("centres").select("timezone").where("id", "=", centreId).executeTakeFirstOrThrow();
     const rows = await db
       .selectFrom("receipts")
       .innerJoin("payments", "payments.id", "receipts.payment_id")
       .leftJoin("students", "students.id", "payments.student_id")
       .leftJoin("renters", "renters.id", "payments.renter_id")
       .leftJoin("members", "members.id", "payments.member_id")
-      .select((eb) => [
+      .select([
         "receipts.id",
         "receipts.number",
         "receipts.kind",
         "receipts.issued_at as issuedAt",
+        payerName.as("payerName"),
+        paymentActivities.as("activities"),
         "students.first_name as firstName",
         "students.last_name as lastName",
         "renters.name as renterName",
         sql<string | null>`case when members.id is null then null else concat_ws(' ', members.first_name, members.last_name) end`.as("memberName"),
         "payments.amount",
         "payments.status as paymentStatus",
-        eb
-          .selectFrom("mail_dispatches")
-          .select("mail_dispatches.status")
-          .whereRef("mail_dispatches.receipt_id", "=", "receipts.id")
-          .orderBy("mail_dispatches.sent_at", "desc")
-          .limit(1)
-          .as("lastDispatch"),
+        lastDispatch.as("lastDispatch"),
       ])
-      .where("receipts.centre_id", "=", request.user!.centreId)
-      .$if(!!query.q, (qb) => qb.where("receipts.number", "ilike", `%${query.q!.replace(/[\\%_]/g, (c) => `\\${c}`)}%`))
+      .where("receipts.centre_id", "=", centreId)
+      .$if(!!query.q, (qb) => {
+        const pattern = `%${query.q!.replace(/[\\%_]/g, (c) => `\\${c}`)}%`;
+        return qb.where((eb) => eb.or([eb("receipts.number", "ilike", pattern), eb(payerName, "ilike", pattern), eb(currentPayerName, "ilike", pattern)]));
+      })
+      .$if(query.activity !== undefined, (qb) => qb.where(sql<boolean>`${query.activity!} = any(${paymentActivities})`))
+      .$if(query.kind !== undefined, (qb) => qb.where("receipts.kind", "=", query.kind!))
+      .$if(query.status !== undefined, (qb) => qb.where(receiptStatus, "=", query.status!))
+      .$if(query.dispatch !== undefined, (qb) => qb.where(sql<string>`coalesce(${lastDispatch}, 'not_sent')`, "=", query.dispatch!))
+      .$if(query.from !== undefined, (qb) => qb.where(sql<string>`(receipts.issued_at at time zone ${centre.timezone})::date`, ">=", query.from!))
+      .$if(query.to !== undefined, (qb) => qb.where(sql<string>`(receipts.issued_at at time zone ${centre.timezone})::date`, "<=", query.to!))
       .orderBy("receipts.year", "desc")
       .orderBy("receipts.sequence", "desc")
       .limit(query.pageSize + 1)
