@@ -14,6 +14,7 @@ import {
   SETTINGS_LINKS,
   SETTINGS_PERMISSIONS,
   WORKSPACES,
+  workspaceVisible,
   permitted,
   workspaceFor,
   actionActive as entryActive,
@@ -198,12 +199,18 @@ export function Shell() {
   const allowed = (n: ActionLink) => permitted(n.permission, can);
   const location = useLocation();
   const workspace = workspaceFor(location.pathname);
-  const spaces = WORKSPACES.filter((w) => w.items.some(allowed));
+  const spaces = WORKSPACES.filter((w) => workspaceVisible(w, can));
   const inSettings = location.pathname === "/parametres" || SETTINGS_LINKS.some((l) => isUnder(location.pathname, l.to));
   const sidebar: ActionLink[] = [
     { to: "/", label: "Tableau de bord", icon: ICONS.dashboard, permission: [] },
     { to: "/raccourcis", label: "Mes raccourcis", icon: ICONS.home, permission: [] },
-    ...spaces.map((w) => ({ to: w.to, label: w.label, icon: w.icon, permission: [], also: w.items.filter(allowed).flatMap((i) => [i.to, ...(i.also ?? [])]) })),
+    ...spaces.map((w) => ({
+      to: w.to,
+      label: w.label,
+      icon: w.icon,
+      permission: [],
+      also: w.items.filter((i) => allowed(i) && !i.crossLink).flatMap((i) => [i.to, ...(i.also ?? [])]),
+    })),
     { to: "/propositions", label: "À valider", icon: ICONS.proposals, permission: ["reminders:send", "payroll:calculate"], badge: "proposals" },
   ];
   const client = useQueryClient();

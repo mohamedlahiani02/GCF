@@ -5,7 +5,7 @@ import { api } from "../api/client";
 import { useSession } from "../auth/session";
 import { NavIcon } from "../components/nav-icon";
 import { useCollect, usePage, useWalkIn } from "../components/shell";
-import { ACTIONS, DEFAULT_SHORTCUTS, ICONS, WORKSPACES, permitted, type WorkspaceAction } from "../lib/navigation";
+import { ACTIONS, DEFAULT_SHORTCUTS, ICONS, WORKSPACES, permitted, workspaceVisible, type WorkspaceAction } from "../lib/navigation";
 
 const normalize = (text: string) =>
   text
@@ -93,7 +93,7 @@ function Shortcuts({ userId, saved }: { userId: string; saved: string[] | null }
     next.splice(index + by, 0, moved!);
     update(next);
   };
-  const visibleSpaces = WORKSPACES.filter((w) => w.items.some((i) => permitted(i.permission, can)));
+  const visibleSpaces = WORKSPACES.filter((w) => workspaceVisible(w, can));
   const full = selected.length >= MAX_SHORTCUTS;
   return (
     <>
