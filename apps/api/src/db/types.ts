@@ -449,7 +449,8 @@ export interface ReceiptPrintsTable {
   duplicate: boolean;
 }
 
-export type MailDispatchKind = "receipt" | "reminder" | "member_activation" | "password_reset" | "booking" | "mail_item" | "subscription" | "invoice";
+export type MailDispatchKind =
+  "receipt" | "reminder" | "member_activation" | "password_reset" | "booking" | "mail_item" | "subscription" | "invoice" | "visitor";
 
 export interface MailDispatchesTable {
   id: Generated<string>;

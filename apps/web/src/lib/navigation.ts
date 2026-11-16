@@ -313,6 +313,15 @@ export const WORKSPACES: Workspace[] = [
         section: "Dossiers et catalogue",
       },
       {
+        id: "visitors",
+        to: "/coworking/visiteurs",
+        label: "Accueillir un visiteur",
+        text: "Visiteurs attendus, arrivées et départs",
+        icon: ICONS.members,
+        permission: "coworking:read",
+        section: "Au quotidien",
+      },
+      {
         id: "mail",
         to: "/coworking/courrier",
         label: "Enregistrer un courrier",

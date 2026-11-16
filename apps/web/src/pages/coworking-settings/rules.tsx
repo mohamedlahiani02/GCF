@@ -27,6 +27,8 @@ interface Form {
   endingSoonMinutes: string;
   reminderEnabled: boolean;
   reminderHours: string;
+  visitorRetentionDays: string;
+  visitorNotifyHost: boolean;
 }
 
 const toForm = (s: CwSettings): Form => ({
@@ -49,6 +51,8 @@ const toForm = (s: CwSettings): Form => ({
   endingSoonMinutes: String(s.endingSoonMinutes ?? 30),
   reminderEnabled: s.reminderHours !== null,
   reminderHours: String(s.reminderHours ?? 24),
+  visitorRetentionDays: String(s.visitorRetentionDays),
+  visitorNotifyHost: s.visitorNotifyHost,
 });
 
 const APPROVAL: Record<CwSettings["approvalMode"], string> = {
@@ -93,6 +97,7 @@ export function RulesTab() {
     companyTaxBp: v.companyTaxEnabled ? parsePercent(v.companyTax) : null,
     endingSoonMinutes: v.endingEnabled ? parseInteger(v.endingSoonMinutes, 5, 240) : null,
     reminderHours: v.reminderEnabled ? parseInteger(v.reminderHours, 1, 168) : null,
+    visitorRetentionDays: parseInteger(v.visitorRetentionDays, 1, 1095),
   };
   const errors = {
     bookingHorizonDays: parsed.bookingHorizonDays === null ? "Entre 1 et 365 jours." : null,
@@ -106,6 +111,7 @@ export function RulesTab() {
     companyTax: v.companyTaxEnabled && (parsed.companyTaxBp === null || parsed.companyTaxBp === 0) ? "Un taux de 0,01 à 100 %." : null,
     endingSoonMinutes: v.endingEnabled && parsed.endingSoonMinutes === null ? "Entre 5 et 240 minutes." : null,
     reminderHours: v.reminderEnabled && parsed.reminderHours === null ? "Entre 1 et 168 heures." : null,
+    visitorRetentionDays: parsed.visitorRetentionDays === null ? "Entre 1 et 1095 jours." : null,
   };
   const valid = Object.values(errors).every((e) => e === null);
   /** A wrong value in the folded options keeps them open, so the message is never hidden. */
@@ -134,6 +140,8 @@ export function RulesTab() {
       companyTaxBp: parsed.companyTaxBp,
       endingSoonMinutes: parsed.endingSoonMinutes,
       reminderHours: parsed.reminderHours,
+      visitorRetentionDays: parsed.visitorRetentionDays!,
+      visitorNotifyHost: v.visitorNotifyHost,
     });
   };
   return (
@@ -311,6 +319,27 @@ export function RulesTab() {
                     disabled={!v.reminderEnabled}
                     value={v.reminderHours}
                     onChange={(e) => set("reminderHours", e.target.value)}
+                  />
+                </Field>
+              </div>
+            </div>
+            <h3 className="h3">Registre des visiteurs</h3>
+            <div className="grid3">
+              <div className="stack" style={{ gap: 6 }}>
+                <label className="row center" style={{ gap: 8 }}>
+                  <input type="checkbox" className="chk" checked={v.visitorNotifyHost} onChange={(e) => set("visitorNotifyHost", e.target.checked)} />
+                  Prévenir le client par e-mail à l'arrivée de son visiteur
+                </label>
+                <Field
+                  label="Conservation des visites (jours)"
+                  hint="Passé ce délai, les visites sont supprimées : un visiteur n'est pas un client."
+                  error={errors.visitorRetentionDays}
+                >
+                  <input
+                    className="input num"
+                    inputMode="numeric"
+                    value={v.visitorRetentionDays}
+                    onChange={(e) => set("visitorRetentionDays", e.target.value)}
                   />
                 </Field>
               </div>

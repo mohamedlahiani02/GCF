@@ -64,6 +64,7 @@ export function Shell() {
     ["/abonnement", t.nav.subscription],
     ["/packs", t.nav.packs],
     ["/courrier", t.nav.mail],
+    ["/visiteurs", t.nav.visitors],
     ["/paiements", t.nav.payments],
     ["/compte", t.nav.account],
     ...(member?.company?.role === "admin" ? ([["/equipe", t.nav.team]] as [string, string][]) : []),

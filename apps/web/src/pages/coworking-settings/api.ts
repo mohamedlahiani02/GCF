@@ -21,6 +21,8 @@ export interface CwSettings {
   /** Minutes before its end a running booking shows its place as soon free; null hides it. */
   endingSoonMinutes: number | null;
   reminderHours: number | null;
+  visitorRetentionDays: number;
+  visitorNotifyHost: boolean;
   updatedAt: string;
 }
 

@@ -27,6 +27,7 @@ import { centreRoutes } from "./routes/centre.js";
 import { coworkingBookingRoutes } from "./routes/coworking/bookings.js";
 import { coworkingConfigRoutes } from "./routes/coworking/config.js";
 import { coworkingMemberRoutes } from "./routes/coworking/members.js";
+import { coworkingVisitorRoutes } from "./routes/coworking/visitors.js";
 import { mediaRoutes } from "./routes/media.js";
 import { portalRoutes } from "./routes/portal/index.js";
 import { publicRoutes } from "./routes/public.js";
@@ -231,6 +232,7 @@ export async function buildApp(options: AppOptions): Promise<FastifyInstance> {
   await app.register(coworkingConfigRoutes, { prefix: "/api/coworking" });
   await app.register(coworkingMemberRoutes, { prefix: "/api/coworking" });
   await app.register(coworkingBookingRoutes, { prefix: "/api/coworking" });
+  await app.register(coworkingVisitorRoutes, { prefix: "/api/coworking" });
   await app.register(websiteRoutes, { prefix: "/api/site" });
   await app.register(portalRoutes, { prefix: "/api/portal" });
   await app.register(publicRoutes, { prefix: "/api/public" });
