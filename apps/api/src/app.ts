@@ -40,6 +40,7 @@ import { integrationRoutes } from "./routes/integrations.js";
 import { paymentRoutes } from "./routes/payments.js";
 import { payrollRoutes } from "./routes/payroll.js";
 import { invoiceRoutes } from "./routes/invoices.js";
+import { mcpRoutes } from "./routes/mcp.js";
 import { prospectRoutes } from "./routes/prospects.js";
 import { receiptRoutes } from "./routes/receipts.js";
 import { rentalRoutes } from "./routes/rentals.js";
@@ -133,6 +134,8 @@ export async function buildApp(options: AppOptions): Promise<FastifyInstance> {
   app.addHook("onRequest", async (request) => {
     if (!UNSAFE_METHODS.has(request.method)) return;
     if (request.headers.authorization !== undefined && request.headers.cookie === undefined && !isPublicApi(request.url)) return;
+    // An MCP client without cookies cannot ride on a browser session; it must get the 401 that asks for a token.
+    if (request.headers.cookie === undefined && (request.url === "/api/mcp" || request.url.startsWith("/api/mcp?"))) return;
     const expected = isPublicApi(request.url) ? config.publicOrigin : config.webOrigin;
     if (!expected || request.headers.origin !== expected) throw new HttpError(403, "bad_origin", "request origin is not allowed");
   });
@@ -157,7 +160,10 @@ export async function buildApp(options: AppOptions): Promise<FastifyInstance> {
       const user = await resolveApiToken(db, bearer);
       if (!user) throw unauthenticated();
       if (isClosedToTokens(request.method, request.url)) throw new HttpError(403, "token_not_allowed", "access tokens cannot use this area");
-      if (user.apiToken?.readOnly && UNSAFE_METHODS.has(request.method)) throw new HttpError(403, "read_only_token", "this access token can only read");
+      // MCP messages are always POSTed; the tools a read-only token may call only read, and every call they make
+      // inside goes through this same check.
+      const mcp = request.url === "/api/mcp" || request.url.startsWith("/api/mcp?");
+      if (user.apiToken?.readOnly && UNSAFE_METHODS.has(request.method) && !mcp) throw new HttpError(403, "read_only_token", "this access token can only read");
       request.user = user;
       return;
     }
@@ -219,6 +225,7 @@ export async function buildApp(options: AppOptions): Promise<FastifyInstance> {
   await app.register(receiptRoutes, { prefix: "/api/receipts" });
   await app.register(invoiceRoutes, { prefix: "/api/invoices" });
   await app.register(prospectRoutes, { prefix: "/api/prospects" });
+  await app.register(mcpRoutes, { prefix: "/api/mcp" });
   await app.register(accountRoutes, { prefix: "/api" });
   await app.register(payrollRoutes, { prefix: "/api/payroll" });
   await app.register(rentalRoutes, { prefix: "/api" });

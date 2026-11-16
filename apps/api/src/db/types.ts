@@ -866,6 +866,7 @@ export interface ApiTokensTable {
   name: string;
   role: ApiTokenRole;
   read_only: Generated<boolean>;
+  share_personal_data: Generated<boolean>;
   token_hash: Buffer;
   token_prefix: string;
   created_by: string;

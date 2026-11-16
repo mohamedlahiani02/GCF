@@ -14,6 +14,7 @@ const tokenBody = z
     name: z.string().trim().min(1).max(100),
     role: z.enum(["secretariat", "accountant", "editor"]),
     readOnly: z.boolean().default(true),
+    sharePersonalData: z.boolean().default(false),
     expiresAt: z.iso.datetime({ offset: true }).nullable().default(null),
   })
   .strict();
@@ -59,6 +60,7 @@ async function loadTokens(db: Kysely<Database>, centreId: string, id?: string) {
       "api_tokens.name",
       "api_tokens.role",
       "api_tokens.read_only as readOnly",
+      "api_tokens.share_personal_data as sharePersonalData",
       "api_tokens.token_prefix as prefix",
       "api_tokens.created_at as createdAt",
       "users.full_name as createdByName",
@@ -113,6 +115,7 @@ export const integrationRoutes: FastifyPluginAsync = async (app) => {
       name: body.name,
       role: body.role,
       readOnly: body.readOnly,
+      sharePersonalData: body.sharePersonalData,
       expiresAt,
       createdBy: actor.userId,
     });
@@ -122,7 +125,14 @@ export const integrationRoutes: FastifyPluginAsync = async (app) => {
       action: "api_token.created",
       objectType: "api_token",
       objectId: created.id,
-      after: { name: body.name, role: body.role, readOnly: body.readOnly, expiresAt: body.expiresAt, prefix: created.prefix },
+      after: {
+        name: body.name,
+        role: body.role,
+        readOnly: body.readOnly,
+        sharePersonalData: body.sharePersonalData,
+        expiresAt: body.expiresAt,
+        prefix: created.prefix,
+      },
     });
     const [token] = await loadTokens(db, actor.centreId, created.id);
     return reply.status(201).send({ ...token, token: created.token });

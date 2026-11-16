@@ -16,7 +16,7 @@ export interface SessionUser {
   role: Role;
   modules: Module[];
   /** Set when the request is authenticated by an access token rather than a signed-in person. */
-  apiToken: { id: string; name: string; readOnly: boolean } | null;
+  apiToken: { id: string; name: string; readOnly: boolean; sharePersonalData: boolean } | null;
 }
 
 function hashToken(token: string): Buffer {
