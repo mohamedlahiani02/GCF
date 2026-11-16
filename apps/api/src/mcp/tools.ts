@@ -63,7 +63,14 @@ export const ENTITIES: Entity[] = [
     description: "Clients du coworking (personnes et membres d'entreprises).",
     permission: "coworking:read",
     listUrl: "/api/coworking/members",
-    filters: { q: "nom, e-mail ou téléphone", status: "pending | active | disabled", kind: "member | guest", companyId: "identifiant de société", page: "page", pageSize: "taille de page" },
+    filters: {
+      q: "nom, e-mail ou téléphone",
+      status: "pending | active | disabled",
+      kind: "member | guest",
+      companyId: "identifiant de société",
+      page: "page",
+      pageSize: "taille de page",
+    },
     getUrl: (id) => `/api/coworking/members/${id}`,
   },
   {
@@ -128,7 +135,11 @@ export const ENTITIES: Entity[] = [
     description: "Prospects suivis jusqu'à l'inscription.",
     permission: "prospects:read",
     listUrl: "/api/prospects",
-    filters: { stage: "open | new | contacted | visit | proposal | won | lost | all", due: "true pour les relances du jour ou en retard", q: "nom, société, e-mail" },
+    filters: {
+      stage: "open | new | contacted | visit | proposal | won | lost | all",
+      due: "true pour les relances du jour ou en retard",
+      q: "nom, société, e-mail",
+    },
     getUrl: (id) => `/api/prospects/${id}`,
   },
 ];
@@ -157,7 +168,11 @@ export const TOOLS: ToolDefinition[] = [
       type: "object",
       properties: {
         entity: str("nom du type, par exemple coworking_bookings"),
-        filters: { type: "object", description: "filtres du type, valeurs texte, nombre ou booléen", additionalProperties: { type: ["string", "number", "boolean"] } },
+        filters: {
+          type: "object",
+          description: "filtres du type, valeurs texte, nombre ou booléen",
+          additionalProperties: { type: ["string", "number", "boolean"] },
+        },
       },
       required: ["entity"],
       additionalProperties: false,
@@ -224,7 +239,13 @@ export const TOOLS: ToolDefinition[] = [
     },
     writes: true,
     permissions: ["prospects:write"],
-    plan: (args) => [{ method: "POST", url: "/api/prospects", body: pick(args, ["name", "company", "email", "phone", "source", "interests", "nextAction", "nextActionOn", "notes"]) }],
+    plan: (args) => [
+      {
+        method: "POST",
+        url: "/api/prospects",
+        body: pick(args, ["name", "company", "email", "phone", "source", "interests", "nextAction", "nextActionOn", "notes"]),
+      },
+    ],
   },
   {
     name: "log_prospect_activity",
@@ -246,7 +267,11 @@ export const TOOLS: ToolDefinition[] = [
     description: "Passe un prospect à une autre étape ; une perte demande un motif.",
     inputSchema: {
       type: "object",
-      properties: { prospectId: id("prospect"), stage: enumOf(["new", "contacted", "visit", "proposal", "lost"], "nouvelle étape"), lostReason: str("motif, pour une perte") },
+      properties: {
+        prospectId: id("prospect"),
+        stage: enumOf(["new", "contacted", "visit", "proposal", "lost"], "nouvelle étape"),
+        lostReason: str("motif, pour une perte"),
+      },
       required: ["prospectId", "stage"],
       additionalProperties: false,
     },
@@ -273,7 +298,9 @@ export const TOOLS: ToolDefinition[] = [
     },
     writes: true,
     permissions: ["coworking:write"],
-    plan: (args) => [{ method: "POST", url: "/api/coworking/visitors", body: pick(args, ["hostMemberId", "name", "company", "expectedOn", "expectedAt", "purpose"]) }],
+    plan: (args) => [
+      { method: "POST", url: "/api/coworking/visitors", body: pick(args, ["hostMemberId", "name", "company", "expectedOn", "expectedAt", "purpose"]) },
+    ],
   },
   {
     name: "record_visitor",
@@ -308,13 +335,20 @@ export const TOOLS: ToolDefinition[] = [
     },
     writes: true,
     permissions: ["coworking:write"],
-    plan: (args) => [{ method: "POST", url: "/api/coworking/bookings", body: pick(args, ["memberId", "resourceId", "formatId", "date", "startTime", "durationMinutes"]) }],
+    plan: (args) => [
+      { method: "POST", url: "/api/coworking/bookings", body: pick(args, ["memberId", "resourceId", "formatId", "date", "startTime", "durationMinutes"]) },
+    ],
   },
   {
     name: "send_invoice",
     title: "Envoyer une facture",
     description: "Envoie par e-mail le PDF archivé d'une facture ou d'un avoir.",
-    inputSchema: { type: "object", properties: { invoiceId: id("facture"), to: str("adresse e-mail du destinataire") }, required: ["invoiceId", "to"], additionalProperties: false },
+    inputSchema: {
+      type: "object",
+      properties: { invoiceId: id("facture"), to: str("adresse e-mail du destinataire") },
+      required: ["invoiceId", "to"],
+      additionalProperties: false,
+    },
     writes: true,
     permissions: ["invoices:write"],
     plan: (args) => [{ method: "POST", url: `/api/invoices/${String(args.invoiceId)}/send`, body: pick(args, ["to"]) }],
