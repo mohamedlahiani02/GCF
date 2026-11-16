@@ -12,9 +12,15 @@ export interface Dashboard {
     unpaidPayers: number;
     postponedInstallments: number;
     payroll: { toValidate: number; toPay: number };
+    insights: {
+      last30: { total: number; previous: number; byActivity: { training: number; rental: number; coworking: number; cafe: number } };
+      monthToDate: { total: number; previous: number };
+      topUnpaid: { id: string; remaining: number; name: string; kind: "student" | "renter" }[];
+    };
     series: { bucket: string; total: number }[];
   };
   operational?: {
+    coworking: { present: number; bookingsToday: number; requests: number } | null;
     attendanceRateBasisPoints: number | null;
     roomOccupancyBasisPoints: number | null;
     todo: {

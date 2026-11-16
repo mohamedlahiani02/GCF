@@ -158,6 +158,11 @@ describe("dashboard", () => {
     expect(forAccountant.body.financial).toMatchObject({ collectionsToday: 180_000, unpaidTotal: 50_000, unpaidPayers: 1 });
     expect(forAccountant.body.financial.series).toHaveLength(14);
     expect(forAccountant.body.financial.series.at(-1)).toEqual({ bucket: today, total: 180_000 });
+    const insights = forAccountant.body.financial.insights;
+    expect(insights.last30.total).toBe(Object.values(insights.last30.byActivity as Record<string, number>).reduce((x, y) => x + y, 0));
+    expect(insights.last30.total).toBeGreaterThanOrEqual(180_000);
+    expect(insights.topUnpaid).toHaveLength(1);
+    expect(insights.topUnpaid[0]).toMatchObject({ remaining: 50_000, kind: "student" });
     const forSecretariat = await h.call("GET", "/api/dashboard", secretariat);
     expect(forSecretariat.body.sections).toEqual({ financial: false, operational: true });
     expect(forSecretariat.body.operational.todo.overdueInstallments).toEqual({ count: 2, total: 50_000 });

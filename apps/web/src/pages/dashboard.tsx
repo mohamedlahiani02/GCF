@@ -71,6 +71,91 @@ function Chart({ series, granularity, today }: { series: { bucket: string; total
   );
 }
 
+/** Change against the same span of the previous period, in words; null when there is nothing to compare with. */
+export function trend(current: number, previous: number): { text: string; tone: "up" | "down" | "flat" } | null {
+  if (previous <= 0) return null;
+  const change = Math.round(((current - previous) / previous) * 100);
+  if (change === 0) return { text: "stable", tone: "flat" };
+  return { text: `${change > 0 ? "+" : ""}${change} %`, tone: change > 0 ? "up" : "down" };
+}
+
+const ACTIVITIES = [
+  { key: "training", label: "Formation et cours", color: "var(--accent)" },
+  { key: "coworking", label: "Coworking", color: "#0e1a36" },
+  { key: "rental", label: "Locations", color: "#5b6478" },
+  { key: "cafe", label: "Café", color: "#e8a33d" },
+] as const;
+
+function Insights({ f, o }: { f: NonNullable<Dashboard["financial"]>; o: Dashboard["operational"] | undefined }) {
+  const { last30, topUnpaid } = f.insights;
+  const change = trend(last30.total, last30.previous);
+  return (
+    <section className="dashboard-insights" aria-label="Ce qu’il faut retenir">
+      <div className="card insight-card">
+        <span className="lab">Encaissé sur 30 jours</span>
+        <strong className="num insight-value">{tnd(last30.total)} TND</strong>
+        <p className="cap">
+          {change ? <span className={`trend trend-${change.tone}`}>{change.text}</span> : null}
+          {change ? " par rapport aux 30 jours précédents" : "Pas encore de période précédente à comparer"}
+        </p>
+        {last30.total > 0 ? (
+          <>
+            <div className="split-bar" role="img" aria-label="Répartition des encaissements par activité">
+              {ACTIVITIES.filter((a) => last30.byActivity[a.key] > 0).map((a) => (
+                <span key={a.key} style={{ flexGrow: last30.byActivity[a.key], background: a.color }} />
+              ))}
+            </div>
+            <ul className="split-legend">
+              {ACTIVITIES.filter((a) => last30.byActivity[a.key] > 0).map((a) => (
+                <li key={a.key}>
+                  <i style={{ background: a.color }} />
+                  {a.label}
+                  <span className="num">{Math.round((last30.byActivity[a.key] / last30.total) * 100)} %</span>
+                </li>
+              ))}
+            </ul>
+          </>
+        ) : null}
+      </div>
+      <div className="card insight-card">
+        <span className="lab">Plus gros impayés</span>
+        {topUnpaid.length ? (
+          <ol className="insight-list">
+            {topUnpaid.map((u) => (
+              <li key={u.id}>
+                <Link to={u.kind === "student" ? `/eleves/${u.id}` : "/encaissements?onglet=impayes"}>{u.name || "Payeur"}</Link>
+                <span className="num">{tnd(u.remaining)} TND</span>
+              </li>
+            ))}
+          </ol>
+        ) : (
+          <p className="cap">Aucune échéance en retard.</p>
+        )}
+      </div>
+      {o?.coworking ? (
+        <div className="card insight-card">
+          <span className="lab">Coworking en ce moment</span>
+          <div className="insight-stats">
+            <div>
+              <strong className="num insight-value">{o.coworking.present}</strong>
+              <span className="cap">présents</span>
+            </div>
+            <div>
+              <strong className="num insight-value">{o.coworking.bookingsToday}</strong>
+              <span className="cap">réservations aujourd’hui</span>
+            </div>
+            <div>
+              <strong className="num insight-value">{o.coworking.requests}</strong>
+              <span className="cap">demandes à valider</span>
+            </div>
+          </div>
+          {o.coworking.requests ? <Link to="/coworking/demandes">Répondre aux demandes</Link> : <Link to="/coworking">Voir le plan en direct</Link>}
+        </div>
+      ) : null}
+    </section>
+  );
+}
+
 export function DashboardPage() {
   usePage(["Tableau de bord"]);
   const { session, can } = useSession();
@@ -157,7 +242,10 @@ export function DashboardPage() {
             <Kpi
               label="Encaissé ce mois"
               value={<span className="num">{tnd(f.collectionsMonth)}</span>}
-              sub={`TND · ${tnd(f.collectionsToday)} TND aujourd’hui${f.cafeMonth > 0 ? ` · dont café ${tnd(f.cafeMonth)} TND ce mois` : ""}`}
+              sub={`TND · ${(() => {
+                const t = trend(f.insights.monthToDate.total, f.insights.monthToDate.previous);
+                return t ? `${t.text} par rapport au même jour du mois dernier` : `${tnd(f.collectionsToday)} TND aujourd’hui`;
+              })()}${f.cafeMonth > 0 ? ` · dont café ${tnd(f.cafeMonth)} TND` : ""}`}
             />
             <Kpi
               label="Impayés"
@@ -278,6 +366,7 @@ export function DashboardPage() {
           </div>
         </section>
       </div>
+      {f ? <Insights f={f} o={d?.operational} /> : null}
       {f && d ? (
         <Card
           title="Évolution des encaissements (TND)"
