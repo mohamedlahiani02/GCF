@@ -14,17 +14,21 @@ Les réglages s'appliquent à trois niveaux. Le niveau le plus précis l'emporte
 
 ## 1. Centre (Paramètres > Administration)
 
-| Réglage                                                     | Défaut                     | Effet                                                                                                                           |
-| ----------------------------------------------------------- | -------------------------- | ------------------------------------------------------------------------------------------------------------------------------- |
-| Exiger un parent ou tuteur joignable pour un élève mineur   | Non                        | Oui : un élève mineur ne s'enregistre qu'avec le nom du tuteur et un téléphone ou un e-mail. Non : ces champs sont facultatifs. |
-| Compter les absences justifiées comme présentes             | Non                        | Entre dans le taux de présence, donc dans la paie au prorata ou au seuil.                                                       |
-| Compter les rattrapages dans un autre groupe comme présents | Oui                        | Le rattrapage compte pour le groupe d'origine ; l'élève invité n'entre jamais dans le taux du groupe d'accueil.                 |
-| Reports maximum par échéance                                | 2                          | Au-delà, le report est refusé.                                                                                                  |
-| Reports du secrétariat soumis à validation                  | Oui                        | Un administrateur doit approuver les reports demandés par le secrétariat.                                                       |
-| Délai de grâce avant retard                                 | 0 jour                     | Une échéance n'est en retard qu'après ce délai.                                                                                 |
-| Préfixe des reçus                                           | `REC`                      | Numérotation `REC-AAAA-000001`, continue.                                                                                       |
-| Mentions en pied de reçu                                    | Texte par défaut           | Remplace le texte imprimé sous chaque reçu.                                                                                     |
-| Heures et jours d'ouverture                                 | 08:00 à 20:00, lun. à sam. | Sert au calcul de l'occupation des salles.                                                                                      |
+| Réglage                                                     | Défaut                     | Effet                                                                                                                                         |
+| ----------------------------------------------------------- | -------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------- |
+| Exiger un parent ou tuteur joignable pour un élève mineur   | Non                        | Oui : un élève mineur ne s'enregistre qu'avec le nom du tuteur et un téléphone ou un e-mail. Non : ces champs sont facultatifs.               |
+| Compter les absences justifiées comme présentes             | Non                        | Entre dans le taux de présence, donc dans la paie au prorata ou au seuil.                                                                     |
+| Compter les rattrapages dans un autre groupe comme présents | Oui                        | Le rattrapage compte pour le groupe d'origine ; l'élève invité n'entre jamais dans le taux du groupe d'accueil.                               |
+| Reports maximum par échéance                                | 2                          | Au-delà, le report est refusé.                                                                                                                |
+| Reports du secrétariat soumis à validation                  | Oui                        | Un administrateur doit approuver les reports demandés par le secrétariat.                                                                     |
+| Délai de grâce avant retard                                 | 0 jour                     | Une échéance n'est en retard qu'après ce délai.                                                                                               |
+| Préfixe des reçus                                           | `REC`                      | Numérotation `REC-AAAA-000001`, continue.                                                                                                     |
+| Mentions en pied de reçu                                    | Texte par défaut           | Remplace le texte imprimé sous chaque reçu.                                                                                                   |
+| Préfixes des factures et des avoirs                         | `FA` et `AV`               | Numérotation `FA-AAAA-00001` et `AV-AAAA-00001`, continue et propre à chaque type.                                                            |
+| Délai de paiement des factures                              | 15 jours                   | Échéance imprimée sur la facture ; passé ce jour, la facture non soldée est « En retard ».                                                    |
+| Détailler la taxe sur les factures des entreprises          | Non                        | Oui, avec un taux : les prix restent TTC, la facture d'une entreprise montre le HT et la taxe. Une personne reçoit toujours le montant total. |
+| Mentions en pied de facture                                 | Texte par défaut           | Remplace le texte imprimé sous chaque facture et avoir.                                                                                       |
+| Heures et jours d'ouverture                                 | 08:00 à 20:00, lun. à sam. | Sert au calcul de l'occupation des salles.                                                                                                    |
 
 **Exemple.** Un centre de soutien scolaire veut toujours pouvoir joindre un parent : cochez « Exiger un parent ou
 tuteur joignable ». Les fiches déjà enregistrées ne changent pas. La règle s'applique à la prochaine création ou

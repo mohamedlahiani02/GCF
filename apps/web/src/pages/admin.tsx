@@ -23,6 +23,11 @@ interface Centre {
   overdueGraceDays: number;
   receiptPrefix: string;
   receiptFooter: string | null;
+  invoicePrefix: string;
+  creditNotePrefix: string;
+  invoiceTaxBp: number | null;
+  invoiceDueDays: number;
+  invoiceFooter: string | null;
   openFrom: string;
   openTo: string;
   openWeekdays: number[];
@@ -151,6 +156,11 @@ function CentreSettings() {
         overdueGraceDays: body.overdueGraceDays,
         receiptPrefix: body.receiptPrefix,
         receiptFooter: body.receiptFooter ?? "",
+        invoicePrefix: body.invoicePrefix,
+        creditNotePrefix: body.creditNotePrefix,
+        invoiceTaxBp: body.invoiceTaxBp,
+        invoiceDueDays: body.invoiceDueDays,
+        invoiceFooter: body.invoiceFooter ?? "",
         openFrom: body.openFrom,
         openTo: body.openTo,
         openWeekdays: body.openWeekdays,
@@ -166,6 +176,9 @@ function CentreSettings() {
   const editable = can("centre:manage");
   const set = <K extends keyof Centre>(k: K, value: Centre[K]) => setV({ ...v, [k]: value });
   const prefixOk = /^[A-Z0-9]{1,10}$/.test(v.receiptPrefix);
+  const invoicePrefixOk = /^[A-Z0-9-]{1,10}$/.test(v.invoicePrefix) && /^[A-Z0-9-]{1,10}$/.test(v.creditNotePrefix) && v.invoicePrefix !== v.creditNotePrefix;
+  const invoiceTaxOk = v.invoiceTaxBp === null || (Number.isInteger(v.invoiceTaxBp) && v.invoiceTaxBp >= 1 && v.invoiceTaxBp <= 10_000);
+  const dueDaysOk = Number.isInteger(v.invoiceDueDays) && v.invoiceDueDays >= 0 && v.invoiceDueDays <= 180;
   return (
     <Card
       title="Paramètres du centre"
@@ -176,7 +189,16 @@ function CentreSettings() {
             <button
               type="button"
               className="btn btn-p"
-              disabled={!v.name.trim() || !prefixOk || v.openTo <= v.openFrom || !v.openWeekdays.length || save.isPending}
+              disabled={
+                !v.name.trim() ||
+                !prefixOk ||
+                !invoicePrefixOk ||
+                !invoiceTaxOk ||
+                !dueDaysOk ||
+                v.openTo <= v.openFrom ||
+                !v.openWeekdays.length ||
+                save.isPending
+              }
               onClick={() => save.mutate(v)}
             >
               Enregistrer
@@ -259,6 +281,58 @@ function CentreSettings() {
         </div>
         <Field label="Mentions en pied de reçu" hint="Vide : mention par défaut sur la numérotation et l'archivage.">
           <textarea className="input" value={v.receiptFooter ?? ""} maxLength={500} onChange={(e) => set("receiptFooter", e.target.value)} />
+        </Field>
+        <h3 className="h2">Factures et avoirs</h3>
+        <div className="grid3">
+          <Field
+            label="Préfixe des factures"
+            hint={`Exemple : ${v.invoicePrefix}-2026-00001`}
+            error={invoicePrefixOk ? null : "1 à 10 majuscules, chiffres ou tirets, différent de celui des avoirs"}
+          >
+            <input className="input" value={v.invoicePrefix} onChange={(e) => set("invoicePrefix", e.target.value.toUpperCase())} />
+          </Field>
+          <Field label="Préfixe des avoirs" hint={`Exemple : ${v.creditNotePrefix}-2026-00001`}>
+            <input className="input" value={v.creditNotePrefix} onChange={(e) => set("creditNotePrefix", e.target.value.toUpperCase())} />
+          </Field>
+          <Field label="Délai de paiement (jours)" error={dueDaysOk ? null : "Entre 0 et 180 jours."}>
+            <input
+              className="input num"
+              type="number"
+              min={0}
+              max={180}
+              value={v.invoiceDueDays}
+              onChange={(e) => set("invoiceDueDays", Number(e.target.value))}
+            />
+          </Field>
+        </div>
+        <label className="row center" style={{ gap: 8 }}>
+          <input type="checkbox" className="chk" checked={v.invoiceTaxBp !== null} onChange={(e) => set("invoiceTaxBp", e.target.checked ? 1900 : null)} />{" "}
+          Détailler la taxe sur les factures des entreprises
+        </label>
+        {v.invoiceTaxBp !== null ? (
+          <div className="grid3">
+            <Field
+              label="Taux (%)"
+              hint="Les prix restent TTC. Une personne reçoit une facture au montant total ; pour une entreprise, le total est détaillé en HT et taxe."
+              error={invoiceTaxOk ? null : "Un taux de 0,01 à 100 %."}
+            >
+              <input
+                className="input num"
+                type="number"
+                min={0.01}
+                max={100}
+                step={0.01}
+                value={v.invoiceTaxBp / 100}
+                onChange={(e) => set("invoiceTaxBp", Math.round(Number(e.target.value) * 100))}
+              />
+            </Field>
+          </div>
+        ) : null}
+        <Field
+          label="Mentions en pied de facture"
+          hint="Vide : mention par défaut sur la numérotation et l'archivage. Faites valider les mentions légales par votre expert-comptable."
+        >
+          <textarea className="input" value={v.invoiceFooter ?? ""} maxLength={500} onChange={(e) => set("invoiceFooter", e.target.value)} />
         </Field>
         <h3 className="h2">Heures d'ouverture (occupation des salles)</h3>
         <div className="grid3">

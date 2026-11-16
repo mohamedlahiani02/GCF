@@ -380,6 +380,15 @@ export const WORKSPACES: Workspace[] = [
         section: "Au quotidien",
       },
       {
+        id: "invoices",
+        to: "/factures",
+        label: "Factures et avoirs",
+        text: "Émettre, envoyer et suivre les factures",
+        icon: ICONS.receipts,
+        permission: "invoices:read",
+        section: "Dossiers et catalogue",
+      },
+      {
         id: "receipts",
         to: "/recus",
         label: "Retrouver un reçu",

@@ -30,6 +30,17 @@ const centreUpdate = z
       .trim()
       .regex(/^[A-Z0-9]{1,10}$/, "1 to 10 capital letters or digits"),
     receiptFooter: nullableText,
+    invoicePrefix: z
+      .string()
+      .trim()
+      .regex(/^[A-Z0-9-]{1,10}$/, "1 to 10 capital letters, digits or dashes"),
+    creditNotePrefix: z
+      .string()
+      .trim()
+      .regex(/^[A-Z0-9-]{1,10}$/, "1 to 10 capital letters, digits or dashes"),
+    invoiceTaxBp: z.number().int().min(1).max(10_000).nullable(),
+    invoiceDueDays: z.number().int().min(0).max(180),
+    invoiceFooter: nullableText,
     openFrom: clockTime,
     openTo: clockTime,
     openWeekdays: z.array(z.number().int().min(1).max(7)).min(1).max(7),
@@ -82,6 +93,11 @@ const CENTRE_COLUMNS = [
   "overdue_grace_days",
   "receipt_prefix",
   "receipt_footer",
+  "invoice_prefix",
+  "credit_note_prefix",
+  "invoice_tax_bp",
+  "invoice_due_days",
+  "invoice_footer",
   "open_from",
   "open_to",
   "open_weekdays",
@@ -114,6 +130,11 @@ export const centreRoutes: FastifyPluginAsync = async (app) => {
     overdueGraceDays: c.overdue_grace_days,
     receiptPrefix: c.receipt_prefix,
     receiptFooter: c.receipt_footer,
+    invoicePrefix: c.invoice_prefix,
+    creditNotePrefix: c.credit_note_prefix,
+    invoiceTaxBp: c.invoice_tax_bp,
+    invoiceDueDays: c.invoice_due_days,
+    invoiceFooter: c.invoice_footer,
     openFrom: c.open_from.slice(0, 5),
     openTo: c.open_to.slice(0, 5),
     openWeekdays: c.open_weekdays,
@@ -147,6 +168,11 @@ export const centreRoutes: FastifyPluginAsync = async (app) => {
           ...(body.overdueGraceDays === undefined ? {} : { overdue_grace_days: body.overdueGraceDays }),
           ...(body.receiptPrefix === undefined ? {} : { receipt_prefix: body.receiptPrefix }),
           ...(body.receiptFooter === undefined ? {} : { receipt_footer: body.receiptFooter }),
+          ...(body.invoicePrefix === undefined ? {} : { invoice_prefix: body.invoicePrefix }),
+          ...(body.creditNotePrefix === undefined ? {} : { credit_note_prefix: body.creditNotePrefix }),
+          ...(body.invoiceTaxBp === undefined ? {} : { invoice_tax_bp: body.invoiceTaxBp }),
+          ...(body.invoiceDueDays === undefined ? {} : { invoice_due_days: body.invoiceDueDays }),
+          ...(body.invoiceFooter === undefined ? {} : { invoice_footer: body.invoiceFooter }),
           ...(body.openFrom === undefined ? {} : { open_from: body.openFrom }),
           ...(body.openTo === undefined ? {} : { open_to: body.openTo }),
           ...(body.openWeekdays === undefined ? {} : { open_weekdays: [...new Set(body.openWeekdays)].sort() }),

@@ -21,6 +21,7 @@ import { PlanningPage } from "./pages/planning";
 import { ProposalsPage } from "./pages/proposals";
 import { coworkingRoutes } from "./pages/coworking/routes";
 import { coworkingSettingsRoutes } from "./pages/coworking-settings/routes";
+import { InvoicePage, InvoicesPage } from "./pages/invoices";
 import { ReceiptPage, ReceiptsPage } from "./pages/receipts";
 import { ReportsPage } from "./pages/reports";
 import { SettingsPage } from "./pages/settings";
@@ -70,6 +71,8 @@ export const router = createBrowserRouter([
       { path: "/encaissements", element: guard("payments:read", <PaymentsPage />) },
       { path: "/recus", element: guard("payments:read", <ReceiptsPage />) },
       { path: "/recus/:id", element: guard("payments:read", <ReceiptPage />) },
+      { path: "/factures", element: guard("invoices:read", <InvoicesPage />) },
+      { path: "/factures/:id", element: guard("invoices:read", <InvoicePage />) },
       { path: "/paie", element: guard("payroll:read", <PayrollPage />) },
       { path: "/paie/intervenants/:id", element: guard("payroll:read", <InstructorPayPage />) },
       { path: "/salles", element: guard("catalogue:read", <RoomsPage />) },

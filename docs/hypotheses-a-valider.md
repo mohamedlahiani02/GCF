@@ -101,6 +101,16 @@ formation). Les valeurs ci-dessous sont les valeurs par défaut.
 16. **Statut de l'intervenant** : payer un salarié au prorata de la présence des élèves peut poser un problème en droit
     du travail tunisien. À faire valider par un juriste ; l'application ne bloque pas cette combinaison.
 
+17. **Factures : mentions à faire valider par l'expert-comptable.** Une facture reprend des montants déjà dus
+    (échéances, locations, réservations, abonnements, carnets) ; elle ne crée pas de dette et le paiement reste suivi
+    dans les encaissements. Numérotation continue par année, document archivé avec son empreinte, correction par avoir
+    uniquement. À confirmer avant mise en production :
+    - le taux de TVA et son application (aujourd'hui : prix TTC, détail HT et taxe pour les entreprises seulement) ;
+    - le droit de timbre sur les factures, qui n'est pas ajouté ;
+    - les mentions obligatoires du vendeur (forme juridique, registre de commerce) à porter dans le pied de facture ;
+    - l'adresse et le matricule fiscal de l'acheteur, repris de la fiche société quand ils y figurent ;
+    - les remises accordées, qui ne figurent pas sur la facture : seules les échéances à payer y sont reprises.
+
 ## Phase 2 : modules, coworking et site web
 
 ### Décisions validées par le client

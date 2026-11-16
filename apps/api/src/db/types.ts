@@ -28,6 +28,11 @@ export interface CentresTable {
   overdue_grace_days: Generated<number>;
   receipt_prefix: Generated<string>;
   receipt_footer: string | null;
+  invoice_prefix: Generated<string>;
+  credit_note_prefix: Generated<string>;
+  invoice_tax_bp: number | null;
+  invoice_due_days: Generated<number>;
+  invoice_footer: string | null;
   open_from: Generated<string>;
   open_to: Generated<string>;
   open_weekdays: Generated<number[]>;
@@ -444,7 +449,7 @@ export interface ReceiptPrintsTable {
   duplicate: boolean;
 }
 
-export type MailDispatchKind = "receipt" | "reminder" | "member_activation" | "password_reset" | "booking" | "mail_item" | "subscription";
+export type MailDispatchKind = "receipt" | "reminder" | "member_activation" | "password_reset" | "booking" | "mail_item" | "subscription" | "invoice";
 
 export interface MailDispatchesTable {
   id: Generated<string>;
@@ -454,6 +459,7 @@ export interface MailDispatchesTable {
   student_id: string | null;
   renter_id: ColumnType<string | null, string | null | undefined, string | null>;
   member_id: OptionalRef;
+  invoice_id: OptionalRef;
   recipient: string;
   status: "sent" | "failed";
   error: string | null;
@@ -644,8 +650,57 @@ export interface CashClosingsTable {
   closed_at: Timestamp;
 }
 
+export interface InvoiceCountersTable {
+  centre_id: string;
+  kind: InvoiceKind;
+  year: number;
+  last_number: number;
+}
+
+export type InvoiceKind = "invoice" | "credit_note";
+
+export interface InvoicesTable {
+  id: Generated<string>;
+  centre_id: string;
+  kind: InvoiceKind;
+  number: string;
+  year: number;
+  sequence: number;
+  student_id: OptionalRef;
+  renter_id: OptionalRef;
+  member_id: OptionalRef;
+  credits_invoice_id: OptionalRef;
+  issue_date: DateColumn;
+  due_date: ColumnType<string | null, string | null | undefined, string | null>;
+  snapshot: Json;
+  total: number;
+  net: number;
+  tax: number;
+  tax_bp: number | null;
+  status: Generated<"issued" | "credited">;
+  credit_reason: string | null;
+  sent_at: NullableTimestamp;
+  sent_to: string | null;
+  sent_by: string | null;
+  pdf: Buffer;
+  sha256: string;
+  created_by: string | null;
+  created_at: Timestamp;
+}
+
+export interface InvoiceItemsTable {
+  id: Generated<string>;
+  invoice_id: string;
+  installment_id: string;
+  amount: number;
+  active: Generated<boolean>;
+}
+
 export interface Database extends CoworkingTables, WebsiteTables, CafeTables {
   centres: CentresTable;
+  invoice_counters: InvoiceCountersTable;
+  invoices: InvoicesTable;
+  invoice_items: InvoiceItemsTable;
   users: UsersTable;
   sessions: SessionsTable;
   audit_log: AuditLogTable;
