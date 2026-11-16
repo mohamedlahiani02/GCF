@@ -130,6 +130,53 @@ export const dashboardRoutes: FastifyPluginAsync = async (app) => {
         .where("pay_items.centre_id", "=", centreId)
         .executeTakeFirstOrThrow();
       const payroll = { toValidate: Number(payrollRow.toValidate), toPay: Number(payrollRow.toPay) };
+
+      // Insights: the same span of the previous period, the split by activity and the largest unpaid balances.
+      const byActivity = async (from: string, to: string) => {
+        const rows = await db
+          .selectFrom("payments")
+          .select([
+            sql<
+              "training" | "rental" | "coworking"
+            >`case when payments.student_id is not null then 'training' when payments.renter_id is not null then 'rental' else 'coworking' end`.as("activity"),
+            sql<number>`coalesce(sum(amount), 0)::bigint`.as("total"),
+          ])
+          .where("centre_id", "=", centreId)
+          .where(validPayment)
+          .where(receivedDay, ">=", from)
+          .where(receivedDay, "<=", to)
+          .groupBy("activity")
+          .execute();
+        const split = { training: 0, rental: 0, coworking: 0, cafe: (await cafeTakings(db, centreId, from, to)).total };
+        for (const row of rows) split[row.activity] = Number(row.total);
+        return split;
+      };
+      const sum = (split: Record<string, number>) => Object.values(split).reduce((a, b) => a + b, 0);
+      const last30 = await byActivity(addDays(today, -29), today);
+      const previous30 = await byActivity(addDays(today, -59), addDays(today, -30));
+      const dayOfMonth = Number(today.slice(8, 10));
+      const previousMonthStart = addDays(monthStart, -1).slice(0, 8) + "01";
+      const previousMonthLastDay = addDays(monthStart, -1);
+      const previousMonthSameDay =
+        Number(previousMonthLastDay.slice(8, 10)) < dayOfMonth ? previousMonthLastDay : `${previousMonthStart.slice(0, 8)}${today.slice(8, 10)}`;
+      const previousMonthToDate =
+        (await sumBetween(previousMonthStart, previousMonthSameDay)) + (await cafeTakings(db, centreId, previousMonthStart, previousMonthSameDay)).total;
+      const unpaidByPayer = new Map<string, number>();
+      for (const o of overdue) if (o.payerId) unpaidByPayer.set(o.payerId, (unpaidByPayer.get(o.payerId) ?? 0) + o.remaining);
+      const topIds = [...unpaidByPayer.entries()].sort((a, b) => b[1] - a[1]).slice(0, 5);
+      const ids = topIds.map(([id]) => id);
+      const students = ids.length
+        ? await db
+            .selectFrom("students")
+            .select(["id", sql<string>`first_name || ' ' || last_name`.as("name")])
+            .where("id", "in", ids)
+            .execute()
+        : [];
+      const renters = ids.length ? await db.selectFrom("renters").select(["id", "name"]).where("id", "in", ids).execute() : [];
+      const names = new Map<string, { name: string; kind: "student" | "renter" }>([
+        ...students.map((x) => [x.id, { name: x.name, kind: "student" as const }] as const),
+        ...renters.map((x) => [x.id, { name: x.name, kind: "renter" as const }] as const),
+      ]);
       result.financial = {
         // Everything received, café included; the café share is given apart because its till is separate.
         collectionsToday: (await sumBetween(today, today)) + cafeToday,
@@ -140,6 +187,11 @@ export const dashboardRoutes: FastifyPluginAsync = async (app) => {
         unpaidPayers: new Set(overdue.map((o) => o.payerId)).size,
         postponedInstallments: states.filter((s) => s.postponementCount > 0).length,
         payroll,
+        insights: {
+          last30: { total: sum(last30), previous: sum(previous30), byActivity: last30 },
+          monthToDate: { total: (await sumBetween(monthStart, today)) + cafeMonth, previous: previousMonthToDate },
+          topUnpaid: topIds.map(([id, remaining]) => ({ id, remaining, name: names.get(id)?.name ?? "", kind: names.get(id)?.kind ?? "student" })),
+        },
         series: series.rows.map((r) => ({ bucket: r.bucket, total: Number(r.total) })),
       };
     }
@@ -242,7 +294,22 @@ export const dashboardRoutes: FastifyPluginAsync = async (app) => {
         .where("rentals.status", "=", "active")
         .where(sql<string>`(rental_slots.starts_at at time zone ${timezone})::date`, "=", today)
         .execute();
+      const coworking = can(user, "coworking:read")
+        ? await db
+            .selectFrom("cw_bookings")
+            .select([
+              sql<number>`count(*) filter (where status = 'checked_in')::integer`.as("present"),
+              sql<number>`count(*) filter (where status in ('confirmed', 'checked_in', 'completed') and (starts_at at time zone ${timezone})::date = ${today}::date)::integer`.as(
+                "bookingsToday",
+              ),
+              sql<number>`count(*) filter (where status = 'requested')::integer`.as("requests"),
+            ])
+            .where("centre_id", "=", centreId)
+            .where("kind", "=", "booking")
+            .executeTakeFirstOrThrow()
+        : null;
       result.operational = {
+        coworking,
         attendanceRateBasisPoints: denominator > 0 ? mulDivRound(10_000, numerator, denominator) : null,
         roomOccupancyBasisPoints: capacity > 0 ? mulDivRound(10_000, Number(booked.minutes), capacity) : null,
         todo: {

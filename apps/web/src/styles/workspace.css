@@ -812,3 +812,79 @@
     display: none;
   }
 }
+.dashboard-insights {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  gap: 16px;
+}
+.insight-card {
+  padding: 18px 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.insight-value {
+  font-family: "Manrope", "Inter", system-ui, sans-serif;
+  font-size: 26px;
+  font-weight: 700;
+  line-height: 1.1;
+}
+.trend {
+  font-weight: 600;
+}
+.trend-up {
+  color: #1f7a4d;
+}
+.trend-down {
+  color: #b42318;
+}
+.split-bar {
+  display: flex;
+  height: 10px;
+  border-radius: 999px;
+  overflow: hidden;
+  gap: 2px;
+}
+.split-bar span {
+  flex-basis: 0;
+}
+.split-legend,
+.insight-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.split-legend li,
+.insight-list li {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.split-legend li span,
+.insight-list li span {
+  margin-inline-start: auto;
+  text-align: end;
+}
+.split-legend i {
+  width: 10px;
+  height: 10px;
+  border-radius: 3px;
+}
+.insight-stats {
+  display: flex;
+  gap: 20px;
+}
+.insight-stats div {
+  display: flex;
+  flex-direction: column;
+}
+.insight-card .num {
+  text-align: start;
+}
+.insight-stats div {
+  flex: 1 1 0;
+  gap: 2px;
+}
