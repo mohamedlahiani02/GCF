@@ -1708,3 +1708,125 @@ details.advanced[open] > summary::before {
   color: var(--on-accent);
   font-weight: 700;
 }
+.cal-week {
+  display: flex;
+  flex-direction: column;
+}
+.cal-week-head,
+.cal-week-body {
+  display: grid;
+  grid-template-columns: 56px repeat(7, minmax(0, 1fr));
+}
+.cal-day-head {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  padding: 8px 0;
+  background: none;
+  border: 0;
+  border-bottom: 1px solid var(--line);
+  font: inherit;
+  color: var(--ink);
+  cursor: pointer;
+}
+.cal-day-head.is-today strong {
+  background: var(--accent);
+  color: var(--on-accent);
+  border-radius: 999px;
+  min-width: 28px;
+  padding: 2px 6px;
+}
+.cal-week-body {
+  position: relative;
+}
+.cal-hours {
+  position: relative;
+}
+.cal-hours span {
+  position: absolute;
+  inset-inline-end: 8px;
+  transform: translateY(-50%);
+}
+.cal-col {
+  position: relative;
+  border-inline-start: 1px solid var(--line);
+}
+.cal-slot {
+  position: absolute;
+  inset-inline: 0;
+  border-top: 1px solid var(--line);
+}
+.cal-event {
+  position: absolute;
+  overflow: hidden;
+  box-sizing: border-box;
+  margin: 0 1px;
+  line-height: 1.25;
+}
+.cal-month {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  border-top: 1px solid var(--line);
+  border-inline-start: 1px solid var(--line);
+}
+.cal-month-name {
+  padding: 6px 8px;
+  border-inline-end: 1px solid var(--line);
+  border-bottom: 1px solid var(--line);
+}
+.cal-cell {
+  min-height: 112px;
+  padding: 4px;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  border-inline-end: 1px solid var(--line);
+  border-bottom: 1px solid var(--line);
+}
+.cal-cell.is-out {
+  background: var(--soft);
+}
+.cal-cell.is-out .cal-cell-day {
+  color: var(--muted);
+}
+.cal-cell-day {
+  align-self: flex-start;
+  background: none;
+  border: 0;
+  font: inherit;
+  font-weight: 600;
+  color: var(--ink);
+  padding: 2px 6px;
+  border-radius: 999px;
+  cursor: pointer;
+}
+.cal-cell.is-today .cal-cell-day {
+  background: var(--accent);
+  color: var(--on-accent);
+}
+.cal-chip {
+  padding: 2px 6px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.cal-more {
+  background: none;
+  border: 0;
+  font: inherit;
+  font-size: 12px;
+  color: var(--accent);
+  text-align: start;
+  cursor: pointer;
+  padding: 0 6px;
+}
+.overlay.center .drawer.dialog {
+  height: auto;
+  max-height: min(92vh, 960px);
+  width: min(720px, calc(100vw - 32px));
+  flex: 0 1 auto;
+  border: 1px solid var(--line2);
+  border-radius: 12px;
+  box-shadow: 0 16px 40px rgba(14, 26, 54, 0.22);
+}

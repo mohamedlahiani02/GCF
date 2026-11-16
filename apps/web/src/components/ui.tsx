@@ -211,17 +211,20 @@ export function Drawer({
   children,
   footer,
   className = "",
+  centered = false,
 }: {
   title: string;
   onClose: () => void;
   children: ReactNode;
   footer?: ReactNode;
   className?: string;
+  /** Shown as a centred window instead of a side panel. */
+  centered?: boolean;
 }) {
   useEscape(onClose);
   return (
-    <div className="overlay" onMouseDown={(e) => e.target === e.currentTarget && onClose()}>
-      <aside className={`drawer ${className}`} role="dialog" aria-modal="true" aria-label={title}>
+    <div className={centered ? "overlay center" : "overlay"} onMouseDown={(e) => e.target === e.currentTarget && onClose()}>
+      <aside className={`drawer${centered ? " dialog" : ""} ${className}`} role="dialog" aria-modal="true" aria-label={title}>
         <div className="card-h">
           <h2 className="h2">{title}</h2>
           <button type="button" className="btn btn-g" onClick={onClose}>

@@ -210,6 +210,7 @@ export function CollectDrawer({ payer: initial, onClose, onPaid }: { payer: Paye
 
   return (
     <Drawer
+      centered
       className="collect-drawer"
       title="Encaisser un paiement"
       onClose={onClose}

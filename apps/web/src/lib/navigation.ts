@@ -87,6 +87,8 @@ export interface WorkspaceAction extends ActionLink {
   text: string;
   section: "Au quotidien" | "Dossiers et catalogue" | "Suivi et analyse";
   action?: "collect" | "walkIn";
+  /** A shortcut to a page that belongs to another workspace: it never decides which workspace is active. */
+  crossLink?: boolean;
 }
 export interface Workspace {
   id: string;
@@ -97,12 +99,18 @@ export interface Workspace {
   /** A few words under the workspace name on the shortcuts page. */
   summary: string;
   icon: string;
+  /** Permission without which the workspace is hidden, whatever its items allow. */
+  requires?: string;
   items: WorkspaceAction[];
 }
 
 /** The same permissions control the sidebar, workspace links, search and personal shortcuts. */
 export const permitted = (permission: Permission, can: (p: string) => boolean): boolean =>
   Array.isArray(permission) ? permission.length === 0 || permission.some(can) : can(permission);
+
+/** A workspace shows when its gate allows it and at least one of its actions is permitted. */
+export const workspaceVisible = (w: Workspace, can: (p: string) => boolean): boolean =>
+  (!w.requires || can(w.requires)) && w.items.some((i) => permitted(i.permission, can));
 
 export const WORKSPACES: Workspace[] = [
   {
@@ -114,6 +122,27 @@ export const WORKSPACES: Workspace[] = [
     summary: "Élèves, groupes et séances",
     icon: ICONS.trainings,
     items: [
+      {
+        id: "training-collect",
+        to: "/encaissements",
+        label: "Encaisser un paiement",
+        text: "Un élève règle une échéance ou une séance",
+        icon: ICONS.payments,
+        permission: "payments:write",
+        section: "Au quotidien",
+        action: "collect",
+        crossLink: true,
+      },
+      {
+        id: "training-payroll",
+        to: "/paie",
+        label: "Payer un prof / formateur",
+        text: "Calculer, vérifier et régler la paie",
+        icon: ICONS.payroll,
+        permission: "payroll:read",
+        section: "Au quotidien",
+        crossLink: true,
+      },
       {
         id: "enrol",
         to: "/inscriptions/nouvelle",
@@ -200,19 +229,10 @@ export const WORKSPACES: Workspace[] = [
         to: "/salles",
         label: "Voir les salles",
         also: ["/locations"],
-        text: "Espaces disponibles et locations",
+        text: "Salles des séances et locations",
         icon: ICONS.rooms,
         permission: "catalogue:read",
         section: "Dossiers et catalogue",
-      },
-      {
-        id: "rental",
-        to: "/locations/nouvelle",
-        label: "Louer une salle",
-        text: "Créer une nouvelle location",
-        icon: ICONS.rooms,
-        permission: "rooms:write",
-        section: "Au quotidien",
       },
     ],
   },
@@ -224,6 +244,7 @@ export const WORKSPACES: Workspace[] = [
     text: "Accueillir vos clients, organiser les réservations et suivre votre espace.",
     summary: "Clients, réservations et espace",
     icon: ICONS.floorPlan,
+    requires: "coworking:read",
     items: [
       {
         id: "live-plan",
@@ -234,6 +255,15 @@ export const WORKSPACES: Workspace[] = [
         permission: "coworking:read",
         section: "Au quotidien",
         end: true,
+      },
+      {
+        id: "rental",
+        to: "/locations/nouvelle",
+        label: "Louer une salle",
+        text: "Créer une nouvelle location",
+        icon: ICONS.rooms,
+        permission: "rooms:write",
+        section: "Au quotidien",
       },
       {
         id: "walk-in",
@@ -484,5 +514,5 @@ export function actionActive(item: ActionLink, pathname: string): boolean {
 /** Settings win over module prefixes, including nested coworking settings routes. */
 export function workspaceFor(pathname: string): Workspace | undefined {
   if (pathname === "/parametres" || SETTINGS_LINKS.some((l) => pathname === l.to || pathname.startsWith(`${l.to}/`))) return undefined;
-  return WORKSPACES.find((w) => pathname === w.to || w.items.some((i) => !i.action && actionActive(i, pathname)));
+  return WORKSPACES.find((w) => pathname === w.to || w.items.some((i) => !i.action && !i.crossLink && actionActive(i, pathname)));
 }
