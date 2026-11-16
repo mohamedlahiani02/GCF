@@ -4,7 +4,7 @@ import { api } from "../../api/client";
 import { usePage } from "../../components/shell";
 import { Card, Empty, ErrorBanner, Kpi, Loading, PageHeader, StateBadge } from "../../components/ui";
 import { frDate, frDateTime, tnd } from "../../lib/format";
-import { ACCESS_SOURCE, CATEGORY, QUOTA, durationLabel, type Booking, type BookingDetail } from "./api";
+import { ACCESS_SOURCE, CATEGORY, EXTRA_UNIT, QUOTA, durationLabel, type Booking, type BookingDetail } from "./api";
 import { BlockPanel, BookingActions, BookingFacts, BookingStatusBadge, useMemberCollect } from "./bookingParts";
 
 /** Steps of a booking's life, in order, from the fields the booking keeps. */
@@ -75,7 +75,7 @@ export function BookingPage() {
           sub={
             b.tax
               ? `TND TTC, dont ${tnd(b.tax.net)} HT et ${tnd(b.tax.tax)} de taxe (${(b.tax.rateBp / 100).toLocaleString("fr-FR")} %)`
-              : `TND, tarif ${tnd(b.listPrice)}`
+              : `TND, tarif ${tnd(b.listPrice)}${b.extrasTotal ? `, options ${tnd(b.extrasTotal)}` : ""}`
           }
         />
         <Kpi label="Réglé" value={<span className="num">{tnd(b.paid)}</span>} sub="TND" />
@@ -178,6 +178,25 @@ export function BookingPage() {
           )}
         </Card>
       </div>
+      {b.extras.length ? (
+        <Card title="Options">
+          <div className="xs">
+            <table className="tbl">
+              <tbody>
+                {b.extras.map((x) => (
+                  <tr key={x.id}>
+                    <td>
+                      {x.name}
+                      <div className="cap">{x.pricing === "fixed" ? EXTRA_UNIT.fixed : `${x.quantity} × ${tnd(x.unitAmount)} ${EXTRA_UNIT[x.pricing]}`}</div>
+                    </td>
+                    <td className="num">{tnd(x.amount)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </Card>
+      ) : null}
       <Card title="Accès">
         {b.accessEvents.length === 0 ? (
           <Empty title="Aucune entrée enregistrée" />

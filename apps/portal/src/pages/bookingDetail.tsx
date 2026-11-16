@@ -63,7 +63,7 @@ export function BookingDetailPage() {
   const b = query.data;
   if (query.isPending) return <Loading />;
   if (!b) return <ErrorBanner error={query.error} retry={() => query.refetch()} />;
-  const promoOrCoverage = b.coverageDiscount > 0 || b.promoDiscount > 0;
+  const promoOrCoverage = b.coverageDiscount > 0 || b.promoDiscount > 0 || b.extras.length > 0;
   return (
     <>
       <PageHeader
@@ -101,6 +101,9 @@ export function BookingDetailPage() {
                 ...fact(promoOrCoverage, t.detail.listPrice, <Money value={b.listPrice} />),
                 ...fact(b.coverageDiscount > 0, t.detail.coverageDiscount, <span className="num">- {f.money(b.coverageDiscount)}</span>),
                 ...fact(b.promoDiscount > 0, t.detail.promoDiscount, <span className="num">- {f.money(b.promoDiscount)}</span>),
+                ...b.extras.flatMap((x) =>
+                  fact(true, x.quantity > 1 ? `${x.name} × ${x.quantity}` : x.name, <span className="num">+ {f.money(x.amount)}</span>),
+                ),
                 [t.detail.charge, <Money value={b.charge} strong />],
                 ...fact(b.lateCancelFee > 0, t.detail.lateCancelFee, <Money value={b.lateCancelFee} />),
                 ...fact(b.paid > 0, t.detail.paid, <Money value={b.paid} />),

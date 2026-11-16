@@ -1,4 +1,4 @@
-import { ASSIGNED_CATEGORIES, CW_CATEGORIES, floorLayoutSchema, OCCUPYING_STATUSES, parseLayout, type FloorLayout } from "@gcf/shared";
+import { ASSIGNED_CATEGORIES, CW_CATEGORIES, CW_MAIL_TEMPLATE_KEYS, floorLayoutSchema, OCCUPYING_STATUSES, parseLayout, type FloorLayout } from "@gcf/shared";
 import { randomBytes } from "node:crypto";
 import type { FastifyPluginAsync } from "fastify";
 import { sql, type Kysely, type Transaction } from "kysely";
@@ -8,6 +8,7 @@ import { writeAudit } from "../../audit.js";
 import type { SessionUser } from "../../auth/sessions.js";
 import type { CwCategory, CwFormatNature } from "../../db/types.coworking.js";
 import type { Database } from "../../db/types.js";
+import { assertTemplate, DEFAULT_TEMPLATES, TEMPLATE_PLACEHOLDERS } from "../../domain/coworking/mailTemplates.js";
 import { centreClock } from "../../domain/ledger.js";
 import { conflict, HttpError, notFound, unprocessable } from "../../errors.js";
 import { archiveBody, clockTime, idParam, isoDate, millimes, optionalText, reason, requiredText, toClock, uuid } from "../../validation.js";
@@ -37,6 +38,7 @@ const settingsBody = z
     portalEnabled: z.boolean(),
     companyTaxBp: z.number().int().min(1).max(10_000).nullable(),
     endingSoonMinutes: z.number().int().min(5).max(240).nullable(),
+    reminderHours: z.number().int().min(1).max(168).nullable(),
   })
   .partial()
   .strict();
@@ -163,6 +165,21 @@ const packCreate = z
   .required({ name: true, typeId: true, quotaKind: true, quota: true, validityDays: true, price: true })
   .strict();
 const packUpdate = z.object(packFields).partial().strict();
+
+const extraFields = {
+  name: requiredText(100),
+  pricing: z.enum(["fixed", "per_person", "per_item"]),
+  amount: millimes,
+  memberAmount: millimes.nullable(),
+  maxQuantity: z.number().int().min(1).max(500),
+  public: z.boolean(),
+};
+const extraCreate = z
+  .object({ ...extraFields, typeId: uuid })
+  .partial()
+  .required({ typeId: true, name: true, pricing: true, amount: true })
+  .strict();
+const extraUpdate = z.object(extraFields).partial().strict();
 
 const promoFields = {
   code: z
@@ -402,6 +419,7 @@ const SETTINGS_COLUMNS = [
   "portal_enabled",
   "company_tax_bp",
   "ending_soon_minutes",
+  "reminder_hours",
   "updated_at",
 ] as const;
 
@@ -433,6 +451,7 @@ const presentSettings = (s: Awaited<ReturnType<typeof loadSettings>>) => ({
   portalEnabled: s.portal_enabled,
   companyTaxBp: s.company_tax_bp,
   endingSoonMinutes: s.ending_soon_minutes,
+  reminderHours: s.reminder_hours,
   updatedAt: s.updated_at,
 });
 
@@ -470,6 +489,20 @@ const PACK_COLUMNS = [
   "public",
   "status",
 ] as const;
+const EXTRA_COLUMNS = [
+  "id",
+  "type_id as typeId",
+  "name",
+  "pricing",
+  "amount",
+  "member_amount as memberAmount",
+  "max_quantity as maxQuantity",
+  "public",
+  "status",
+] as const;
+const templateKey = z.object({ key: z.enum(CW_MAIL_TEMPLATE_KEYS) });
+const templateBody = z.object({ subject: requiredText(200), body: z.string().trim().min(1).max(5000) }).strict();
+
 const PROMO_COLUMNS = ["id", "code", "kind", "value", "valid_from as validFrom", "valid_to as validTo", "max_uses as maxUses", "profiles", "status"] as const;
 const CLOSURE_COLUMNS = ["id", "starts_on as startsOn", "ends_on as endsOn", "label", "open_from as openFrom", "open_to as openTo"] as const;
 
@@ -555,6 +588,7 @@ export const coworkingConfigRoutes: FastifyPluginAsync = async (app) => {
           ...(body.portalEnabled === undefined ? {} : { portal_enabled: body.portalEnabled }),
           ...(body.companyTaxBp === undefined ? {} : { company_tax_bp: body.companyTaxBp }),
           ...(body.endingSoonMinutes === undefined ? {} : { ending_soon_minutes: body.endingSoonMinutes }),
+          ...(body.reminderHours === undefined ? {} : { reminder_hours: body.reminderHours }),
           updated_at: new Date(),
           updated_by: actor.userId,
         })
@@ -1850,6 +1884,192 @@ export const coworkingConfigRoutes: FastifyPluginAsync = async (app) => {
         .executeTakeFirst();
       if (!after) throw notFound("pack product");
       await audit(trx, actor, "cw_pack_product.archived", "cw_pack_product", id, { after: { status: "archived" }, reason });
+      return after;
+    });
+  });
+
+  /* Wording of the booking e-mails */
+
+  /** Each e-mail with its current wording, whether the centre changed it, its default and the placeholders it can use. */
+  app.get("/mail-templates", { preHandler: read }, async (request) => {
+    const rows = await db
+      .selectFrom("cw_mail_templates")
+      .select(["key", "subject", "body", "updated_at as updatedAt"])
+      .where("centre_id", "=", request.user!.centreId)
+      .execute();
+    return CW_MAIL_TEMPLATE_KEYS.map((key) => {
+      const own = rows.find((r) => r.key === key);
+      return {
+        key,
+        subject: own?.subject ?? DEFAULT_TEMPLATES[key].subject,
+        body: own?.body ?? DEFAULT_TEMPLATES[key].body,
+        customized: own !== undefined,
+        updatedAt: own?.updatedAt ?? null,
+        default: DEFAULT_TEMPLATES[key],
+        placeholders: TEMPLATE_PLACEHOLDERS[key],
+      };
+    });
+  });
+
+  app.put("/mail-templates/:key", { preHandler: manage }, async (request) => {
+    const actor = request.user!;
+    const { key } = templateKey.parse(request.params);
+    const body = templateBody.parse(request.body);
+    assertTemplate(key, body);
+    return db.transaction().execute(async (trx) => {
+      const before = await trx
+        .selectFrom("cw_mail_templates")
+        .select(["subject", "body"])
+        .where("centre_id", "=", actor.centreId)
+        .where("key", "=", key)
+        .executeTakeFirst();
+      const now = new Date();
+      await trx
+        .insertInto("cw_mail_templates")
+        .values({ centre_id: actor.centreId, key, subject: body.subject, body: body.body, updated_at: now, updated_by: actor.userId })
+        .onConflict((oc) => oc.columns(["centre_id", "key"]).doUpdateSet({ subject: body.subject, body: body.body, updated_at: now, updated_by: actor.userId }))
+        .execute();
+      await audit(trx, actor, "cw_mail_template.updated", "cw_mail_template", actor.centreId, {
+        before: { key, ...(before ?? DEFAULT_TEMPLATES[key]) },
+        after: { key, ...body },
+      });
+      return { key, ...body, customized: true };
+    });
+  });
+
+  /** Goes back to the default wording. */
+  app.delete("/mail-templates/:key", { preHandler: manage }, async (request, reply) => {
+    const actor = request.user!;
+    const { key } = templateKey.parse(request.params);
+    await db.transaction().execute(async (trx) => {
+      const removed = await trx
+        .deleteFrom("cw_mail_templates")
+        .where("centre_id", "=", actor.centreId)
+        .where("key", "=", key)
+        .returning(["subject", "body"])
+        .executeTakeFirst();
+      if (removed)
+        await audit(trx, actor, "cw_mail_template.reset", "cw_mail_template", actor.centreId, {
+          before: { key, ...removed },
+          after: { key, ...DEFAULT_TEMPLATES[key] },
+        });
+    });
+    return reply.status(204).send();
+  });
+
+  /* Extras added to bookings */
+
+  /** A fixed extra is taken once per booking: its maximum quantity is always one. */
+  const extraQuantity = (pricing: string, maxQuantity: number | undefined, current: number) => {
+    if (pricing === "fixed") {
+      if (maxQuantity !== undefined && maxQuantity !== 1) throw unprocessable("extra_fixed_quantity", "a fixed extra is taken once per booking");
+      return 1;
+    }
+    return maxQuantity ?? current;
+  };
+
+  app.get("/extras", { preHandler: read }, async (request) => {
+    const { status } = statusQuery.parse(request.query);
+    return db
+      .selectFrom("cw_extras")
+      .select(EXTRA_COLUMNS)
+      .where("centre_id", "=", request.user!.centreId)
+      .$if(status !== "all", (qb) => qb.where("status", "=", status as "active" | "archived"))
+      .orderBy("name")
+      .execute();
+  });
+
+  app.post("/extras", { preHandler: manage }, async (request, reply) => {
+    const actor = request.user!;
+    const body = extraCreate.parse(request.body);
+    const row = await db.transaction().execute(async (trx) => {
+      await bookableType(trx, actor.centreId, body.typeId, "extra_type_invalid");
+      const duplicate = await trx
+        .selectFrom("cw_extras")
+        .select("id")
+        .where("centre_id", "=", actor.centreId)
+        .where("type_id", "=", body.typeId)
+        .where(sql<string>`lower(name)`, "=", body.name.toLowerCase())
+        .executeTakeFirst();
+      if (duplicate) throw conflict("extra_name_taken", "this type already has an extra with this name");
+      const created = await trx
+        .insertInto("cw_extras")
+        .values({
+          centre_id: actor.centreId,
+          type_id: body.typeId,
+          name: body.name,
+          pricing: body.pricing,
+          amount: body.amount,
+          member_amount: body.memberAmount ?? null,
+          max_quantity: extraQuantity(body.pricing, body.maxQuantity, 1),
+          ...(body.public === undefined ? {} : { public: body.public }),
+        })
+        .returning(EXTRA_COLUMNS)
+        .executeTakeFirstOrThrow();
+      await audit(trx, actor, "cw_extra.created", "cw_extra", created.id, { after: created });
+      return created;
+    });
+    return reply.status(201).send(row);
+  });
+
+  /** Changes apply to bookings made afterwards; past bookings keep the price they were made with. */
+  app.patch("/extras/:id", { preHandler: manage }, async (request) => {
+    const actor = request.user!;
+    const { id } = idParam.parse(request.params);
+    const body = extraUpdate.parse(request.body);
+    return db.transaction().execute(async (trx) => {
+      const before = await trx
+        .selectFrom("cw_extras")
+        .select(EXTRA_COLUMNS)
+        .where("id", "=", id)
+        .where("centre_id", "=", actor.centreId)
+        .forUpdate()
+        .executeTakeFirst();
+      if (!before) throw notFound("extra");
+      if (before.status !== "active") throw conflict("extra_archived", "the extra is archived");
+      if (body.name !== undefined && body.name.toLowerCase() !== before.name.toLowerCase()) {
+        const duplicate = await trx
+          .selectFrom("cw_extras")
+          .select("id")
+          .where("centre_id", "=", actor.centreId)
+          .where("type_id", "=", before.typeId)
+          .where(sql<string>`lower(name)`, "=", body.name.toLowerCase())
+          .executeTakeFirst();
+        if (duplicate) throw conflict("extra_name_taken", "this type already has an extra with this name");
+      }
+      const pricing = body.pricing ?? before.pricing;
+      const after = await trx
+        .updateTable("cw_extras")
+        .set({
+          ...(body.name === undefined ? {} : { name: body.name }),
+          pricing,
+          ...(body.amount === undefined ? {} : { amount: body.amount }),
+          ...(body.memberAmount === undefined ? {} : { member_amount: body.memberAmount }),
+          max_quantity: extraQuantity(pricing, body.maxQuantity, before.maxQuantity),
+          ...(body.public === undefined ? {} : { public: body.public }),
+        })
+        .where("id", "=", id)
+        .returning(EXTRA_COLUMNS)
+        .executeTakeFirstOrThrow();
+      await audit(trx, actor, "cw_extra.updated", "cw_extra", id, { before, after });
+      return after;
+    });
+  });
+
+  app.post("/extras/:id/archive", { preHandler: manage }, async (request) => {
+    const actor = request.user!;
+    const { id } = idParam.parse(request.params);
+    const { reason } = archiveBody.parse(request.body);
+    return db.transaction().execute(async (trx) => {
+      const after = await trx
+        .updateTable("cw_extras")
+        .set({ status: "archived" })
+        .where("id", "=", id)
+        .where("centre_id", "=", actor.centreId)
+        .returning(EXTRA_COLUMNS)
+        .executeTakeFirst();
+      if (!after) throw notFound("extra");
+      await audit(trx, actor, "cw_extra.archived", "cw_extra", id, { after: { status: "archived" }, reason });
       return after;
     });
   });

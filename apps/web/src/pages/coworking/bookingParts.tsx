@@ -20,6 +20,8 @@ import {
   fromMinutes,
   memberName,
   toMinutes,
+  EXTRA_UNIT,
+  useExtras,
   useFormats,
   useSettings,
   type Booking,
@@ -89,6 +91,15 @@ export function QuoteView({ quote }: { quote: Quote }) {
               <td className="num">-{tnd(quote.promotion.discount)}</td>
             </tr>
           ) : null}
+          {quote.extras.map((x) => (
+            <tr key={x.extraId}>
+              <td>
+                {x.name}
+                <div className="cap">{x.pricing === "fixed" ? EXTRA_UNIT.fixed : `${x.quantity} × ${tnd(x.unitAmount)} ${EXTRA_UNIT[x.pricing]}`}</div>
+              </td>
+              <td className="num">+{tnd(x.amount)}</td>
+            </tr>
+          ))}
         </tbody>
         <tfoot>
           <tr>
@@ -177,6 +188,10 @@ export function QuickBooking({
   const [debouncedPromo, setDebouncedPromo] = useState("");
   const [notes, setNotes] = useState("");
   const [override, setOverride] = useState(false);
+  const extras = useExtras();
+  const extraChoices = (extras.data ?? []).filter((x) => x.typeId === resource.typeId);
+  const [picked, setPicked] = useState<Record<string, number>>({});
+  const pickedExtras = extraChoices.filter((x) => (picked[x.id] ?? 0) > 0).map((x) => ({ extraId: x.id, quantity: picked[x.id]! }));
   const client = useQueryClient();
   const toast = useToast();
   useEffect(() => {
@@ -202,6 +217,7 @@ export function QuickBooking({
           startTime: start,
           ...(minutes !== undefined ? { durationMinutes: minutes } : {}),
           ...(debouncedPromo ? { promoCode: debouncedPromo } : {}),
+          ...(pickedExtras.length ? { extras: pickedExtras } : {}),
         }
       : null;
   const quote = useQuery({
@@ -288,6 +304,41 @@ export function QuickBooking({
           </Field>
         </div>
       )}
+      {extraChoices.length ? (
+        <div className="stack" style={{ gap: 6 }}>
+          <span className="lab">Options</span>
+          {extraChoices.map((x) => (
+            <label key={x.id} className="row center between" style={{ gap: 8 }}>
+              <span className="row center" style={{ gap: 8 }}>
+                <input
+                  type="checkbox"
+                  className="chk"
+                  checked={(picked[x.id] ?? 0) > 0}
+                  onChange={(e) => setPicked((p) => ({ ...p, [x.id]: e.target.checked ? 1 : 0 }))}
+                />
+                {x.name}
+                <span className="cap">
+                  {tnd(x.amount)} TND {EXTRA_UNIT[x.pricing]}
+                  {x.memberAmount !== null ? `, abonnés ${tnd(x.memberAmount)}` : ""}
+                  {x.public ? "" : " · accueil seulement"}
+                </span>
+              </span>
+              {x.pricing !== "fixed" && (picked[x.id] ?? 0) > 0 ? (
+                <input
+                  className="input num"
+                  type="number"
+                  aria-label={`Quantité ${x.name}`}
+                  style={{ width: 90 }}
+                  min={1}
+                  max={x.maxQuantity}
+                  value={picked[x.id]}
+                  onChange={(e) => setPicked((p) => ({ ...p, [x.id]: Math.min(x.maxQuantity, Math.max(1, Math.floor(Number(e.target.value) || 1))) }))}
+                />
+              ) : null}
+            </label>
+          ))}
+        </div>
+      ) : null}
       <Field label="Note (facultatif)">
         <input className="input" value={notes} maxLength={1000} onChange={(e) => setNotes(e.target.value)} />
       </Field>

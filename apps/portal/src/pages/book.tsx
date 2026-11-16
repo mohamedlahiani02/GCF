@@ -5,7 +5,7 @@ import { useEffect, useState } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router";
 import { api } from "../api/client";
 import { usePortal } from "../auth/session";
-import type { Booking, BookingInput, Catalogue, CatalogueType, FloorStateResponse, FormatOffer, Quote, Slot, Slots } from "../api/types";
+import type { Booking, BookingInput, Catalogue, CatalogueType, ExtraOffer, FloorStateResponse, FormatOffer, Quote, Slot, Slots } from "../api/types";
 import { Badge, Card, Empty, ErrorBanner, Field, Loading, Money, Notice, PageHeader, Spinner } from "../components/ui";
 import { useI18n } from "../i18n/i18n";
 import { useFormat } from "../lib/format";
@@ -213,16 +213,21 @@ function ResourcePicker({
 }
 
 function Summary({
-  input,
+  input: base,
   catalogue,
+  extras,
   onPromo,
   onBooked,
 }: {
   input: BookingInput;
   catalogue: Catalogue;
+  extras: ExtraOffer[];
   onPromo: (code: string | null) => void;
   onBooked: () => void;
 }) {
+  const [picked, setPicked] = useState<Record<string, number>>({});
+  const chosen = extras.filter((x) => (picked[x.id] ?? 0) > 0).map((x) => ({ extraId: x.id, quantity: picked[x.id]! }));
+  const input: BookingInput = chosen.length ? { ...base, extras: chosen } : base;
   const { t, language } = useI18n();
   const f = useFormat();
   const navigate = useNavigate();
@@ -287,6 +292,20 @@ function Summary({
                     <td className="num">- {f.money(q.promotion.discount)}</td>
                   </tr>
                 ) : null}
+                {q.extras.map((x) => (
+                  <tr key={x.extraId}>
+                    <td>
+                      {x.name}
+                      {x.pricing === "fixed" ? null : (
+                        <span className="cap">
+                          {" "}
+                          ({x.quantity} × {f.money(x.unitAmount)})
+                        </span>
+                      )}
+                    </td>
+                    <td className="num">+ {f.money(x.amount)}</td>
+                  </tr>
+                ))}
               </tbody>
               <tfoot>
                 <tr>
@@ -302,6 +321,42 @@ function Summary({
             </table>
             <Notice tone="blue">{q.status === "requested" ? t.book.statusRequested : t.book.statusConfirmed}</Notice>
           </>
+        ) : null}
+        {extras.length ? (
+          <fieldset className="stack" style={{ gap: 8, border: 0, padding: 0, margin: 0 }}>
+            <legend className="lab">{t.book.extras}</legend>
+            <span className="cap">{t.book.extrasHint}</span>
+            {extras.map((x) => (
+              <div key={x.id} className="row center between" style={{ gap: 8, flexWrap: "wrap" }}>
+                <label className="row center" style={{ gap: 8 }}>
+                  <input
+                    type="checkbox"
+                    className="chk"
+                    checked={(picked[x.id] ?? 0) > 0}
+                    onChange={(e) => setPicked((p) => ({ ...p, [x.id]: e.target.checked ? 1 : 0 }))}
+                  />
+                  <span>
+                    {x.name}{" "}
+                    <span className="cap">
+                      {f.money(x.amount)} {t.book.extraUnit[x.pricing]}
+                    </span>
+                  </span>
+                </label>
+                {x.pricing !== "fixed" && (picked[x.id] ?? 0) > 0 ? (
+                  <input
+                    className="input num"
+                    type="number"
+                    aria-label={t.book.extraQuantity(x.name)}
+                    style={{ width: 90 }}
+                    min={1}
+                    max={x.maxQuantity}
+                    value={picked[x.id]}
+                    onChange={(e) => setPicked((p) => ({ ...p, [x.id]: Math.min(x.maxQuantity, Math.max(1, Math.floor(Number(e.target.value) || 1))) }))}
+                  />
+                ) : null}
+              </div>
+            ))}
+          </fieldset>
         ) : null}
         <form
           className="row"
@@ -714,6 +769,7 @@ export function BookPage() {
               key={`${input.resourceId}-${input.startTime}-${input.date}`}
               input={input}
               catalogue={data}
+              extras={type?.extras ?? []}
               onPromo={setPromoCode}
               onBooked={() => writeSelection(null)}
             />

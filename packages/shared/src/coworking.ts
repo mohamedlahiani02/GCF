@@ -40,3 +40,7 @@ export const OCCUPYING_STATUSES: readonly CwBookingStatus[] = ["requested", "con
  */
 export const PLAN_STATES = ["free", "ending", "requested", "held", "booked", "occupied", "blocked", "assigned"] as const;
 export type PlanState = (typeof PLAN_STATES)[number];
+
+/** E-mails about bookings whose wording a centre may change. */
+export const CW_MAIL_TEMPLATE_KEYS = ["booking_confirmed", "booking_refused", "booking_cancelled", "booking_reminder"] as const;
+export type CwMailTemplateKey = (typeof CW_MAIL_TEMPLATE_KEYS)[number];

@@ -1,4 +1,4 @@
-import type { CwCategory, FloorLayout } from "@gcf/shared";
+import type { CwCategory, CwMailTemplateKey, FloorLayout } from "@gcf/shared";
 
 /** Shapes returned by /api/coworking configuration routes (apps/api/src/routes/coworking/config.ts). */
 
@@ -20,6 +20,7 @@ export interface CwSettings {
   companyTaxBp: number | null;
   /** Minutes before its end a running booking shows its place as soon free; null hides it. */
   endingSoonMinutes: number | null;
+  reminderHours: number | null;
   updatedAt: string;
 }
 
@@ -186,6 +187,32 @@ export interface PackProduct {
   status: ArchiveStatus;
 }
 
+export interface MailTemplate {
+  key: CwMailTemplateKey;
+  subject: string;
+  body: string;
+  customized: boolean;
+  updatedAt: string | null;
+  default: { subject: string; body: string };
+  placeholders: string[];
+}
+
+export type ExtraPricing = "fixed" | "per_person" | "per_item";
+
+export interface Extra {
+  id: string;
+  typeId: string;
+  name: string;
+  pricing: ExtraPricing;
+  amount: number;
+  memberAmount: number | null;
+  maxQuantity: number;
+  public: boolean;
+  status: ArchiveStatus;
+}
+
+export const EXTRA_PRICING: Record<ExtraPricing, string> = { fixed: "Forfait par réservation", per_person: "Par personne", per_item: "Par unité" };
+
 export interface PromoCode {
   id: string;
   code: string;
@@ -223,4 +250,6 @@ export const CW_KEYS = {
   plans: ["cw-config", "plans"] as const,
   packs: ["cw-config", "packs"] as const,
   promos: ["cw-config", "promos"] as const,
+  extras: ["cw-config", "extras"] as const,
+  mailTemplates: ["cw-config", "mail-templates"] as const,
 };

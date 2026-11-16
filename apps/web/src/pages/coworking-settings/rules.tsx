@@ -25,6 +25,8 @@ interface Form {
   companyTax: string;
   endingEnabled: boolean;
   endingSoonMinutes: string;
+  reminderEnabled: boolean;
+  reminderHours: string;
 }
 
 const toForm = (s: CwSettings): Form => ({
@@ -45,6 +47,8 @@ const toForm = (s: CwSettings): Form => ({
   companyTax: percentText(s.companyTaxBp ?? 1900),
   endingEnabled: s.endingSoonMinutes !== null,
   endingSoonMinutes: String(s.endingSoonMinutes ?? 30),
+  reminderEnabled: s.reminderHours !== null,
+  reminderHours: String(s.reminderHours ?? 24),
 });
 
 const APPROVAL: Record<CwSettings["approvalMode"], string> = {
@@ -88,6 +92,7 @@ export function RulesTab() {
     requestExpiryHours: parseInteger(v.requestExpiryHours, 1, 720),
     companyTaxBp: v.companyTaxEnabled ? parsePercent(v.companyTax) : null,
     endingSoonMinutes: v.endingEnabled ? parseInteger(v.endingSoonMinutes, 5, 240) : null,
+    reminderHours: v.reminderEnabled ? parseInteger(v.reminderHours, 1, 168) : null,
   };
   const errors = {
     bookingHorizonDays: parsed.bookingHorizonDays === null ? "Entre 1 et 365 jours." : null,
@@ -100,6 +105,7 @@ export function RulesTab() {
     offpeakFrom: v.offpeakEnabled && !/^([01]\d|2[0-3]):[0-5]\d$/.test(v.offpeakFrom) ? "Indiquez une heure." : null,
     companyTax: v.companyTaxEnabled && (parsed.companyTaxBp === null || parsed.companyTaxBp === 0) ? "Un taux de 0,01 à 100 %." : null,
     endingSoonMinutes: v.endingEnabled && parsed.endingSoonMinutes === null ? "Entre 5 et 240 minutes." : null,
+    reminderHours: v.reminderEnabled && parsed.reminderHours === null ? "Entre 1 et 168 heures." : null,
   };
   const valid = Object.values(errors).every((e) => e === null);
   /** A wrong value in the folded options keeps them open, so the message is never hidden. */
@@ -127,6 +133,7 @@ export function RulesTab() {
       portalEnabled: v.portalEnabled,
       companyTaxBp: parsed.companyTaxBp,
       endingSoonMinutes: parsed.endingSoonMinutes,
+      reminderHours: parsed.reminderHours,
     });
   };
   return (
@@ -282,6 +289,28 @@ export function RulesTab() {
                     disabled={!v.endingEnabled}
                     value={v.endingSoonMinutes}
                     onChange={(e) => set("endingSoonMinutes", e.target.value)}
+                  />
+                </Field>
+              </div>
+            </div>
+            <h3 className="h3">Rappel par e-mail</h3>
+            <div className="grid3">
+              <div className="stack" style={{ gap: 6 }}>
+                <label className="row center" style={{ gap: 8 }}>
+                  <input type="checkbox" className="chk" checked={v.reminderEnabled} onChange={(e) => set("reminderEnabled", e.target.checked)} />
+                  Envoyer un rappel avant chaque réservation confirmée
+                </label>
+                <Field
+                  label="Combien d'heures avant le début"
+                  hint="Une réservation faite dans ce délai ne reçoit pas de rappel. Le texte se règle dans l'onglet E-mails."
+                  error={errors.reminderHours}
+                >
+                  <input
+                    className="input num"
+                    inputMode="numeric"
+                    disabled={!v.reminderEnabled}
+                    value={v.reminderHours}
+                    onChange={(e) => set("reminderHours", e.target.value)}
                   />
                 </Field>
               </div>

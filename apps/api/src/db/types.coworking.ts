@@ -1,4 +1,5 @@
 import type { ColumnType, Generated } from "kysely";
+import type { CwMailTemplateKey } from "@gcf/shared";
 import type { DateColumn, Json, NullableTimestamp, Status, Timestamp } from "./types.js";
 
 /** Columns of type time: "HH:MM:SS" from PostgreSQL, "HH:MM" accepted on write. */
@@ -35,6 +36,7 @@ export interface CwSettingsTable {
   /** Tax rate shown to companies in basis points; null when the centre does not show it. */
   company_tax_bp: number | null;
   ending_soon_minutes: number | null;
+  reminder_hours: number | null;
   updated_at: Timestamp;
   updated_by: string | null;
 }
@@ -191,6 +193,43 @@ export interface CwPackProductsTable {
   created_at: Timestamp;
 }
 
+export type CwExtraPricing = "fixed" | "per_person" | "per_item";
+
+export interface CwExtrasTable {
+  id: Generated<string>;
+  centre_id: string;
+  type_id: string;
+  name: string;
+  pricing: CwExtraPricing;
+  amount: number;
+  member_amount: number | null;
+  max_quantity: Generated<number>;
+  public: Generated<boolean>;
+  status: Status;
+  created_at: Timestamp;
+}
+
+export interface CwBookingExtrasTable {
+  id: Generated<string>;
+  centre_id: string;
+  booking_id: string;
+  extra_id: string;
+  name: string;
+  pricing: CwExtraPricing;
+  quantity: number;
+  unit_amount: number;
+  amount: number;
+}
+
+export interface CwMailTemplatesTable {
+  centre_id: string;
+  key: CwMailTemplateKey;
+  subject: string;
+  body: string;
+  updated_at: Timestamp;
+  updated_by: string | null;
+}
+
 export interface CwPromoCodesTable {
   id: Generated<string>;
   centre_id: string;
@@ -262,6 +301,7 @@ export interface CwBookingsTable {
   source: "portal" | "staff";
   validated_at: ColumnType<Date | null, Date | string | null | undefined, Date | string | null>;
   validated_by: string | null;
+  reminder_sent_at: NullableTimestamp;
   profile: CwProfile | null;
   list_price: Generated<number>;
   promo_code_id: string | null;
@@ -269,6 +309,7 @@ export interface CwBookingsTable {
   covered_minutes: Generated<number>;
   coverage_discount: Generated<number>;
   charge: Generated<number>;
+  extras_total: Generated<number>;
   requested_at: Timestamp;
   decided_at: NullableTimestamp;
   decided_by: string | null;
@@ -341,6 +382,9 @@ export interface CoworkingTables {
   cw_plan_entitlements: CwPlanEntitlementsTable;
   cw_pack_products: CwPackProductsTable;
   cw_promo_codes: CwPromoCodesTable;
+  cw_extras: CwExtrasTable;
+  cw_mail_templates: CwMailTemplatesTable;
+  cw_booking_extras: CwBookingExtrasTable;
   cw_subscriptions: CwSubscriptionsTable;
   cw_packs: CwPacksTable;
   cw_bookings: CwBookingsTable;
