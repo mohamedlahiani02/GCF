@@ -32,6 +32,8 @@ export interface CwSettingsTable {
   self_signup: Generated<CwSelfSignup>;
   offpeak_from: NullableTime;
   portal_enabled: Generated<boolean>;
+  /** Tax rate shown to companies in basis points; null when the centre does not show it. */
+  company_tax_bp: number | null;
   updated_at: Timestamp;
   updated_by: string | null;
 }
@@ -122,6 +124,10 @@ export interface CwBookingFormatsTable {
   position: Generated<number>;
   status: Status;
   created_at: Timestamp;
+  /** Hourly formats only: from this length the long-booking rate of the price row applies. */
+  long_from_minutes: number | null;
+  /** Hourly formats only: minutes beyond this length are not charged. */
+  cap_minutes: number | null;
 }
 
 export interface CwPricesTable {
@@ -129,6 +135,7 @@ export interface CwPricesTable {
   profile: CwProfile;
   amount: number;
   offpeak_amount: number | null;
+  long_amount: number | null;
 }
 
 export interface CwClosuresTable {

@@ -216,7 +216,14 @@ async function evaluate(db: Db, centreId: string, actor: BookingActor, input: Bo
   const today = todayIn(timezone, now);
   const subscriptions = await activeSubscriptions(db, member.id, input.date);
   const profile = profileOf(member.kind, subscriptions);
-  const price = await listPrice(db, format, profile, slot.startTime, slot.minutes, settings.offpeak_from);
+  const price = await listPrice(
+    db,
+    { id: format.id, nature: format.nature, longFromMinutes: format.long_from_minutes, capMinutes: format.cap_minutes },
+    profile,
+    slot.startTime,
+    slot.minutes,
+    settings.offpeak_from,
+  );
   const coverage = await computeCoverage(db, {
     memberId: member.id,
     typeId: resource.typeId,

@@ -16,8 +16,8 @@ const NATURE_HINT: Record<FormatNature, string> = {
 };
 const STEPS = [15, 30, 60];
 const PROFILES: { value: Profile; label: string }[] = [
-  { value: "visitor", label: "Visiteur (sans abonnement)" },
-  { value: "member", label: "Membre (abonnement en cours)" },
+  { value: "visitor", label: "Client sans abonnement" },
+  { value: "member", label: "Client abonné" },
 ];
 
 function formatDetail(f: BookingFormat): string {
@@ -179,6 +179,7 @@ function FormatModal({ type, format, onClose }: { type: ResourceType; format: Bo
 interface PriceRow {
   amount: string;
   offpeak: string;
+  long: string;
 }
 
 function PricesModal({ format, offpeakFrom, onClose }: { format: BookingFormat; offpeakFrom: string | null; onClose: () => void }) {
@@ -186,9 +187,22 @@ function PricesModal({ format, offpeakFrom, onClose }: { format: BookingFormat; 
   const toast = useToast();
   const initial = (profile: Profile): PriceRow => {
     const p = format.prices.find((x) => x.profile === profile);
-    return { amount: p ? tnd(p.amount) : "", offpeak: p && p.offpeakAmount !== null ? tnd(p.offpeakAmount) : "" };
+    return {
+      amount: p ? tnd(p.amount) : "",
+      offpeak: p && p.offpeakAmount !== null ? tnd(p.offpeakAmount) : "",
+      long: p && p.longAmount != null ? tnd(p.longAmount) : "",
+    };
   };
   const [rows, setRows] = useState<Record<Profile, PriceRow>>({ visitor: initial("visitor"), member: initial("member") });
+  const [longFrom, setLongFrom] = useState(format.longFromMinutes ? String(format.longFromMinutes / 60) : "");
+  const [cap, setCap] = useState(format.capMinutes ? String(format.capMinutes / 60) : "");
+  const hoursToMinutes = (text: string) => {
+    if (text.trim() === "") return null;
+    const hours = Number(text.replace(",", "."));
+    return Number.isFinite(hours) && hours >= 0.5 && hours <= 24 ? Math.round(hours * 60) : NaN;
+  };
+  const longFromMinutes = hoursToMinutes(longFrom);
+  const capMinutes = hoursToMinutes(cap);
   const parsed = PROFILES.map(({ value }) => {
     const row = rows[value];
     return {
@@ -197,15 +211,27 @@ function PricesModal({ format, offpeakFrom, onClose }: { format: BookingFormat; 
       offpeak: tryParseTnd(row.offpeak),
       amountError: row.amount.trim() !== "" && (tryParseTnd(row.amount) ?? -1) < 0,
       offpeakError: row.offpeak.trim() !== "" && ((tryParseTnd(row.offpeak) ?? -1) < 0 || row.amount.trim() === ""),
+      long: tryParseTnd(row.long),
+      longError: row.long.trim() !== "" && ((tryParseTnd(row.long) ?? -1) < 0 || row.amount.trim() === ""),
     };
   });
-  const invalid = parsed.some((p) => p.amountError || p.offpeakError);
+  const anyLong = parsed.some((p) => p.long !== null);
+  const rulesError =
+    Number.isNaN(longFromMinutes) || Number.isNaN(capMinutes)
+      ? "Durée entre 0,5 et 24 heures."
+      : anyLong !== (longFromMinutes !== null)
+        ? "Un tarif longue durée demande à la fois la durée et le tarif."
+        : longFromMinutes !== null && capMinutes !== null && capMinutes <= longFromMinutes
+          ? "Le plafond doit venir après la durée du tarif longue durée."
+          : null;
+  const invalid = parsed.some((p) => p.amountError || p.offpeakError || p.longError) || (format.nature === "free" && rulesError !== null);
   const save = useMutation({
     mutationFn: () =>
       api.put(`/coworking/formats/${format.id}/prices`, {
         prices: parsed
           .filter((p): p is typeof p & { amount: number } => p.amount !== null)
-          .map<Price>((p) => ({ profile: p.profile, amount: p.amount, offpeakAmount: p.offpeak })),
+          .map<Price>((p) => ({ profile: p.profile, amount: p.amount, offpeakAmount: p.offpeak, ...(format.nature === "free" ? { longAmount: p.long } : {}) })),
+        ...(format.nature === "free" ? { longFromMinutes, capMinutes } : {}),
       }),
     onSuccess: async () => {
       await client.invalidateQueries({ queryKey: CW_KEYS.formats });
@@ -234,7 +260,7 @@ function PricesModal({ format, offpeakFrom, onClose }: { format: BookingFormat; 
     >
       <span className="cap">
         {perHour ? "Prix par heure : le montant est calculé au prorata de la durée réservée. " : ""}
-        Sans tarif membre, les membres paient le tarif visiteur.{" "}
+        Sans tarif pour les abonnés, ils paient le tarif sans abonnement.{" "}
         {offpeakFrom
           ? `Le tarif heures creuses s'applique aux réservations commençant à ${offpeakFrom} ou plus tard.`
           : "Les heures creuses sont désactivées dans les règles : le tarif heures creuses n'est pas utilisé."}
@@ -250,7 +276,7 @@ function PricesModal({ format, offpeakFrom, onClose }: { format: BookingFormat; 
             />
           </Field>
           <Field
-            label={`Heures creuses, ${value === "visitor" ? "visiteur" : "membre"} (TND)`}
+            label={`Heures creuses, ${value === "visitor" ? "sans abonnement" : "abonné"} (TND)`}
             hint="Vide : même prix toute la journée."
             error={parsed[i]!.offpeakError ? "Montant invalide ou tarif normal manquant" : null}
           >
@@ -261,8 +287,32 @@ function PricesModal({ format, offpeakFrom, onClose }: { format: BookingFormat; 
               onChange={(e) => setRows({ ...rows, [value]: { ...rows[value], offpeak: e.target.value } })}
             />
           </Field>
+          {perHour ? (
+            <Field
+              label={`Tarif longue durée, ${value === "visitor" ? "sans abonnement" : "abonné"} (TND / heure)`}
+              hint="Vide : pas de tarif dégressif."
+              error={parsed[i]!.longError ? "Montant invalide ou tarif normal manquant" : null}
+            >
+              <input
+                className="input num"
+                inputMode="decimal"
+                value={rows[value].long}
+                onChange={(e) => setRows({ ...rows, [value]: { ...rows[value], long: e.target.value } })}
+              />
+            </Field>
+          ) : null}
         </div>
       ))}
+      {perHour ? (
+        <div className="grid2">
+          <Field label="Tarif longue durée à partir de (heures)" hint="Option : vide si le centre ne l'utilise pas.">
+            <input className="input num" inputMode="decimal" value={longFrom} onChange={(e) => setLongFrom(e.target.value)} />
+          </Field>
+          <Field label="Plafond : ne plus facturer après (heures)" hint="Option : au-delà, la réservation n'est plus facturée." error={rulesError}>
+            <input className="input num" inputMode="decimal" value={cap} onChange={(e) => setCap(e.target.value)} />
+          </Field>
+        </div>
+      ) : null}
       <ErrorBanner error={save.error} />
     </Modal>
   );
@@ -307,6 +357,7 @@ export function FormatsTab() {
         return (
           <Card
             key={type.id}
+            id={`type-${type.id}`}
             title={
               <div>
                 <h2 className="h2">{type.name}</h2>

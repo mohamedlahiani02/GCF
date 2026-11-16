@@ -1,3 +1,4 @@
+import { taxIncluded } from "../src/domain/coworking/pricing.js";
 import { sql } from "kysely";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import {
@@ -728,5 +729,40 @@ describe("sweeper", () => {
     expect(first + second).toBe(1);
     expect((await h.db.selectFrom("cw_bookings").select("status").where("id", "=", present).executeTakeFirstOrThrow()).status).toBe("completed");
     expect(await sweepCoworking(h.db, at("2027-06-11T09:00:00Z"))).toBe(0);
+  });
+});
+
+describe("optional pricing rules of hourly formats", () => {
+  const prices = (body: Record<string, unknown>, formatId = ids.fFree) => h.call("PUT", `/api/coworking/formats/${formatId}/prices`, admin, body);
+
+  it("applies a lower rate to long bookings and stops charging after the cap", async () => {
+    const saved = await prices({
+      prices: [
+        { profile: "visitor", amount: 40_000, offpeakAmount: null, longAmount: 30_000 },
+        { profile: "member", amount: 30_000, offpeakAmount: null, longAmount: 25_000 },
+      ],
+      longFromMinutes: 120,
+      capMinutes: 180,
+    });
+    expect(saved.status).toBe(200);
+    expect(saved.body).toMatchObject({ longFromMinutes: 120, capMinutes: 180 });
+    expect((await quote(ids.V, ids.R1, ids.fFree, "2027-04-05", "10:00", { durationMinutes: 90 })).body.listPrice).toBe(60_000);
+    expect((await quote(ids.V, ids.R1, ids.fFree, "2027-04-05", "10:00", { durationMinutes: 120 })).body.listPrice).toBe(60_000);
+    expect((await quote(ids.V, ids.R1, ids.fFree, "2027-04-05", "10:00", { durationMinutes: 240 })).body.listPrice).toBe(90_000);
+  });
+
+  it("keeps these rules to hourly formats and asks for a complete long-booking rate", async () => {
+    expect((await prices({ prices: [{ profile: "visitor", amount: 10_000, offpeakAmount: null }], capMinutes: 120 }, ids.fHour)).body.code).toBe("hourly_only");
+    expect((await prices({ prices: [{ profile: "visitor", amount: 40_000, offpeakAmount: null, longAmount: 30_000 }], longFromMinutes: null })).body.code).toBe(
+      "long_rate_incomplete",
+    );
+    expect(
+      (await prices({ prices: [{ profile: "visitor", amount: 40_000, offpeakAmount: null, longAmount: 30_000 }], longFromMinutes: 120, capMinutes: 90 })).body
+        .code,
+    ).toBe("cap_before_long_rate");
+  });
+
+  it("splits a price that includes tax into net and tax", () => {
+    expect(taxIncluded(119_000, 1900)).toEqual({ net: 100_000, tax: 19_000, rateBp: 1900 });
   });
 });

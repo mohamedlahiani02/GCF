@@ -1,3 +1,4 @@
+import { Link } from "react-router";
 import { CW_CATEGORIES, type FloorLayout, type PlanItem, type PlanLabel } from "@gcf/shared";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useRef, useState, type ReactNode } from "react";
@@ -165,6 +166,9 @@ function ResourceForm({ resource, floor, renaming, onRenamed }: { resource: Floo
           ))}
         </select>
       </Field>
+      <Link className="cap" to={`/coworking/parametres?onglet=formules#type-${typeId}`}>
+        Prix et formules de ce type
+      </Link>
       <Field label="Zone">
         <select className="input" value={zoneId} onChange={(e) => setZoneId(e.target.value)}>
           <option value="">Aucune zone</option>

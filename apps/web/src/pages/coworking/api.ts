@@ -255,6 +255,8 @@ export interface Booking {
 
 export interface BookingDetail extends Booking {
   charges: ChargeBalance[];
+  /** For a company when the centre shows the tax: the same amount split into net and tax. */
+  tax: { net: number; tax: number; rateBp: number } | null;
   paid: number;
   due: number;
   usage: {

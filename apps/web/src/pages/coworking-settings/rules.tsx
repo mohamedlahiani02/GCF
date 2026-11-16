@@ -21,6 +21,8 @@ interface Form {
   offpeakEnabled: boolean;
   offpeakFrom: string;
   portalEnabled: boolean;
+  companyTaxEnabled: boolean;
+  companyTax: string;
 }
 
 const toForm = (s: CwSettings): Form => ({
@@ -37,11 +39,13 @@ const toForm = (s: CwSettings): Form => ({
   offpeakEnabled: s.offpeakFrom !== null,
   offpeakFrom: s.offpeakFrom ?? "18:00",
   portalEnabled: s.portalEnabled,
+  companyTaxEnabled: s.companyTaxBp !== null,
+  companyTax: percentText(s.companyTaxBp ?? 1900),
 });
 
 const APPROVAL: Record<CwSettings["approvalMode"], string> = {
   none: "Aucune : toute réservation du portail est confirmée aussitôt",
-  visitors: "Visiteurs : les clients sans abonnement en cours envoient une demande",
+  visitors: "Clients sans abonnement : ils envoient une demande, les abonnés réservent directement",
   all: "Toutes : chaque réservation du portail est une demande à valider",
 };
 const SIGNUP: Record<CwSettings["selfSignup"], string> = {
@@ -78,6 +82,7 @@ export function RulesTab() {
     lateCancelFeeBp: parsePercent(v.lateCancelFee),
     noShowGraceMinutes: v.noShowEnabled ? parseInteger(v.noShowGraceMinutes, 5, 240) : null,
     requestExpiryHours: parseInteger(v.requestExpiryHours, 1, 720),
+    companyTaxBp: v.companyTaxEnabled ? parsePercent(v.companyTax) : null,
   };
   const errors = {
     bookingHorizonDays: parsed.bookingHorizonDays === null ? "Entre 1 et 365 jours." : null,
@@ -88,6 +93,7 @@ export function RulesTab() {
     noShowGraceMinutes: v.noShowEnabled && parsed.noShowGraceMinutes === null ? "Entre 5 et 240 minutes." : null,
     requestExpiryHours: parsed.requestExpiryHours === null ? "Entre 1 et 720 heures." : null,
     offpeakFrom: v.offpeakEnabled && !/^([01]\d|2[0-3]):[0-5]\d$/.test(v.offpeakFrom) ? "Indiquez une heure." : null,
+    companyTax: v.companyTaxEnabled && (parsed.companyTaxBp === null || parsed.companyTaxBp === 0) ? "Un taux de 0,01 à 100 %." : null,
   };
   const valid = Object.values(errors).every((e) => e === null);
   /** A wrong value in the folded options keeps them open, so the message is never hidden. */
@@ -113,6 +119,7 @@ export function RulesTab() {
       selfSignup: v.selfSignup,
       offpeakFrom: v.offpeakEnabled ? v.offpeakFrom : null,
       portalEnabled: v.portalEnabled,
+      companyTaxBp: parsed.companyTaxBp,
     });
   };
   return (
@@ -250,6 +257,28 @@ export function RulesTab() {
                     disabled={!v.noShowEnabled}
                     value={v.noShowGraceMinutes}
                     onChange={(e) => set("noShowGraceMinutes", e.target.value)}
+                  />
+                </Field>
+              </div>
+            </div>
+            <h3 className="h3">Taxe pour les entreprises</h3>
+            <div className="grid3">
+              <div className="stack" style={{ gap: 6 }}>
+                <label className="row center" style={{ gap: 8 }}>
+                  <input type="checkbox" className="chk" checked={v.companyTaxEnabled} onChange={(e) => set("companyTaxEnabled", e.target.checked)} />
+                  Détailler la taxe aux entreprises
+                </label>
+                <Field
+                  label="Taux de taxe (%)"
+                  hint="Les prix restent toutes taxes comprises. Une personne paie le prix affiché ; pour une entreprise, le même prix est détaillé en hors taxe et taxe."
+                  error={errors.companyTax}
+                >
+                  <input
+                    className="input num"
+                    inputMode="decimal"
+                    disabled={!v.companyTaxEnabled}
+                    value={v.companyTax}
+                    onChange={(e) => set("companyTax", e.target.value)}
                   />
                 </Field>
               </div>
