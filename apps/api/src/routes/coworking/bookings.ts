@@ -53,6 +53,10 @@ const bookingBody = z
     startTime: clockTime,
     durationMinutes: z.number().int().min(15).max(1440).optional(),
     promoCode: optionalText(30),
+    extras: z
+      .array(z.object({ extraId: uuid, quantity: z.number().int().min(1).max(500) }).strict())
+      .max(20)
+      .default([]),
     notes: optionalText(1000),
     override: z.boolean().default(false),
   })
@@ -302,6 +306,12 @@ export const coworkingBookingRoutes: FastifyPluginAsync = async (app) => {
       .where("u.booking_id", "=", id)
       .orderBy("u.created_at")
       .execute();
+    const extras = await db
+      .selectFrom("cw_booking_extras")
+      .select(["id", "name", "pricing", "quantity", "unit_amount as unitAmount", "amount"])
+      .where("booking_id", "=", id)
+      .orderBy("name")
+      .execute();
     const accessEvents = await db
       .selectFrom("cw_access_events as e")
       .leftJoin("users", "users.id", "e.recorded_by")
@@ -323,6 +333,7 @@ export const coworkingBookingRoutes: FastifyPluginAsync = async (app) => {
       paid: charges.reduce((s, c) => s + c.paid, 0),
       due: charges.reduce((s, c) => s + c.remaining, 0),
       usage,
+      extras,
       accessEvents,
     };
   });

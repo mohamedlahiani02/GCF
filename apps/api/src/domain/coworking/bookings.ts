@@ -1,4 +1,4 @@
-import { addDays, CW_CATEGORY_LABELS, formatTnd, isBookableCategory, OCCUPYING_STATUSES, percentOf, todayIn } from "@gcf/shared";
+import { addDays, CW_CATEGORY_LABELS, formatTnd, type CwMailTemplateKey, isBookableCategory, OCCUPYING_STATUSES, percentOf, todayIn } from "@gcf/shared";
 import type { FastifyBaseLogger } from "fastify";
 import { sql, type Kysely, type Transaction } from "kysely";
 import { writeAudit } from "../../audit.js";
@@ -9,8 +9,9 @@ import type { Mailer } from "../../mail.js";
 import { recordFinancialEvents } from "../financialEvents.js";
 import { installmentBalances, lockPayer, settlePayer } from "../ledger.js";
 import { activeSubscriptions, computeCoverage, profileOf, releaseUsage, writeUsage, type Coverage } from "./entitlements.js";
+import { loadTemplate, renderTemplate } from "./mailTemplates.js";
 import { portalLink, sendMemberMail } from "./memberMail.js";
-import { applyPromotion, listPrice, type AppliedPromotion } from "./pricing.js";
+import { applyPromotion, listPrice, priceExtras, type AppliedPromotion, type ExtraLine, type ExtraRequest } from "./pricing.js";
 import { centreCalendar, coworkingSettings, formatSlots, localInstants, openingOn, type Db } from "./schedule.js";
 
 const occupying = [...OCCUPYING_STATUSES];
@@ -38,6 +39,8 @@ export interface BookingInput {
   /** Length of a free format; ignored by the other natures. */
   durationMinutes?: number | undefined;
   promoCode?: string | null | undefined;
+  /** Options of the resource type added to the booking. */
+  extras?: ExtraRequest[] | undefined;
   notes?: string | null | undefined;
   /** Staff only: book although portal limits are exceeded (recorded in the audit row). */
   override?: boolean | undefined;
@@ -66,6 +69,9 @@ export interface Quote {
   offpeak: boolean;
   coverage: Coverage;
   promotion: AppliedPromotion | null;
+  extras: ExtraLine[];
+  extrasTotal: number;
+  /** Place after coverage and promotion, plus the extras. */
   charge: number;
   /** Status the booking would get if it were created now. */
   status: "requested" | "confirmed";
@@ -234,6 +240,8 @@ async function evaluate(db: Db, centreId: string, actor: BookingActor, input: Bo
   });
   const remaining = price.listPrice - coverage.discount;
   const promotion = input.promoCode ? await applyPromotion(db, centreId, input.promoCode, profile, today, remaining, { lock }) : null;
+  const extras = await priceExtras(db, centreId, resource.typeId, profile, input.extras ?? [], { portal: actor.source === "portal" });
+  const extrasTotal = extras.reduce((sum, e) => sum + e.amount, 0);
   const warnings = await portalLimits(
     db,
     settings,
@@ -263,7 +271,9 @@ async function evaluate(db: Db, centreId: string, actor: BookingActor, input: Bo
     offpeak: price.offpeak,
     coverage,
     promotion,
-    charge: remaining - (promotion?.discount ?? 0),
+    extras,
+    extrasTotal,
+    charge: remaining - (promotion?.discount ?? 0) + extrasTotal,
     status: actor.source === "staff" || !needsApproval ? "confirmed" : "requested",
     warnings,
     roomId: resource.roomId,
@@ -310,6 +320,7 @@ export interface BookingRecord {
   promoCodeId: string | null;
   promoDiscount: number;
   charge: number;
+  extrasTotal: number;
   lateCancelFee: number;
   checkInCode: string;
   checkedInAt: Date | null;
@@ -361,6 +372,7 @@ export async function loadBooking(db: Db, centreId: string, id: string, options:
       "b.promo_code_id as promoCodeId",
       "b.promo_discount as promoDiscount",
       "b.charge",
+      "b.extras_total as extrasTotal",
       "b.late_cancel_fee as lateCancelFee",
       "b.check_in_code as checkInCode",
       "b.checked_in_at as checkedInAt",
@@ -514,6 +526,7 @@ export async function createBooking(
           covered_minutes: evaluation.coverage.coveredMinutes,
           coverage_discount: evaluation.coverage.discount,
           charge: evaluation.charge,
+          extras_total: evaluation.extrasTotal,
           requested_at: now,
           notes: input.notes ?? null,
           created_by: userId,
@@ -524,6 +537,23 @@ export async function createBooking(
     } catch (error) {
       if (isExclusionViolation(error, "cw_bookings")) throw slotTaken();
       throw error;
+    }
+    if (evaluation.extras.length) {
+      await trx
+        .insertInto("cw_booking_extras")
+        .values(
+          evaluation.extras.map((e) => ({
+            centre_id: centreId,
+            booking_id: bookingId,
+            extra_id: e.extraId,
+            name: e.name,
+            pricing: e.pricing,
+            quantity: e.quantity,
+            unit_amount: e.unitAmount,
+            amount: e.amount,
+          })),
+        )
+        .execute();
     }
     if (evaluation.roomId) await insertRoomBooking(trx, centreId, evaluation.roomId, bookingId, evaluation.startsAt, evaluation.blockedUntil);
     await writeUsage(trx, centreId, bookingId, evaluation.coverage);
@@ -548,6 +578,7 @@ export async function createBooking(
         listPrice: evaluation.listPrice,
         coverage: evaluation.coverage,
         promotion: evaluation.promotion,
+        ...(evaluation.extras.length ? { extras: evaluation.extras } : {}),
         charge: evaluation.charge,
         ...(overridden.length ? { overriddenLimits: overridden } : {}),
       },
@@ -563,29 +594,51 @@ async function centreName(db: Db, centreId: string): Promise<string> {
   return centre.name;
 }
 
-/** E-mails the member about a decision on a booking, after commit; members without an e-mail address are skipped. */
-async function notifyMember(
+const toPay = (label: string, amount: number) => `${label} : ${formatTnd(amount)} TND, à régler à l'accueil`;
+
+/** What the e-mail templates can show about a booking (see TEMPLATE_PLACEHOLDERS). */
+async function bookingMailValues(db: Db, publicOrigin: string | null, centreId: string, booking: BookingRecord): Promise<Record<string, string>> {
+  const extras = await db.selectFrom("cw_booking_extras").select(["name", "quantity"]).where("booking_id", "=", booking.id).orderBy("name").execute();
+  return {
+    client: booking.memberName ?? "",
+    espace: `${CW_CATEGORY_LABELS.fr[booking.category]} ${booking.resourceCode}`,
+    date: frenchDate(booking.localDate),
+    debut: booking.startTime,
+    fin: booking.endTime,
+    montant: booking.charge > 0 ? toPay("montant", booking.charge) : "aucun montant à régler",
+    options: extras.length ? `- options : ${extras.map((x) => (x.quantity > 1 ? `${x.name} × ${x.quantity}` : x.name)).join(", ")}` : "",
+    lien: portalLink(publicOrigin, "/reservations") ?? "",
+    centre: await centreName(db, centreId),
+    code: booking.checkInCode,
+  };
+}
+
+/**
+ * E-mails the member about a booking with the centre's wording of that e-mail, after commit; members without an
+ * e-mail address are skipped.
+ */
+export async function notifyMember(
   db: Kysely<Database>,
   mail: MailContext,
   centreId: string,
   booking: BookingRecord,
-  subject: string,
-  lines: string[],
+  key: CwMailTemplateKey,
+  values: Record<string, string>,
   sentBy: string | null,
-): Promise<void> {
-  if (!booking.memberId || !booking.memberEmail) return;
-  const link = portalLink(mail.publicOrigin, "/reservations");
-  const text = [`Bonjour ${booking.memberName},`, "", ...lines, "", ...(link ? [`Vos réservations : ${link}`, ""] : []), await centreName(db, centreId)].join(
-    "\n",
-  );
-  await sendMemberMail(db, mail.mailer, mail.log, { centreId, memberId: booking.memberId, kind: "booking", to: booking.memberEmail, subject, text, sentBy });
+): Promise<"sent" | "failed" | "skipped"> {
+  if (!booking.memberId || !booking.memberEmail) return "skipped";
+  const template = await loadTemplate(db, centreId, key);
+  const { subject, body } = renderTemplate(template, { ...(await bookingMailValues(db, mail.publicOrigin, centreId, booking)), ...values });
+  return sendMemberMail(db, mail.mailer, mail.log, {
+    centreId,
+    memberId: booking.memberId,
+    kind: "booking",
+    to: booking.memberEmail,
+    subject,
+    text: body,
+    sentBy,
+  });
 }
-
-const slotLines = (b: BookingRecord) => [
-  `- ${CW_CATEGORY_LABELS.fr[b.category]} ${b.resourceCode}`,
-  `- le ${frenchDate(b.localDate)} de ${b.startTime} à ${b.endTime}`,
-];
-const amountLine = (label: string, amount: number) => `- ${label} : ${formatTnd(amount)} TND, à régler à l'accueil`;
 
 /** Accepts a request (requested to confirmed): the slot must still be ahead and the resource in service. */
 export async function approveBooking(
@@ -616,15 +669,7 @@ export async function approveBooking(
     });
     return after;
   });
-  await notifyMember(
-    db,
-    mail,
-    centreId,
-    booking,
-    "Réservation confirmée",
-    ["Votre réservation est confirmée :", ...slotLines(booking), booking.charge > 0 ? amountLine("montant", booking.charge) : "- aucun montant à régler"],
-    userId,
-  );
+  await notifyMember(db, mail, centreId, booking, "booking_confirmed", {}, userId);
   return booking;
 }
 
@@ -660,15 +705,7 @@ export async function refuseBooking(
     });
     return loadBooking(trx, centreId, id);
   });
-  await notifyMember(
-    db,
-    mail,
-    centreId,
-    booking,
-    "Réservation refusée",
-    ["Votre demande de réservation n'a pas pu être acceptée :", ...slotLines(booking), `- motif : ${reason}`],
-    userId,
-  );
+  await notifyMember(db, mail, centreId, booking, "booking_refused", { motif: reason }, userId);
   return booking;
 }
 
@@ -776,13 +813,8 @@ export async function cancelBooking(
       mail,
       centreId,
       result.booking,
-      "Réservation annulée",
-      [
-        "Votre réservation a été annulée par l'accueil :",
-        ...slotLines(result.booking),
-        `- motif : ${reason}`,
-        ...(result.fee > 0 ? [amountLine("frais d'annulation", result.fee)] : []),
-      ],
+      "booking_cancelled",
+      { motif: reason, frais: result.fee > 0 ? `- ${toPay("frais d'annulation", result.fee)}` : "" },
       userId,
     );
   }

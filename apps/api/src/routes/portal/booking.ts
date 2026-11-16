@@ -37,6 +37,10 @@ const bookingBody = z
     startTime: clockTime,
     durationMinutes: z.number().int().min(15).max(1440).optional(),
     promoCode: optionalText(30),
+    extras: z
+      .array(z.object({ extraId: uuid, quantity: z.number().int().min(1).max(500) }).strict())
+      .max(20)
+      .default([]),
     notes: optionalText(1000),
   })
   .strict();
@@ -80,6 +84,9 @@ function bookingRows(db: Kysely<Database>, centreId: string, timezone: string) {
       "b.coverage_discount as coverageDiscount",
       "b.promo_discount as promoDiscount",
       "b.charge",
+      "b.extras_total as extrasTotal",
+      sql<{ name: string; quantity: number; amount: number }[]>`(select coalesce(json_agg(json_build_object('name', x.name, 'quantity', x.quantity,
+        'amount', x.amount) order by x.name), '[]') from cw_booking_extras x where x.booking_id = b.id)`.as("extras"),
       "b.late_cancel_fee as lateCancelFee",
       "b.requested_at as requestedAt",
       "b.refusal_reason as refusalReason",
@@ -183,6 +190,17 @@ export const portalBookingRoutes: FastifyPluginAsync = async (app) => {
           .orderBy("label")
           .execute()
       : [];
+    const extras = typeIds.length
+      ? await db
+          .selectFrom("cw_extras")
+          .select(["id", "type_id as typeId", "name", "pricing", "amount", "member_amount as memberAmount", "max_quantity as maxQuantity"])
+          .where("centre_id", "=", centre.id)
+          .where("status", "=", "active")
+          .where("public", "=", true)
+          .where("type_id", "in", typeIds)
+          .orderBy("name")
+          .execute()
+      : [];
     const priceAt = (format: (typeof formats)[number], startTime: string, offpeakFrom: string | null) =>
       listPrice(db, format, profile, startTime, 60, offpeakFrom).catch((error: unknown) => {
         if (error instanceof HttpError && error.code === "no_price") return null;
@@ -228,6 +246,15 @@ export const portalBookingRoutes: FastifyPluginAsync = async (app) => {
           capacity: { min: Math.min(...capacities), max: Math.max(...capacities) },
           floors,
           formats: offered,
+          extras: extras
+            .filter((e) => e.typeId === t.id)
+            .map((e) => ({
+              id: e.id,
+              name: e.name,
+              pricing: e.pricing,
+              amount: profile === "member" && e.memberAmount !== null ? e.memberAmount : e.amount,
+              maxQuantity: e.maxQuantity,
+            })),
         },
       ];
     });

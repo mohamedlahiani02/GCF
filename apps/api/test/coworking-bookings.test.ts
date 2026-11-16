@@ -13,6 +13,7 @@ import {
   checkInAtPlace,
 } from "../src/domain/coworking/bookings.js";
 import { floorState } from "../src/domain/coworking/availability.js";
+import { sendBookingReminders } from "../src/domain/coworking/reminders.js";
 import { sweepCoworking } from "../src/domain/coworking/sweeper.js";
 import { createHarness, PUBLIC_ORIGIN, RecordingMailer, type Harness } from "./harness.js";
 
@@ -814,5 +815,134 @@ describe("firm bookings, validation and arrival on the place", () => {
     expect(await status(loose.body.id)).toBe("no_show");
     expect(await status(firm.body.id)).toBe("confirmed");
     await h.setModules(["training", "coworking"]);
+  });
+});
+
+describe("extras added to bookings", () => {
+  const createExtra = (body: Record<string, unknown>) => h.call("POST", "/api/coworking/extras", admin, body);
+
+  it("manages the extras of a type", async () => {
+    const screen = await createExtra({ typeId: ids.meet, name: "Écran", pricing: "fixed", amount: 15_000 });
+    expect(screen.status).toBe(201);
+    expect(screen.body).toMatchObject({ pricing: "fixed", maxQuantity: 1, memberAmount: null, public: true });
+    ids.xScreen = screen.body.id;
+    const coffee = await createExtra({ typeId: ids.meet, name: "Pause café", pricing: "per_person", amount: 4_000, memberAmount: 3_000, maxQuantity: 10 });
+    ids.xCoffee = coffee.body.id;
+    ids.xCatering = (await createExtra({ typeId: ids.meet, name: "Traiteur", pricing: "per_item", amount: 20_000, maxQuantity: 5, public: false })).body.id;
+    expect((await createExtra({ typeId: ids.meet, name: "écran", pricing: "fixed", amount: 1 })).body.code).toBe("extra_name_taken");
+    expect((await createExtra({ typeId: ids.meet, name: "Tableau", pricing: "fixed", amount: 1, maxQuantity: 3 })).body.code).toBe("extra_fixed_quantity");
+    expect((await createExtra({ typeId: ids.ded, name: "Lampe", pricing: "fixed", amount: 1 })).body.code).toBe("extra_type_invalid");
+    expect((await h.call("POST", "/api/coworking/extras", secretariat, { typeId: ids.meet, name: "X", pricing: "fixed", amount: 1 })).status).toBe(403);
+    const updated = await h.call("PATCH", `/api/coworking/extras/${ids.xCoffee}`, admin, { amount: 5_000 });
+    expect(updated.body).toMatchObject({ amount: 5_000, memberAmount: 3_000, maxQuantity: 10 });
+    expect((await h.call("GET", "/api/coworking/extras", secretariat)).body).toHaveLength(3);
+  });
+
+  it("adds the extras to the charge, priced for the profile, and keeps what was taken", async () => {
+    const extras = [
+      { extraId: ids.xScreen, quantity: 1 },
+      { extraId: ids.xCoffee, quantity: 4 },
+    ];
+    const quoted = await quote(ids.V, ids.R1, ids.fFree, "2027-08-02", "10:00", { durationMinutes: 60, extras });
+    expect(quoted.status).toBe(200);
+    expect(quoted.body).toMatchObject({ listPrice: 40_000, extrasTotal: 35_000, charge: 75_000 });
+    const booked = await book(ids.V, ids.R1, ids.fFree, "2027-08-02", "10:00", { durationMinutes: 60, extras });
+    expect(booked.status).toBe(201);
+    const detail = await h.call("GET", `/api/coworking/bookings/${booked.body.id}`, secretariat);
+    expect(detail.body.extrasTotal).toBe(35_000);
+    expect(detail.body.extras.map((e: { name: string; quantity: number; amount: number }) => [e.name, e.quantity, e.amount])).toEqual(
+      expect.arrayContaining([
+        ["Écran", 1, 15_000],
+        ["Pause café", 4, 20_000],
+      ]),
+    );
+    expect((await chargesOf(booked.body.id)).map((c) => c.amount)).toEqual([75_000]);
+    await h.call("PATCH", `/api/coworking/extras/${ids.xCoffee}`, admin, { amount: 6_000 });
+    const again = await h.call("GET", `/api/coworking/bookings/${booked.body.id}`, secretariat);
+    expect(again.body.extras.find((e: { name: string }) => e.name === "Pause café").amount).toBe(20_000);
+
+    const subscriber = await quote(ids.M, ids.R1, ids.fFree, "2027-08-03", "10:00", { durationMinutes: 60, extras: [{ extraId: ids.xCoffee, quantity: 2 }] });
+    expect(subscriber.body.extras[0]).toMatchObject({ unitAmount: 3_000, amount: 6_000 });
+  });
+
+  it("refuses extras that do not fit the booking", async () => {
+    const at = (extras: unknown[], resourceId = ids.R1!, formatId = ids.fFree!) =>
+      quote(ids.V, resourceId, formatId, "2027-08-04", "10:00", { durationMinutes: 60, extras });
+    expect((await at([{ extraId: ids.xScreen, quantity: 2 }])).body.code).toBe("extra_quantity");
+    expect((await at([{ extraId: ids.xCoffee, quantity: 11 }])).body.code).toBe("extra_quantity");
+    expect(
+      (
+        await at([
+          { extraId: ids.xScreen, quantity: 1 },
+          { extraId: ids.xScreen, quantity: 1 },
+        ])
+      ).body.code,
+    ).toBe("extra_repeated");
+    expect((await quote(ids.V, ids.A1, ids.fHour, "2027-08-04", "10:00", { extras: [{ extraId: ids.xScreen, quantity: 1 }] })).body.code).toBe(
+      "extra_unavailable",
+    );
+    await expect(
+      quoteBooking(h.db, h.centreId, portal(ids.V!), {
+        ...input(ids.V!, ids.R1!, ids.fFree!, "2027-08-04", "10:00", { durationMinutes: 60 }),
+        extras: [{ extraId: ids.xCatering!, quantity: 1 }],
+      }),
+    ).rejects.toMatchObject({ code: "extra_unavailable" });
+    await h.call("POST", `/api/coworking/extras/${ids.xScreen}/archive`, admin, { reason: "Écran en réparation" });
+    expect((await at([{ extraId: ids.xScreen, quantity: 1 }])).body.code).toBe("extra_unavailable");
+  });
+});
+
+describe("e-mail wording and reminders", () => {
+  it("lets the centre write its own wording with known placeholders and go back to the default", async () => {
+    const unknown = await h.call("PUT", "/api/coworking/mail-templates/booking_confirmed", admin, { subject: "Bonjour {prenom}", body: "Texte" });
+    expect(unknown.body).toMatchObject({ code: "template_placeholder_unknown", details: { placeholders: ["prenom"] } });
+    expect((await h.call("PUT", "/api/coworking/mail-templates/booking_confirmed", secretariat, { subject: "A", body: "B" })).status).toBe(403);
+    const saved = await h.call("PUT", "/api/coworking/mail-templates/booking_confirmed", admin, {
+      subject: "Votre place {espace} est prête",
+      body: "Bonjour {client},\n\nRendez-vous le {date} à {debut}.\n{options}\n\n{centre}",
+    });
+    expect(saved.status).toBe(200);
+    const request = await createBooking(
+      h.db,
+      h.centreId,
+      portal(ids.G!),
+      input(ids.G!, ids.A2!, ids.fHour!, "2027-09-13", "09:00"),
+      at("2027-09-01T08:00:00Z"),
+    );
+    expect(request.booking.status).toBe("requested");
+    await h.db.updateTable("members").set({ email: "ghassen@cw.test" }).where("id", "=", ids.G!).execute();
+    expect((await h.call("POST", `/api/coworking/bookings/${request.booking.id}/approve`, secretariat)).status).toBe(200);
+    const message = mailer.sent.at(-1)!;
+    expect(message.subject).toBe("Votre place Poste flexible A2 est prête");
+    expect(message.text).toContain("Rendez-vous le 13/09/2027 à 09:00.");
+    expect(message.text).not.toContain("{options}");
+    expect(message.text).not.toContain("\n\n\n");
+
+    const listed = await h.call("GET", "/api/coworking/mail-templates", secretariat);
+    expect(listed.body.find((t: { key: string }) => t.key === "booking_confirmed")).toMatchObject({ customized: true });
+    expect((await h.call("DELETE", "/api/coworking/mail-templates/booking_confirmed", admin)).status).toBe(204);
+    const reset = (await h.call("GET", "/api/coworking/mail-templates", secretariat)).body.find((t: { key: string }) => t.key === "booking_confirmed");
+    expect(reset).toMatchObject({ customized: false, subject: "Réservation confirmée" });
+  });
+
+  it("reminds each confirmed booking once, ahead of its start, unless it was made inside that window", async () => {
+    await settings({ reminder_hours: 24 });
+    const early = await createBooking(h.db, h.centreId, staff(), input(ids.W!, ids.A3!, ids.fHour!, "2027-09-20", "10:00"), at("2027-09-01T08:00:00Z"));
+    const late = await createBooking(h.db, h.centreId, staff(), input(ids.W!, ids.A3!, ids.fHour!, "2027-09-20", "15:00"), at("2027-09-20T08:00:00Z"));
+    const sentAt = async (id: string) =>
+      (await h.db.selectFrom("cw_bookings").select("reminder_sent_at").where("id", "=", id).executeTakeFirstOrThrow()).reminder_sent_at;
+    const reminders = () => mailer.sent.filter((m) => m.to === "walid@cw.test" && m.subject === "Rappel de votre réservation");
+
+    await sendBookingReminders(h.db, mail, at("2027-09-18T08:00:00Z"));
+    expect(await sentAt(early.booking.id)).toBeNull();
+    await sendBookingReminders(h.db, mail, at("2027-09-19T12:00:00Z"));
+    await sendBookingReminders(h.db, mail, at("2027-09-19T12:05:00Z"));
+    expect(reminders()).toHaveLength(1);
+    expect(reminders()[0]!.text).toContain("le 20/09/2027 de 10:00 à 11:00");
+    expect(reminders()[0]!.text).toContain(early.booking.checkInCode);
+    await sendBookingReminders(h.db, mail, at("2027-09-20T09:00:00Z"));
+    expect(await sentAt(late.booking.id)).toBeNull();
+
+    await settings({ reminder_hours: null });
   });
 });

@@ -92,6 +92,13 @@ l'enregistrer.
 Les réglages et leurs valeurs par défaut sont décrits dans `docs/hypotheses-a-valider.md`, section « Valeurs par
 défaut du coworking ».
 
+| Réglage                                   | Effet                                                                                                                                                                                                                                   | Défaut                    |
+| ----------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------- |
+| Options payantes (Tarifs et abonnements)  | Options d'un type d'espace ajoutées à une réservation : forfait par réservation, par personne ou par unité, avec un prix abonné facultatif. Elles s'ajoutent au montant ; les droits et codes promotionnels ne portent que sur la place | Aucune option             |
+| Option « Proposée dans l'espace client »  | Décochée, l'option n'est ajoutée qu'à l'accueil                                                                                                                                                                                         | Cochée                    |
+| Rappel par e-mail (Règles de réservation) | Nombre d'heures avant le début où chaque réservation confirmée reçoit un rappel. Une réservation faite dans ce délai n'en reçoit pas. Vide : aucun rappel                                                                               | 24 heures                 |
+| E-mails (Règles et fermetures)            | Objet et texte des e-mails de confirmation, refus, annulation et rappel, avec des variables entre accolades. Une ligne dont une variable est vide n'est pas envoyée                                                                     | Textes fournis par défaut |
+
 ## 5. Automatisations (Paramètres > Automatisations)
 
 Chaque tâche répétitive a trois modes au plus : **Désactivé** (défaut), **À confirmer** (le travail est préparé et

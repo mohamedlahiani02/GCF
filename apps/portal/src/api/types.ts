@@ -59,6 +59,16 @@ export interface CatalogueType {
   capacity: { min: number; max: number };
   floors: { id: string; name: string }[];
   formats: FormatOffer[];
+  extras: ExtraOffer[];
+}
+
+export interface ExtraOffer {
+  id: string;
+  name: string;
+  pricing: "fixed" | "per_person" | "per_item";
+  /** Price for the member's profile. */
+  amount: number;
+  maxQuantity: number;
 }
 
 export interface Catalogue {
@@ -119,6 +129,7 @@ export interface BookingInput {
   startTime: string;
   durationMinutes?: number;
   promoCode?: string;
+  extras?: { extraId: string; quantity: number }[];
   notes?: string;
 }
 
@@ -134,6 +145,8 @@ export interface Quote {
   offpeak: boolean;
   coverage: { coveredMinutes: number; discount: number; sources: { kind: "subscription" | "pack"; label: string; coveredMinutes: number }[] };
   promotion: { code: string; discount: number } | null;
+  extras: { extraId: string; name: string; pricing: ExtraOffer["pricing"]; quantity: number; unitAmount: number; amount: number }[];
+  extrasTotal: number;
   charge: number;
   status: "requested" | "confirmed";
 }
@@ -161,6 +174,8 @@ export interface Booking {
   coverageDiscount: number;
   promoDiscount: number;
   charge: number;
+  extrasTotal: number;
+  extras: { name: string; quantity: number; amount: number }[];
   lateCancelFee: number;
   requestedAt: string;
   refusalReason: string | null;

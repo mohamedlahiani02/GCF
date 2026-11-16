@@ -243,6 +243,7 @@ export interface Booking {
   coverageDiscount: number;
   promoDiscount: number;
   charge: number;
+  extrasTotal: number;
   lateCancelFee: number;
   checkedInAt: string | null;
   requestedAt: string;
@@ -269,8 +270,22 @@ export interface BookingDetail extends Booking {
     windowStart: string | null;
     status: "active" | "released";
   }[];
+  extras: { id: string; name: string; pricing: ExtraPricing; quantity: number; unitAmount: number; amount: number }[];
   accessEvents: { id: string; at: string; source: "staff" | "qr"; recordedBy: string | null }[];
 }
+
+export type ExtraPricing = "fixed" | "per_person" | "per_item";
+export interface Extra {
+  id: string;
+  typeId: string;
+  name: string;
+  pricing: ExtraPricing;
+  amount: number;
+  memberAmount: number | null;
+  maxQuantity: number;
+  public: boolean;
+}
+export const EXTRA_UNIT: Record<ExtraPricing, string> = { fixed: "forfait", per_person: "par personne", per_item: "par unité" };
 
 export interface Quote {
   memberId: string;
@@ -291,6 +306,8 @@ export interface Quote {
     sources: { kind: "subscription" | "pack"; id: string; label: string; quotaKind: QuotaKind; amount: number; coveredMinutes: number }[];
   };
   promotion: { id: string; code: string; kind: "percent" | "amount"; value: number; discount: number } | null;
+  extras: { extraId: string; name: string; pricing: ExtraPricing; quantity: number; unitAmount: number; amount: number }[];
+  extrasTotal: number;
   charge: number;
   status: "requested" | "confirmed";
   warnings: { code: string; message: string }[];
@@ -304,6 +321,7 @@ export interface BookingInput {
   startTime: string;
   durationMinutes?: number;
   promoCode?: string;
+  extras?: { extraId: string; quantity: number }[];
   notes?: string;
   override?: boolean;
 }
@@ -538,6 +556,7 @@ export function cancellationFee(booking: { status: CwBookingStatus; startsAt: st
 export const useSettings = () => useQuery({ queryKey: ["cw-settings"], queryFn: () => api.get<Settings>("/coworking/settings") });
 export const useFloors = () => useQuery({ queryKey: ["cw-floors"], queryFn: () => api.get<Floor[]>("/coworking/floors") });
 export const useResourceTypes = () => useQuery({ queryKey: ["cw-types"], queryFn: () => api.get<ResourceType[]>("/coworking/resource-types") });
+export const useExtras = () => useQuery({ queryKey: ["cw-config", "extras"], queryFn: () => api.get<Extra[]>("/coworking/extras") });
 export const useFormats = () => useQuery({ queryKey: ["cw-formats"], queryFn: () => api.get<Format[]>("/coworking/formats") });
 export const useFloorDetail = (id: string | null) =>
   useQuery({ queryKey: ["cw-floor", id], queryFn: () => api.get<FloorDetail>(`/coworking/floors/${id}`), enabled: !!id });

@@ -1,6 +1,6 @@
 import { mulDivRound, percentOf } from "@gcf/shared";
 import { sql } from "kysely";
-import type { CwProfile } from "../../db/types.coworking.js";
+import type { CwExtraPricing, CwProfile } from "../../db/types.coworking.js";
 import { unprocessable } from "../../errors.js";
 import type { Db } from "./schedule.js";
 
@@ -90,4 +90,53 @@ export async function applyPromotion(
   }
   const discount = promo.kind === "percent" ? percentOf(remaining, promo.value) : Math.min(promo.value, remaining);
   return { id: promo.id, code: promo.code, kind: promo.kind, value: promo.value, discount };
+}
+
+export interface ExtraRequest {
+  extraId: string;
+  quantity: number;
+}
+
+export interface ExtraLine {
+  extraId: string;
+  name: string;
+  pricing: CwExtraPricing;
+  quantity: number;
+  unitAmount: number;
+  amount: number;
+}
+
+/**
+ * Prices the extras asked for a booking of a resource type. Each extra must be active and belong to that type, and
+ * be public for a portal request. A fixed extra is taken once; the others up to their maximum quantity. A subscriber
+ * pays the subscriber price when the extra has one.
+ */
+export async function priceExtras(
+  db: Db,
+  centreId: string,
+  typeId: string,
+  profile: CwProfile,
+  requested: ExtraRequest[],
+  options: { portal: boolean },
+): Promise<ExtraLine[]> {
+  if (requested.length === 0) return [];
+  const ids = requested.map((r) => r.extraId);
+  if (new Set(ids).size !== ids.length) throw unprocessable("extra_repeated", "an extra is listed more than once");
+  const rows = await db
+    .selectFrom("cw_extras")
+    .select(["id", "name", "pricing", "amount", "member_amount", "max_quantity", "public", "status", "type_id"])
+    .where("centre_id", "=", centreId)
+    .where("id", "in", ids)
+    .execute();
+  return requested.map((r) => {
+    const extra = rows.find((row) => row.id === r.extraId);
+    if (!extra || extra.status !== "active" || extra.type_id !== typeId || (options.portal && !extra.public)) {
+      throw unprocessable("extra_unavailable", "this extra cannot be added to this resource");
+    }
+    if (extra.pricing === "fixed" ? r.quantity !== 1 : r.quantity > extra.max_quantity) {
+      throw unprocessable("extra_quantity", `at most ${extra.pricing === "fixed" ? 1 : extra.max_quantity} of this extra per booking`);
+    }
+    const unitAmount = profile === "member" && extra.member_amount !== null ? extra.member_amount : extra.amount;
+    return { extraId: extra.id, name: extra.name, pricing: extra.pricing, quantity: r.quantity, unitAmount, amount: unitAmount * r.quantity };
+  });
 }

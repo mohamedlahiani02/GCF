@@ -4,14 +4,16 @@ import { PageHeader, Segmented, Tabs } from "../../components/ui";
 import { AttributesTab } from "./attributes";
 import { ClosuresTab } from "./closures";
 import { FloorsTab } from "./floors";
+import { ExtrasTab } from "./extras";
 import { FormatsTab } from "./formats";
+import { MailTemplatesTab } from "./mailTemplates";
 import { OffersTab } from "./offers";
 import { ResourcesTab } from "./resources";
 import { RulesTab } from "./rules";
 import { SpaceTypesTab } from "./spaceTypes";
 import { ZonesTab } from "./zones";
 
-/** The nine settings screens, gathered in three groups so a manager first picks what they want to change. */
+/** The eleven settings screens, gathered in three groups so a manager first picks what they want to change. */
 const GROUPS = [
   {
     value: "espace",
@@ -29,6 +31,7 @@ const GROUPS = [
     label: "Tarifs et abonnements",
     tabs: [
       { value: "formules", label: "Formules et tarifs" },
+      { value: "options", label: "Options payantes" },
       { value: "abonnements", label: "Abonnements" },
     ],
   },
@@ -38,6 +41,7 @@ const GROUPS = [
     tabs: [
       { value: "regles", label: "Règles de réservation" },
       { value: "fermetures", label: "Fermetures" },
+      { value: "emails", label: "E-mails" },
     ],
   },
 ] as const;
@@ -75,6 +79,8 @@ export function CoworkingSettingsPage() {
       {current.tab === "types" ? <SpaceTypesTab /> : null}
       {current.tab === "ressources" ? <ResourcesTab /> : null}
       {current.tab === "formules" ? <FormatsTab /> : null}
+      {current.tab === "options" ? <ExtrasTab /> : null}
+      {current.tab === "emails" ? <MailTemplatesTab /> : null}
       {current.tab === "fermetures" ? <ClosuresTab /> : null}
       {current.tab === "abonnements" ? <OffersTab /> : null}
     </>
