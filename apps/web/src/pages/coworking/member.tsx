@@ -9,6 +9,7 @@ import { Badge, Card, Empty, ErrorBanner, Field, Kpi, Loading, Modal, PageHeader
 import { errorMessage } from "../../lib/errors";
 import { frDate, frDateTime, frTime, tnd } from "../../lib/format";
 import { CHEQUE, METHOD } from "../../lib/labels";
+import { IssueInvoiceButton } from "../invoices";
 import {
   MEMBER_KIND,
   MEMBER_STATUS,
@@ -595,11 +596,19 @@ export function MemberPage() {
           </span>
         }
         actions={
-          can("payments:write") ? (
-            <button type="button" className="btn btn-p" onClick={() => collect.open(m.id)}>
-              Encaisser
-            </button>
-          ) : null
+          <>
+            {can("payments:write") ? (
+              <button type="button" className="btn btn-p" onClick={() => collect.open(m.id)}>
+                Encaisser
+              </button>
+            ) : null}
+            <IssueInvoiceButton payer={{ kind: "member", id: m.id }} />
+            {can("invoices:read") ? (
+              <Link className="btn btn-g" to={`/factures?payeur=member&id=${m.id}`}>
+                Factures
+              </Link>
+            ) : null}
+          </>
         }
       />
       <div className="grid4">

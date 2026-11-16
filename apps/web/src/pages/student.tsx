@@ -27,6 +27,7 @@ import {
 import { errorMessage } from "../lib/errors";
 import { CHEQUE, METHOD, PAYMENT_MODE } from "../lib/labels";
 import { frDate, frDateTime, percent, tnd, todayIso, tryParseTnd } from "../lib/format";
+import { IssueInvoiceButton } from "./invoices";
 import { StudentFormModal, toForm } from "./students";
 
 type Tab = "summary" | "enrolments" | "payments" | "attendance" | "documents" | "history";
@@ -495,6 +496,12 @@ export function StudentPage() {
               <button type="button" className="btn btn-p" onClick={() => collect({ studentId: id })}>
                 Encaisser
               </button>
+            ) : null}
+            <IssueInvoiceButton payer={{ kind: "student", id }} />
+            {can("invoices:read") ? (
+              <Link className="btn btn-g" to={`/factures?payeur=student&id=${id}`}>
+                Factures
+              </Link>
             ) : null}
             {can("enrolments:write") && s.status === "active" ? (
               <Link className="btn" to={`/inscriptions/nouvelle?eleve=${id}`}>
