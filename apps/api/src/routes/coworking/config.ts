@@ -39,6 +39,8 @@ const settingsBody = z
     companyTaxBp: z.number().int().min(1).max(10_000).nullable(),
     endingSoonMinutes: z.number().int().min(5).max(240).nullable(),
     reminderHours: z.number().int().min(1).max(168).nullable(),
+    visitorRetentionDays: z.number().int().min(1).max(1095),
+    visitorNotifyHost: z.boolean(),
   })
   .partial()
   .strict();
@@ -420,6 +422,8 @@ const SETTINGS_COLUMNS = [
   "company_tax_bp",
   "ending_soon_minutes",
   "reminder_hours",
+  "visitor_retention_days",
+  "visitor_notify_host",
   "updated_at",
 ] as const;
 
@@ -452,6 +456,8 @@ const presentSettings = (s: Awaited<ReturnType<typeof loadSettings>>) => ({
   companyTaxBp: s.company_tax_bp,
   endingSoonMinutes: s.ending_soon_minutes,
   reminderHours: s.reminder_hours,
+  visitorRetentionDays: s.visitor_retention_days,
+  visitorNotifyHost: s.visitor_notify_host,
   updatedAt: s.updated_at,
 });
 
@@ -589,6 +595,8 @@ export const coworkingConfigRoutes: FastifyPluginAsync = async (app) => {
           ...(body.companyTaxBp === undefined ? {} : { company_tax_bp: body.companyTaxBp }),
           ...(body.endingSoonMinutes === undefined ? {} : { ending_soon_minutes: body.endingSoonMinutes }),
           ...(body.reminderHours === undefined ? {} : { reminder_hours: body.reminderHours }),
+          ...(body.visitorRetentionDays === undefined ? {} : { visitor_retention_days: body.visitorRetentionDays }),
+          ...(body.visitorNotifyHost === undefined ? {} : { visitor_notify_host: body.visitorNotifyHost }),
           updated_at: new Date(),
           updated_by: actor.userId,
         })

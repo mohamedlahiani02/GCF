@@ -11,6 +11,7 @@ import { BookingDetailPage } from "./pages/bookingDetail";
 import { BookingsPage } from "./pages/bookings";
 import { DashboardPage } from "./pages/dashboard";
 import { MailPage, PaymentsPage } from "./pages/money";
+import { VisitorsPage } from "./pages/visitors";
 import { PacksPage, SubscriptionPage } from "./pages/subscription";
 
 /** Waits for the portal information and the session; shows the closed page when the centre does not open the portal. */
@@ -100,6 +101,7 @@ export const router = createBrowserRouter(
                 { path: "abonnement", element: <SubscriptionPage /> },
                 { path: "packs", element: <PacksPage /> },
                 { path: "courrier", element: <MailPage /> },
+                { path: "visiteurs", element: <VisitorsPage /> },
                 { path: "paiements", element: <PaymentsPage /> },
                 { path: "compte", element: <AccountPage /> },
                 { element: <RequireCompanyAdmin />, children: [{ path: "equipe", element: <TeamPage /> }] },
