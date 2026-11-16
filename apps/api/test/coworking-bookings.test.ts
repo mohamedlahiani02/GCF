@@ -1,3 +1,4 @@
+import { taxIncluded } from "../src/domain/coworking/pricing.js";
 import { sql } from "kysely";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import {
@@ -9,6 +10,7 @@ import {
   type BookingActor,
   type BookingInput,
   type MailContext,
+  checkInAtPlace,
 } from "../src/domain/coworking/bookings.js";
 import { floorState } from "../src/domain/coworking/availability.js";
 import { sweepCoworking } from "../src/domain/coworking/sweeper.js";
@@ -649,10 +651,16 @@ describe("plan, blocks and reassignment", () => {
     });
     expect(block.status).toBe(201);
 
+    await h.db.updateTable("cw_settings").set({ ending_soon_minutes: null }).where("centre_id", "=", h.centreId).execute();
     const live = await h.call("GET", `/api/coworking/floors/${ids.floor}/state?at=2027-04-20T08:30:00Z`, secretariat);
     expect(live.status).toBe(200);
     const states = Object.fromEntries(live.body.resources.map((r: { code: string; state: string }) => [r.code, r.state]));
     expect(states).toEqual({ A1: "occupied", A2: "booked", A3: "requested", A4: "free", B1: "blocked", D1: "assigned", R1: "blocked" });
+    // With "soon free" shown 30 minutes ahead, the two bookings ending at 09:00 UTC turn yellow.
+    await h.db.updateTable("cw_settings").set({ ending_soon_minutes: 30 }).where("centre_id", "=", h.centreId).execute();
+    const soon = await h.call("GET", `/api/coworking/floors/${ids.floor}/state?at=2027-04-20T08:30:00Z`, secretariat);
+    const soonStates = Object.fromEntries(soon.body.resources.map((r: { code: string; state: string }) => [r.code, r.state]));
+    expect(soonStates).toMatchObject({ A1: "ending", A2: "ending", A3: "requested" });
     const a1 = live.body.resources.find((r: { code: string }) => r.code === "A1");
     expect(a1.occupant).toMatchObject({ memberName: "Walid Test", phone: "20 000 000", charge: 10_000, paid: 0, status: "checked_in" });
     expect(live.body.resources.find((r: { code: string }) => r.code === "D1").subscriber.memberName).toBe("Dalia Test");
@@ -728,5 +736,83 @@ describe("sweeper", () => {
     expect(first + second).toBe(1);
     expect((await h.db.selectFrom("cw_bookings").select("status").where("id", "=", present).executeTakeFirstOrThrow()).status).toBe("completed");
     expect(await sweepCoworking(h.db, at("2027-06-11T09:00:00Z"))).toBe(0);
+  });
+});
+
+describe("optional pricing rules of hourly formats", () => {
+  const prices = (body: Record<string, unknown>, formatId = ids.fFree) => h.call("PUT", `/api/coworking/formats/${formatId}/prices`, admin, body);
+
+  it("applies a lower rate to long bookings and stops charging after the cap", async () => {
+    const saved = await prices({
+      prices: [
+        { profile: "visitor", amount: 40_000, offpeakAmount: null, longAmount: 30_000 },
+        { profile: "member", amount: 30_000, offpeakAmount: null, longAmount: 25_000 },
+      ],
+      longFromMinutes: 120,
+      capMinutes: 180,
+    });
+    expect(saved.status).toBe(200);
+    expect(saved.body).toMatchObject({ longFromMinutes: 120, capMinutes: 180 });
+    expect((await quote(ids.V, ids.R1, ids.fFree, "2027-04-05", "10:00", { durationMinutes: 90 })).body.listPrice).toBe(60_000);
+    expect((await quote(ids.V, ids.R1, ids.fFree, "2027-04-05", "10:00", { durationMinutes: 120 })).body.listPrice).toBe(60_000);
+    expect((await quote(ids.V, ids.R1, ids.fFree, "2027-04-05", "10:00", { durationMinutes: 240 })).body.listPrice).toBe(90_000);
+  });
+
+  it("keeps these rules to hourly formats and asks for a complete long-booking rate", async () => {
+    expect((await prices({ prices: [{ profile: "visitor", amount: 10_000, offpeakAmount: null }], capMinutes: 120 }, ids.fHour)).body.code).toBe("hourly_only");
+    expect((await prices({ prices: [{ profile: "visitor", amount: 40_000, offpeakAmount: null, longAmount: 30_000 }], longFromMinutes: null })).body.code).toBe(
+      "long_rate_incomplete",
+    );
+    expect(
+      (await prices({ prices: [{ profile: "visitor", amount: 40_000, offpeakAmount: null, longAmount: 30_000 }], longFromMinutes: 120, capMinutes: 90 })).body
+        .code,
+    ).toBe("cap_before_long_rate");
+  });
+
+  it("splits a price that includes tax into net and tax", () => {
+    expect(taxIncluded(119_000, 1900)).toEqual({ net: 100_000, tax: 19_000, rateBp: 1900 });
+  });
+});
+
+describe("firm bookings, validation and arrival on the place", () => {
+  const stateOf = async (iso: string, code: string) =>
+    (await h.call("GET", `/api/coworking/floors/${ids.floor}/state?at=${iso}`, secretariat)).body.resources.find((r: { code: string }) => r.code === code)
+      .state;
+
+  it("shows an unpaid portal booking as held until the centre validates it", async () => {
+    const booked = await book(ids.V, ids.A4, ids.fHour, "2027-07-05", "09:00");
+    await h.db.updateTable("cw_bookings").set({ source: "portal" }).where("id", "=", booked.body.id).execute();
+    expect(await stateOf("2027-07-05T08:10:00Z", "A4")).toBe("held");
+    const validated = await h.call("POST", `/api/coworking/bookings/${booked.body.id}/validate`, secretariat);
+    expect(validated.status).toBe(200);
+    expect((await h.call("POST", `/api/coworking/bookings/${booked.body.id}/validate`, secretariat)).body.code).toBe("already_validated");
+    expect(await stateOf("2027-07-05T08:10:00Z", "A4")).toBe("booked");
+  });
+
+  it("checks the client in from the QR code of the place, once the option is on", async () => {
+    expect((await h.call("GET", `/api/coworking/resources/${ids.A4}/checkin-qr`, admin)).status).toBe(404);
+    await h.setModules(["training", "coworking", "checkin"]);
+    const qr = await h.call("GET", `/api/coworking/resources/${ids.A4}/checkin-qr`, admin);
+    expect(qr.status).toBe(200);
+    expect(qr.body.svg).toContain("<svg");
+    const token = String(qr.body.url).split("/espace/arrivee/")[1]!;
+    expect((await h.call("GET", `/api/coworking/resources/${ids.A4}/checkin-qr`, admin)).body.url).toBe(qr.body.url);
+    const booked = await book(ids.V, ids.A4, ids.fHour, "2027-07-06", "09:00");
+    await expect(checkInAtPlace(h.db, h.centreId, ids.W!, token, at("2027-07-06T08:05:00Z"))).rejects.toThrow();
+    const arrived = await checkInAtPlace(h.db, h.centreId, ids.V!, token, at("2027-07-06T08:05:00Z"));
+    expect(arrived).toMatchObject({ id: booked.body.id, status: "checked_in" });
+  });
+
+  it("releases only bookings that are neither paid, validated nor entered by the staff", async () => {
+    await h.db.updateTable("cw_settings").set({ no_show_grace_minutes: 15 }).where("centre_id", "=", h.centreId).execute();
+    const loose = await book(ids.V, ids.A4, ids.fHour, "2027-07-07", "09:00");
+    const firm = await book(ids.V, ids.A1, ids.fHour, "2027-07-07", "09:00");
+    await h.db.updateTable("cw_bookings").set({ source: "portal" }).where("id", "in", [loose.body.id, firm.body.id]).execute();
+    await h.call("POST", `/api/coworking/bookings/${firm.body.id}/validate`, secretariat);
+    await sweepCoworking(h.db, at("2027-07-07T08:20:00Z"));
+    const status = async (id: string) => (await h.db.selectFrom("cw_bookings").select("status").where("id", "=", id).executeTakeFirstOrThrow()).status;
+    expect(await status(loose.body.id)).toBe("no_show");
+    expect(await status(firm.body.id)).toBe("confirmed");
+    await h.setModules(["training", "coworking"]);
   });
 });

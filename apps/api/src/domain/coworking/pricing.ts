@@ -21,18 +21,29 @@ export interface ListPrice {
  */
 export async function listPrice(
   db: Db,
-  format: { id: string; nature: string },
+  format: { id: string; nature: string; longFromMinutes?: number | null; capMinutes?: number | null },
   profile: CwProfile,
   startTime: string,
   minutes: number,
   offpeakFrom: string | null,
 ): Promise<ListPrice> {
-  const rows = await db.selectFrom("cw_prices").select(["profile", "amount", "offpeak_amount"]).where("format_id", "=", format.id).execute();
+  const rows = await db.selectFrom("cw_prices").select(["profile", "amount", "offpeak_amount", "long_amount"]).where("format_id", "=", format.id).execute();
   const row = rows.find((r) => r.profile === profile) ?? rows.find((r) => r.profile === "visitor");
   if (!row) throw unprocessable("no_price", "this format has no price and is not for sale");
   const offpeak = offpeakFrom !== null && startTime >= offpeakFrom && row.offpeak_amount !== null;
-  const rate = offpeak ? row.offpeak_amount! : row.amount;
-  return { listPrice: format.nature === "free" ? mulDivRound(rate, minutes, 60) : rate, rate, priceProfile: row.profile, offpeak };
+  if (format.nature !== "free")
+    return { listPrice: offpeak ? row.offpeak_amount! : row.amount, rate: offpeak ? row.offpeak_amount! : row.amount, priceProfile: row.profile, offpeak };
+  // Hourly formats: the lowest applicable rate wins (off-peak, long booking), and minutes beyond the cap are free.
+  const longRate = format.longFromMinutes != null && minutes >= format.longFromMinutes && row.long_amount !== null ? row.long_amount : null;
+  const rate = Math.min(row.amount, offpeak ? row.offpeak_amount! : row.amount, longRate ?? row.amount);
+  const billed = format.capMinutes != null ? Math.min(minutes, format.capMinutes) : minutes;
+  return { listPrice: mulDivRound(rate, billed, 60), rate, priceProfile: row.profile, offpeak: offpeak && rate === row.offpeak_amount };
+}
+
+/** Splits an amount that includes tax into its net part and its tax, for a rate in basis points. */
+export function taxIncluded(amount: number, rateBp: number): { net: number; tax: number; rateBp: number } {
+  const net = mulDivRound(amount, 10_000, 10_000 + rateBp);
+  return { net, tax: amount - net, rateBp };
 }
 
 export interface AppliedPromotion {

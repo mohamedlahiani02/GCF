@@ -49,15 +49,17 @@ export function Card({
   children,
   footer,
   style,
+  id,
 }: {
   title?: ReactNode;
   actions?: ReactNode;
   children: ReactNode;
   footer?: ReactNode;
   style?: React.CSSProperties;
+  id?: string;
 }) {
   return (
-    <section className="card" style={style}>
+    <section className="card" style={style} id={id}>
       {title || actions ? (
         <div className="card-h">
           {typeof title === "string" ? <h2 className="h2">{title}</h2> : title}

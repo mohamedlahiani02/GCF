@@ -1,6 +1,8 @@
 import { ASSIGNED_CATEGORIES, CW_CATEGORIES, floorLayoutSchema, OCCUPYING_STATUSES, parseLayout, type FloorLayout } from "@gcf/shared";
+import { randomBytes } from "node:crypto";
 import type { FastifyPluginAsync } from "fastify";
 import { sql, type Kysely, type Transaction } from "kysely";
+import QRCode from "qrcode";
 import { z } from "zod";
 import { writeAudit } from "../../audit.js";
 import type { SessionUser } from "../../auth/sessions.js";
@@ -33,6 +35,8 @@ const settingsBody = z
     selfSignup: z.enum(["open", "validated", "closed"]),
     offpeakFrom: clockTime.nullable(),
     portalEnabled: z.boolean(),
+    companyTaxBp: z.number().int().min(1).max(10_000).nullable(),
+    endingSoonMinutes: z.number().int().min(5).max(240).nullable(),
   })
   .partial()
   .strict();
@@ -107,7 +111,16 @@ const formatUpdate = z.object(formatFields).partial().strict();
 const formatQuery = z.object({ typeId: uuid.optional(), status: z.enum(["active", "archived", "all"]).default("active") });
 const pricesBody = z
   .object({
-    prices: z.array(z.object({ profile: z.enum(["visitor", "member"]), amount: millimes, offpeakAmount: millimes.nullable() }).strict()).max(2),
+    prices: z
+      .array(
+        z
+          .object({ profile: z.enum(["visitor", "member"]), amount: millimes, offpeakAmount: millimes.nullable(), longAmount: millimes.nullable().optional() })
+          .strict(),
+      )
+      .max(2),
+    /** Optional rules of an hourly format: long-booking rate from this length, and no charge beyond the cap. */
+    longFromMinutes: z.number().int().min(30).max(1440).nullable().optional(),
+    capMinutes: z.number().int().min(30).max(1440).nullable().optional(),
   })
   .strict();
 
@@ -387,6 +400,8 @@ const SETTINGS_COLUMNS = [
   "self_signup",
   "offpeak_from",
   "portal_enabled",
+  "company_tax_bp",
+  "ending_soon_minutes",
   "updated_at",
 ] as const;
 
@@ -416,6 +431,8 @@ const presentSettings = (s: Awaited<ReturnType<typeof loadSettings>>) => ({
   selfSignup: s.self_signup,
   offpeakFrom: s.offpeak_from === null ? null : toClock(s.offpeak_from),
   portalEnabled: s.portal_enabled,
+  companyTaxBp: s.company_tax_bp,
+  endingSoonMinutes: s.ending_soon_minutes,
   updatedAt: s.updated_at,
 });
 
@@ -476,6 +493,8 @@ const presentFormat = (f: {
   weekdays: number[];
   position: number;
   status: "active" | "archived";
+  longFromMinutes: number | null;
+  capMinutes: number | null;
 }) => ({ ...f, startTime: f.startTime === null ? null : toClock(f.startTime), endTime: f.endTime === null ? null : toClock(f.endTime) });
 
 const FORMAT_COLUMNS = [
@@ -492,6 +511,8 @@ const FORMAT_COLUMNS = [
   "weekdays",
   "position",
   "status",
+  "long_from_minutes as longFromMinutes",
+  "cap_minutes as capMinutes",
 ] as const;
 
 /** Coworking configuration: rules, floors and plans, zones, attributes, resource types, resources, formats, prices, closures, plans, packs and promotion codes (staff). */
@@ -532,6 +553,8 @@ export const coworkingConfigRoutes: FastifyPluginAsync = async (app) => {
           ...(body.selfSignup === undefined ? {} : { self_signup: body.selfSignup }),
           ...(body.offpeakFrom === undefined ? {} : { offpeak_from: body.offpeakFrom }),
           ...(body.portalEnabled === undefined ? {} : { portal_enabled: body.portalEnabled }),
+          ...(body.companyTaxBp === undefined ? {} : { company_tax_bp: body.companyTaxBp }),
+          ...(body.endingSoonMinutes === undefined ? {} : { ending_soon_minutes: body.endingSoonMinutes }),
           updated_at: new Date(),
           updated_by: actor.userId,
         })
@@ -1258,6 +1281,31 @@ export const coworkingConfigRoutes: FastifyPluginAsync = async (app) => {
   });
 
   /** Out of service keeps the bookings (the staff moves or cancels them) and reports how many are affected. */
+  /**
+   * QR code to stick on a place (option "checkin"): scanned by the client from the portal, it records their arrival.
+   * The secret is created on first request and stays the same, so a printed code keeps working.
+   */
+  app.get("/resources/:id/checkin-qr", { preHandler: manage }, async (request) => {
+    const actor = request.user!;
+    if (!actor.modules.includes("checkin")) throw notFound("option");
+    const { id } = idParam.parse(request.params);
+    const resource = await db
+      .selectFrom("cw_resources")
+      .select(["id", "code", "checkin_token"])
+      .where("id", "=", id)
+      .where("centre_id", "=", actor.centreId)
+      .executeTakeFirst();
+    if (!resource) throw notFound("resource");
+    let token = resource.checkin_token;
+    if (!token) {
+      token = randomBytes(18).toString("base64url");
+      await db.updateTable("cw_resources").set({ checkin_token: token }).where("id", "=", id).where("checkin_token", "is", null).execute();
+      token = (await db.selectFrom("cw_resources").select("checkin_token").where("id", "=", id).executeTakeFirstOrThrow()).checkin_token!;
+    }
+    const url = `${app.config.publicOrigin ?? app.config.webOrigin}/espace/arrivee/${token}`;
+    return { code: resource.code, url, svg: await QRCode.toString(url, { type: "svg", errorCorrectionLevel: "M", margin: 1 }) };
+  });
+
   app.post("/resources/:id/status", { preHandler: manage }, async (request) => {
     const actor = request.user!;
     const { id } = idParam.parse(request.params);
@@ -1328,7 +1376,7 @@ export const coworkingConfigRoutes: FastifyPluginAsync = async (app) => {
     const prices = formats.length
       ? await db
           .selectFrom("cw_prices")
-          .select(["format_id as formatId", "profile", "amount", "offpeak_amount as offpeakAmount"])
+          .select(["format_id as formatId", "profile", "amount", "offpeak_amount as offpeakAmount", "long_amount as longAmount"])
           .where(
             "format_id",
             "in",
@@ -1339,7 +1387,9 @@ export const coworkingConfigRoutes: FastifyPluginAsync = async (app) => {
       : [];
     return formats.map((f) => ({
       ...presentFormat(f),
-      prices: prices.filter((p) => p.formatId === f.id).map(({ profile, amount, offpeakAmount }) => ({ profile, amount, offpeakAmount })),
+      prices: prices
+        .filter((p) => p.formatId === f.id)
+        .map(({ profile, amount, offpeakAmount, longAmount }) => ({ profile, amount, offpeakAmount, longAmount })),
     }));
   };
 
@@ -1436,21 +1486,45 @@ export const coworkingConfigRoutes: FastifyPluginAsync = async (app) => {
     await db.transaction().execute(async (trx) => {
       const format = await trx
         .selectFrom("cw_booking_formats")
-        .select("id")
+        .select(["id", "nature", "long_from_minutes", "cap_minutes"])
         .where("id", "=", id)
         .where("centre_id", "=", actor.centreId)
         .forUpdate()
         .executeTakeFirst();
       if (!format) throw notFound("format");
-      const before = await trx.selectFrom("cw_prices").select(["profile", "amount", "offpeak_amount as offpeakAmount"]).where("format_id", "=", id).execute();
+      const longFrom = body.longFromMinutes === undefined ? format.long_from_minutes : body.longFromMinutes;
+      const cap = body.capMinutes === undefined ? format.cap_minutes : body.capMinutes;
+      const anyLongRate = body.prices.some((p) => p.longAmount !== undefined && p.longAmount !== null);
+      if (format.nature !== "free" && (longFrom !== null || cap !== null || anyLongRate))
+        throw unprocessable("hourly_only", "a long-booking rate and a price cap only apply to formats priced per hour");
+      if (anyLongRate !== (longFrom !== null)) throw unprocessable("long_rate_incomplete", "a long-booking rate needs both its length and its rate");
+      if (longFrom !== null && cap !== null && cap <= longFrom)
+        throw unprocessable("cap_before_long_rate", "the price cap must come after the long-booking length");
+      const before = await trx
+        .selectFrom("cw_prices")
+        .select(["profile", "amount", "offpeak_amount as offpeakAmount", "long_amount as longAmount"])
+        .where("format_id", "=", id)
+        .execute();
+      await trx.updateTable("cw_booking_formats").set({ long_from_minutes: longFrom, cap_minutes: cap }).where("id", "=", id).execute();
       await trx.deleteFrom("cw_prices").where("format_id", "=", id).execute();
       if (body.prices.length) {
         await trx
           .insertInto("cw_prices")
-          .values(body.prices.map((p) => ({ format_id: id, profile: p.profile, amount: p.amount, offpeak_amount: p.offpeakAmount })))
+          .values(
+            body.prices.map((p) => ({
+              format_id: id,
+              profile: p.profile,
+              amount: p.amount,
+              offpeak_amount: p.offpeakAmount,
+              long_amount: p.longAmount ?? null,
+            })),
+          )
           .execute();
       }
-      await audit(trx, actor, "cw_format.prices_updated", "cw_format", id, { before, after: body.prices });
+      await audit(trx, actor, "cw_format.prices_updated", "cw_format", id, {
+        before: { prices: before, longFromMinutes: format.long_from_minutes, capMinutes: format.cap_minutes },
+        after: { prices: body.prices, longFromMinutes: longFrom, capMinutes: cap },
+      });
     });
     return loadFormat(actor.centreId, id);
   });

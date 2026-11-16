@@ -9,7 +9,7 @@ import { CW_KEYS, type PackProduct, type Profile, type PromoCode, type ResourceT
 import { hoursText, parseHours, parseInteger, parsePercent, percentText } from "./helpers";
 import { PlansCard, quotaLabel } from "./plans";
 
-const PROFILE_LABEL: Record<Profile, string> = { visitor: "Visiteurs", member: "Membres" };
+const PROFILE_LABEL: Record<Profile, string> = { visitor: "Clients sans abonnement", member: "Clients abonnés" };
 
 function PackModal({ pack, types, onClose }: { pack: PackProduct | null; types: ResourceType[]; onClose: () => void }) {
   const client = useQueryClient();

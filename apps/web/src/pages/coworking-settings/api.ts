@@ -16,6 +16,10 @@ export interface CwSettings {
   selfSignup: "open" | "validated" | "closed";
   offpeakFrom: string | null;
   portalEnabled: boolean;
+  /** Tax rate shown to companies in basis points; null when not shown. */
+  companyTaxBp: number | null;
+  /** Minutes before its end a running booking shows its place as soon free; null hides it. */
+  endingSoonMinutes: number | null;
   updatedAt: string;
 }
 
@@ -113,6 +117,7 @@ export interface Price {
   profile: Profile;
   amount: number;
   offpeakAmount: number | null;
+  longAmount?: number | null;
 }
 
 export interface BookingFormat {
@@ -129,6 +134,8 @@ export interface BookingFormat {
   weekdays: number[];
   position: number;
   status: ArchiveStatus;
+  longFromMinutes: number | null;
+  capMinutes: number | null;
   prices: Price[];
 }
 

@@ -785,3 +785,87 @@ h3,
 .h3 {
   font-family: "Manrope", "Inter", system-ui, sans-serif;
 }
+/* Plan colours: green free, mauve not yet firm, red firm, yellow soon free, indigo assigned. */
+.fp-state-requested .fp-shape,
+.fp-state-held .fp-shape {
+  fill: #f3e4fb;
+  stroke: #a855c7;
+}
+.fp-state-requested,
+.fp-state-held {
+  color: #a855c7;
+}
+.fp-state-requested .fp-code,
+.fp-state-held .fp-code {
+  stroke: #f3e4fb;
+  fill: #6b2391;
+}
+.fp-state-booked .fp-shape {
+  fill: #fde3e1;
+  stroke: #c4433b;
+}
+.fp-state-booked {
+  color: #c4433b;
+}
+.fp-state-booked .fp-code {
+  stroke: #fde3e1;
+  fill: #8f2a23;
+}
+.fp-state-occupied .fp-shape {
+  fill: #c4433b;
+  stroke: #8f2a23;
+}
+.fp-state-occupied {
+  color: #f3b1ac;
+}
+.fp-state-occupied .fp-code {
+  stroke: #c4433b;
+  fill: #ffffff;
+}
+.fp-state-ending .fp-shape {
+  fill: #fdf3c4;
+  stroke: #c99a06;
+}
+.fp-state-ending {
+  color: #c99a06;
+}
+.fp-state-ending .fp-code {
+  stroke: #fdf3c4;
+  fill: #7a5c00;
+}
+.fp-state-assigned .fp-shape {
+  fill: #e8eafc;
+  stroke: #3d4ee0;
+}
+.fp-state-assigned {
+  color: #3d4ee0;
+}
+.fp-state-assigned .fp-code {
+  stroke: #e8eafc;
+  fill: #2733a8;
+}
+.fp-legend .requested,
+.fp-legend .held {
+  background: #f3e4fb;
+  border-color: #a855c7;
+}
+.fp-legend .booked {
+  background: #fde3e1;
+  border-color: #c4433b;
+}
+.fp-legend .occupied {
+  background: #c4433b;
+  border-color: #8f2a23;
+}
+.fp-legend .ending {
+  background: #fdf3c4;
+  border-color: #c99a06;
+}
+.fp-legend .assigned {
+  background: #e8eafc;
+  border-color: #3d4ee0;
+}
+.checkin-qr svg {
+  width: 160px;
+  height: 160px;
+}

@@ -1,7 +1,7 @@
 import type { FastifyPluginAsync } from "fastify";
 import { z } from "zod";
 import { writeAudit } from "../audit.js";
-import { activeSupplier, assertCafeOpen, cafeDay, cafeSettings, lockCafeTill, moveStock, nextSaleNumber } from "../domain/cafe.js";
+import { activeSupplier, assertCafeOpen, assertSeparateTill, cafeDay, cafeSettings, lockCafeTill, moveStock, nextSaleNumber } from "../domain/cafe.js";
 import { recordFinancialEvents } from "../domain/financialEvents.js";
 import { openingFloat, setOpeningFloat } from "../domain/cash.js";
 import { centreClock } from "../domain/ledger.js";
@@ -20,6 +20,7 @@ const settingsBody = z
       .regex(/^[A-Z0-9]{1,8}$/, "1 to 8 capital letters or digits"),
     ticketPrinting: z.enum(["none", "browser", "thermal_58", "thermal_80"]),
     purchasing: z.enum(["simple", "suppliers", "orders"]),
+    tillMode: z.enum(["separate", "single"]).optional(),
   })
   .strict();
 const productBody = z
@@ -84,6 +85,7 @@ export const cafeRoutes: FastifyPluginAsync = async (app) => {
         ticket_prefix: body.ticketPrefix,
         ticket_printing: body.ticketPrinting,
         purchasing: body.purchasing,
+        till_mode: body.tillMode ?? before.tillMode,
         updated_by: actor.userId,
         updated_at: new Date(),
       };
@@ -448,6 +450,7 @@ export const cafeRoutes: FastifyPluginAsync = async (app) => {
     const body = z.object({ day: isoDate, amount: millimes }).strict().parse(request.body);
     return db.transaction().execute(async (trx) => {
       await lockCafeTill(trx, actor.centreId);
+      await assertSeparateTill(trx, actor.centreId);
       const { today } = await centreClock(trx, actor.centreId);
       await assertCafeOpen(trx, actor.centreId, body.day);
       const fallback = (await cafeSettings(trx, actor.centreId)).openingFloat;
@@ -461,6 +464,7 @@ export const cafeRoutes: FastifyPluginAsync = async (app) => {
     const body = closeBody.parse(request.body);
     const result = await db.transaction().execute(async (trx) => {
       await lockCafeTill(trx, actor.centreId);
+      await assertSeparateTill(trx, actor.centreId);
       const { today } = await centreClock(trx, actor.centreId);
       if (body.day > today) throw unprocessable("future_day", "a day can only be closed once it has started");
       const existing = await trx

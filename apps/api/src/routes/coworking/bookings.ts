@@ -1,3 +1,4 @@
+import { taxIncluded } from "../../domain/coworking/pricing.js";
 import { addDays, CW_BOOKING_STATUSES } from "@gcf/shared";
 import type { FastifyPluginAsync, FastifyRequest } from "fastify";
 import { sql } from "kysely";
@@ -16,6 +17,7 @@ import {
   releaseBooking,
   removeBlock,
   type MailContext,
+  validateBooking,
 } from "../../domain/coworking/bookings.js";
 import { centreCalendar, coworkingSettings, formatSlots, localInstants, openingOn } from "../../domain/coworking/schedule.js";
 import { bookingIndicators, occupancyByResource, occupancyHeatmap, revenueByType, topMembers } from "../../domain/coworking/stats.js";
@@ -307,9 +309,17 @@ export const coworkingBookingRoutes: FastifyPluginAsync = async (app) => {
       .where("e.booking_id", "=", id)
       .orderBy("e.at")
       .execute();
+    // A company sees the same price split into net and tax when the centre shows the tax; an individual sees the price.
+    const member = booking.memberId ? await db.selectFrom("members").select("company_id").where("id", "=", booking.memberId).executeTakeFirst() : undefined;
+    const { company_tax_bp: taxBp } = (await db.selectFrom("cw_settings").select("company_tax_bp").where("centre_id", "=", centreId).executeTakeFirst()) ?? {
+      company_tax_bp: null,
+    };
+    const charged = charges.reduce((s, c) => s + c.amount, 0);
+    const tax = member?.company_id && taxBp ? taxIncluded(charged, taxBp) : null;
     return {
       ...booking,
       charges,
+      tax,
       paid: charges.reduce((s, c) => s + c.paid, 0),
       due: charges.reduce((s, c) => s + c.remaining, 0),
       usage,
@@ -392,6 +402,12 @@ export const coworkingBookingRoutes: FastifyPluginAsync = async (app) => {
     const actor = request.user!;
     const body = codeBody.parse(request.body);
     return checkIn(db, actor.centreId, { code: body.code }, { source: "qr", userId: actor.userId });
+  });
+
+  app.post("/bookings/:id/validate", { preHandler: write }, async (request) => {
+    const actor = request.user!;
+    const { id } = idParam.parse(request.params);
+    return validateBooking(db, actor.centreId, actor.userId, id);
   });
 
   app.post("/bookings/:id/release", { preHandler: write }, async (request) => {

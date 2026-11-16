@@ -2,6 +2,7 @@ import { sql, type Kysely, type Transaction } from "kysely";
 import { writeAudit } from "../audit.js";
 import type { Database, PaymentMethod, Till } from "../db/types.js";
 import { conflict, unprocessable } from "../errors.js";
+import { cafeSettings, cafeTakings } from "./cafe.js";
 import { centreClock } from "./ledger.js";
 
 type Db = Kysely<Database> | Transaction<Database>;
@@ -35,6 +36,11 @@ export interface CashDay {
   /** The cash put in the till that morning; the closing expects it on top of the cash received. */
   openingFloat: number;
   expectedCash: number;
+  /**
+   * The café's sales of the day, null without a café. In a single till they are counted in the totals and in the
+   * expected cash; in a separate till they are shown for information and closed in the café.
+   */
+  cafe: { mode: "separate" | "single"; cash: number; card: number; total: number; closed: boolean } | null;
 }
 
 /** Money received on a local day; cancelled payments are listed but never counted. */
@@ -75,7 +81,19 @@ export async function cashDay(db: Db, centreId: string, day: string, openingFloa
     totals[p.method] += p.amount;
     byActivity[p.activity][p.method] += p.amount;
   }
-  return { day, payments, totals, byActivity, openingFloat, expectedCash: openingFloat + totals.cash };
+  const hasCafe = (await db.selectFrom("centres").select("modules").where("id", "=", centreId).executeTakeFirstOrThrow()).modules.includes("cafe");
+  let cafe: CashDay["cafe"] = null;
+  if (hasCafe) {
+    const { tillMode } = await cafeSettings(db, centreId);
+    const sales = await cafeTakings(db, centreId, day, day);
+    const closed = await db.selectFrom("cafe_closings").select("id").where("centre_id", "=", centreId).where("day", "=", day).executeTakeFirst();
+    cafe = { mode: tillMode, cash: sales.cash, card: sales.card, total: sales.total, closed: closed !== undefined };
+    if (tillMode === "single") {
+      totals.cash += sales.cash;
+      totals.card += sales.card;
+    }
+  }
+  return { day, payments, totals, byActivity, openingFloat, expectedCash: openingFloat + totals.cash, cafe };
 }
 
 /**

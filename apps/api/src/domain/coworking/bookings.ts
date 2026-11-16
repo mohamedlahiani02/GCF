@@ -216,7 +216,14 @@ async function evaluate(db: Db, centreId: string, actor: BookingActor, input: Bo
   const today = todayIn(timezone, now);
   const subscriptions = await activeSubscriptions(db, member.id, input.date);
   const profile = profileOf(member.kind, subscriptions);
-  const price = await listPrice(db, format, profile, slot.startTime, slot.minutes, settings.offpeak_from);
+  const price = await listPrice(
+    db,
+    { id: format.id, nature: format.nature, longFromMinutes: format.long_from_minutes, capMinutes: format.cap_minutes },
+    profile,
+    slot.startTime,
+    slot.minutes,
+    settings.offpeak_from,
+  );
   const coverage = await computeCoverage(db, {
     memberId: member.id,
     typeId: resource.typeId,
@@ -826,6 +833,43 @@ export async function reassignBooking(
     });
     return loadBooking(trx, centreId, id);
   });
+}
+
+/** The centre confirms a booking that is not paid yet: it then counts as firm on the plan and is never released for it. */
+export async function validateBooking(db: Kysely<Database>, centreId: string, userId: string, id: string, now: Date = new Date()): Promise<BookingRecord> {
+  return db.transaction().execute(async (trx) => {
+    const before = await lockBooking(trx, centreId, id);
+    if (before.kind !== "booking" || (before.status !== "confirmed" && before.status !== "checked_in"))
+      throw conflict("not_confirmed", "only a confirmed booking can be validated");
+    const current = await trx.selectFrom("cw_bookings").select("validated_at").where("id", "=", id).executeTakeFirstOrThrow();
+    if (current.validated_at) throw conflict("already_validated", "this booking is already validated");
+    await trx.updateTable("cw_bookings").set({ validated_at: now, validated_by: userId, updated_at: now }).where("id", "=", id).execute();
+    await writeAudit(trx, { centreId, userId, action: "cw_booking.validated", objectType: "cw_booking", objectId: id, after: { validatedAt: now } });
+    return loadBooking(trx, centreId, id);
+  });
+}
+
+/**
+ * Arrival scanned on the QR code of a place: the client's confirmed booking on that place, running now or starting
+ * within the check-in window, is checked in.
+ */
+export async function checkInAtPlace(db: Kysely<Database>, centreId: string, memberId: string, token: string, now: Date = new Date()): Promise<BookingRecord> {
+  const resource = await db.selectFrom("cw_resources").select("id").where("centre_id", "=", centreId).where("checkin_token", "=", token).executeTakeFirst();
+  if (!resource) throw notFound("place");
+  const booking = await db
+    .selectFrom("cw_bookings")
+    .select("id")
+    .where("centre_id", "=", centreId)
+    .where("resource_id", "=", resource.id)
+    .where("member_id", "=", memberId)
+    .where("kind", "=", "booking")
+    .where("status", "=", "confirmed")
+    .where("starts_at", "<=", new Date(now.getTime() + CHECK_IN_EARLY_MINUTES * 60_000))
+    .where("ends_at", ">", now)
+    .orderBy("starts_at")
+    .executeTakeFirst();
+  if (!booking) throw notFound("booking");
+  return checkIn(db, centreId, { bookingId: booking.id }, { source: "qr", userId: null }, now);
 }
 
 /** How the arrival was recorded: by the staff, or by scanning the booking's QR code. */

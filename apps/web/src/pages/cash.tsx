@@ -20,7 +20,8 @@ const sum = (totals: Record<Method, number>) => METHODS.reduce((s, m) => s + tot
 /** The day's takings per activity; an activity with no movement and no module stays hidden. */
 function ActivityTakings({ journal }: { journal: Journal }) {
   const rows = (Object.keys(ACTIVITY) as Activity[]).filter((a) => journal.payments.some((p) => p.activity === a));
-  if (rows.length === 0) return null;
+  const cafe = journal.cafe && journal.cafe.total > 0 ? journal.cafe : null;
+  if (rows.length === 0 && !cafe) return null;
   return (
     <Card title="Recette du jour par activité">
       <div className="xs">
@@ -50,9 +51,36 @@ function ActivityTakings({ journal }: { journal: Journal }) {
                 </td>
               </tr>
             ))}
+            {cafe ? (
+              <tr>
+                <td>
+                  Café
+                  <div className="cap">
+                    {cafe.mode === "single"
+                      ? "Compté dans cette caisse"
+                      : cafe.closed
+                        ? "Caisse à part, clôturée dans le café"
+                        : "Caisse à part, à clôturer dans le café"}
+                  </div>
+                </td>
+                {METHODS.map((m) => (
+                  <td key={m} className="num">
+                    {tnd(m === "cash" ? cafe.cash : m === "card" ? cafe.card : 0)}
+                  </td>
+                ))}
+                <td className="num">
+                  <strong>{tnd(cafe.total)}</strong>
+                </td>
+              </tr>
+            ) : null}
           </tbody>
         </table>
       </div>
+      {cafe && cafe.mode === "separate" ? (
+        <p className="cap" style={{ padding: "0 16px 12px" }}>
+          La ligne Café est indiquée pour information : elle n’entre pas dans les espèces attendues de cette caisse.
+        </p>
+      ) : null}
     </Card>
   );
 }
@@ -78,6 +106,7 @@ interface Journal {
   suggestedFloat: number;
   expectedCash: number;
   closing: { expectedCash: number; countedCash: number; difference: number; comment: string | null; closedAt: string; closedBy: string | null } | null;
+  cafe: { mode: "separate" | "single"; cash: number; card: number; total: number; closed: boolean } | null;
 }
 interface Closing {
   id: string;

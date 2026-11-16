@@ -147,6 +147,8 @@ export async function floorState(db: Db, centreId: string, floorId: string, wind
     .orderBy("r.code")
     .execute();
   const ids = resources.map((r) => r.id);
+  const endingSoon =
+    (await db.selectFrom("cw_settings").select("ending_soon_minutes").where("centre_id", "=", centreId).executeTakeFirst())?.ending_soon_minutes ?? null;
   const from = "at" in window ? window.at : window.startsAt;
   const until = "at" in window ? window.at : window.endsAt;
   const maxBuffer = Math.max(0, ...resources.map((r) => r.bufferMinutes));
@@ -170,6 +172,8 @@ export async function floorState(db: Db, centreId: string, floorId: string, wind
           "c.name as company",
           "b.charge",
           "b.notes",
+          "b.source",
+          sql<boolean>`b.validated_at is not null`.as("validated"),
           sql<number>`(select coalesce(sum(a.amount), 0)::bigint from effective_allocations a join installments i on i.id = a.installment_id where i.cw_booking_id = b.id)`.as(
             "paid",
           ),
@@ -230,7 +234,18 @@ export async function floorState(db: Db, centreId: string, floorId: string, wind
     const shown = block ?? booking;
     let state: PlanState = "free";
     if (r.status === "out_of_service" || block) state = "blocked";
-    else if (booking) state = booking.status === "checked_in" ? "occupied" : booking.status === "confirmed" ? "booked" : "requested";
+    else if (booking) {
+      // A confirmed booking is firm once paid, covered, validated by the centre or entered by the staff.
+      const firm = booking.source === "staff" || booking.validated || Number(booking.paid) >= booking.charge;
+      state = booking.status === "checked_in" ? "occupied" : booking.status === "confirmed" ? (firm ? "booked" : "held") : "requested";
+      if (
+        (state === "booked" || state === "occupied") &&
+        "at" in window &&
+        endingSoon !== null &&
+        booking.endsAt.getTime() - window.at.getTime() <= endingSoon * 60_000
+      )
+        state = "ending";
+    }
     if (audience === "portal" || !shown) return { ...base, state };
     return {
       ...base,

@@ -32,6 +32,9 @@ export interface CwSettingsTable {
   self_signup: Generated<CwSelfSignup>;
   offpeak_from: NullableTime;
   portal_enabled: Generated<boolean>;
+  /** Tax rate shown to companies in basis points; null when the centre does not show it. */
+  company_tax_bp: number | null;
+  ending_soon_minutes: number | null;
   updated_at: Timestamp;
   updated_by: string | null;
 }
@@ -95,6 +98,7 @@ export interface CwResourcesTable {
   name: string | null;
   capacity: Generated<number>;
   room_id: string | null;
+  checkin_token: string | null;
   status: Generated<CwResourceStatus>;
   out_of_service_reason: string | null;
   created_at: Timestamp;
@@ -122,6 +126,10 @@ export interface CwBookingFormatsTable {
   position: Generated<number>;
   status: Status;
   created_at: Timestamp;
+  /** Hourly formats only: from this length the long-booking rate of the price row applies. */
+  long_from_minutes: number | null;
+  /** Hourly formats only: minutes beyond this length are not charged. */
+  cap_minutes: number | null;
 }
 
 export interface CwPricesTable {
@@ -129,6 +137,7 @@ export interface CwPricesTable {
   profile: CwProfile;
   amount: number;
   offpeak_amount: number | null;
+  long_amount: number | null;
 }
 
 export interface CwClosuresTable {
@@ -251,6 +260,8 @@ export interface CwBookingsTable {
   blocked_until: Date | string;
   status: CwBookingStatus;
   source: "portal" | "staff";
+  validated_at: ColumnType<Date | null, Date | string | null | undefined, Date | string | null>;
+  validated_by: string | null;
   profile: CwProfile | null;
   list_price: Generated<number>;
   promo_code_id: string | null;

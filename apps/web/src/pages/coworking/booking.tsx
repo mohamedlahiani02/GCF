@@ -69,7 +69,15 @@ export function BookingPage() {
         }
       />
       <div className="grid4">
-        <Kpi label="Montant" value={<span className="num">{tnd(b.charge)}</span>} sub={`TND, tarif ${tnd(b.listPrice)}`} />
+        <Kpi
+          label="Montant"
+          value={<span className="num">{tnd(b.charge)}</span>}
+          sub={
+            b.tax
+              ? `TND TTC, dont ${tnd(b.tax.net)} HT et ${tnd(b.tax.tax)} de taxe (${(b.tax.rateBp / 100).toLocaleString("fr-FR")} %)`
+              : `TND, tarif ${tnd(b.listPrice)}`
+          }
+        />
         <Kpi label="Réglé" value={<span className="num">{tnd(b.paid)}</span>} sub="TND" />
         <Kpi
           label="Reste à payer"

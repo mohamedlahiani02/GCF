@@ -199,8 +199,8 @@ describe("coworking configuration", () => {
     });
     expect(prices.status).toBe(200);
     expect(prices.body.prices).toEqual([
-      { profile: "visitor", amount: 30_000, offpeakAmount: 20_000 },
-      { profile: "member", amount: 20_000, offpeakAmount: null },
+      { profile: "visitor", amount: 30_000, offpeakAmount: 20_000, longAmount: null },
+      { profile: "member", amount: 20_000, offpeakAmount: null, longAmount: null },
     ]);
     const duplicate = await h.call("PUT", `/api/coworking/formats/${ids.format}/prices`, admin, {
       prices: [

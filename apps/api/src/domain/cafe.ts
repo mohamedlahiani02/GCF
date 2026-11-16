@@ -1,6 +1,6 @@
 import { sql, type Kysely, type Transaction } from "kysely";
 import type { Database } from "../db/types.js";
-import type { CafePurchasing, CafeSaleMethod, CafeStockMovementKind, CafeTicketPrinting } from "../db/types.cafe.js";
+import type { CafePurchasing, CafeSaleMethod, CafeStockMovementKind, CafeTicketPrinting, CafeTillMode } from "../db/types.cafe.js";
 import { conflict, notFound, unprocessable } from "../errors.js";
 
 type Db = Kysely<Database> | Transaction<Database>;
@@ -13,6 +13,8 @@ export interface CafeSettings {
   ticketPrinting: CafeTicketPrinting;
   /** How stock is bought: plain deliveries, deliveries tied to a supplier, or purchase orders. */
   purchasing: CafePurchasing;
+  /** Whether the café closes its own till or counts in the centre's. */
+  tillMode: CafeTillMode;
 }
 
 /** The centre's café settings; a centre that never saved them runs on the defaults of the schema. */
@@ -25,16 +27,27 @@ export async function cafeSettings(db: Db, centreId: string): Promise<CafeSettin
       "ticket_prefix as ticketPrefix",
       "ticket_printing as ticketPrinting",
       "purchasing",
+      "till_mode as tillMode",
     ])
     .where("centre_id", "=", centreId)
     .executeTakeFirst();
-  return row ?? { openingFloat: 0, allowNegativeStock: false, ticketPrefix: "CAF", ticketPrinting: "none", purchasing: "simple" };
+  return row ?? { openingFloat: 0, allowNegativeStock: false, ticketPrefix: "CAF", ticketPrinting: "none", purchasing: "simple", tillMode: "separate" };
 }
 
 /** Once the café till is closed for a day, that day's sales can no longer be added or cancelled. */
 export async function assertCafeOpen(db: Db, centreId: string, day: string): Promise<void> {
   const closed = await db.selectFrom("cafe_closings").select("id").where("centre_id", "=", centreId).where("day", "=", day).executeTakeFirst();
   if (closed) throw conflict("cafe_closed", "the café till is closed for this day");
+  // With a single till, the centre's closing also closes the café's day.
+  if ((await cafeSettings(db, centreId)).tillMode === "single") {
+    const centreClosed = await db.selectFrom("cash_closings").select("id").where("centre_id", "=", centreId).where("day", "=", day).executeTakeFirst();
+    if (centreClosed) throw conflict("cafe_closed", "the centre's till, which holds the café's sales, is closed for this day");
+  }
+}
+
+/** Refuses an action reserved to a café that runs its own till. */
+export async function assertSeparateTill(db: Db, centreId: string): Promise<void> {
+  if ((await cafeSettings(db, centreId)).tillMode === "single") throw conflict("single_till", "the café's sales are counted and closed in the centre's till");
 }
 
 /**

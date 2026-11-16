@@ -255,6 +255,8 @@ export interface Booking {
 
 export interface BookingDetail extends Booking {
   charges: ChargeBalance[];
+  /** For a company when the centre shows the tax: the same amount split into net and tax. */
+  tax: { net: number; tax: number; rateBp: number } | null;
   paid: number;
   due: number;
   usage: {
@@ -469,14 +471,16 @@ export const BOOKING_STATUS: Record<CwBookingStatus, { label: string; tone: Tone
 
 export const PLAN_STATE: Record<PlanState, string> = {
   free: "Libre",
+  ending: "Bientôt libre",
   requested: "Demande en attente",
-  booked: "Réservé",
-  occupied: "Occupé",
+  held: "Réservé, non confirmé",
+  booked: "Réservé et confirmé",
+  occupied: "Arrivé",
   blocked: "Bloqué ou hors service",
   assigned: "Attribué",
 };
 
-export const PROFILE: Record<Profile, string> = { visitor: "Visiteur", member: "Abonné" };
+export const PROFILE: Record<Profile, string> = { visitor: "Sans abonnement", member: "Abonné" };
 export const MEMBER_KIND: Record<MemberRow["kind"], string> = { member: "Membre", guest: "Client de passage" };
 export const MEMBER_STATUS: Record<MemberRow["status"], { label: string; tone: Tone }> = {
   pending: { label: "À valider", tone: "amber" },
