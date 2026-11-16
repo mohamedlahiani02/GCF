@@ -109,7 +109,9 @@ const fr = {
   } as Record<CwBookingStatus, string>,
   planState: {
     free: "Libre",
+    ending: "Bientôt libre",
     requested: "Demande en attente",
+    held: "Réservé",
     booked: "Réservé",
     occupied: "Occupé",
     blocked: "Indisponible",
@@ -126,7 +128,14 @@ const fr = {
     discount: "Remise",
     rejected_discount: "Remise refusée",
   } as Record<InstallmentState, string>,
-  profile: { visitor: "Tarif visiteur", member: "Tarif abonné" },
+  profile: { visitor: "Tarif sans abonnement", member: "Tarif abonné" },
+  arrival: {
+    title: "Arrivée sur votre place",
+    working: "Enregistrement de votre arrivée…",
+    done: "Votre arrivée est enregistrée. Bonne séance de travail.",
+    none: "Aucune réservation confirmée à votre nom sur cette place en ce moment.",
+    see: "Voir mes réservations",
+  },
   duration: {
     hours: (h: number, m: number) => (h === 0 ? `${m} min` : m === 0 ? `${h} h` : `${h} h ${String(m).padStart(2, "0")}`),
   },
@@ -459,7 +468,9 @@ const en: Dictionary = {
   },
   planState: {
     free: "Free",
+    ending: "Soon free",
     requested: "Request pending",
+    held: "Booked",
     booked: "Booked",
     occupied: "Occupied",
     blocked: "Unavailable",
@@ -476,7 +487,14 @@ const en: Dictionary = {
     discount: "Discount",
     rejected_discount: "Discount refused",
   },
-  profile: { visitor: "Visitor rate", member: "Member rate" },
+  profile: { visitor: "Rate without subscription", member: "Member rate" },
+  arrival: {
+    title: "Arrival at your place",
+    working: "Recording your arrival…",
+    done: "Your arrival is recorded. Have a good working session.",
+    none: "No confirmed booking in your name on this place right now.",
+    see: "See my bookings",
+  },
   duration: {
     hours: (h, m) => (h === 0 ? `${m} min` : m === 0 ? `${h} h` : `${h} h ${String(m).padStart(2, "0")}`),
   },

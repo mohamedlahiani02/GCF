@@ -17,6 +17,7 @@ import {
   releaseBooking,
   removeBlock,
   type MailContext,
+  validateBooking,
 } from "../../domain/coworking/bookings.js";
 import { centreCalendar, coworkingSettings, formatSlots, localInstants, openingOn } from "../../domain/coworking/schedule.js";
 import { bookingIndicators, occupancyByResource, occupancyHeatmap, revenueByType, topMembers } from "../../domain/coworking/stats.js";
@@ -401,6 +402,12 @@ export const coworkingBookingRoutes: FastifyPluginAsync = async (app) => {
     const actor = request.user!;
     const body = codeBody.parse(request.body);
     return checkIn(db, actor.centreId, { code: body.code }, { source: "qr", userId: actor.userId });
+  });
+
+  app.post("/bookings/:id/validate", { preHandler: write }, async (request) => {
+    const actor = request.user!;
+    const { id } = idParam.parse(request.params);
+    return validateBooking(db, actor.centreId, actor.userId, id);
   });
 
   app.post("/bookings/:id/release", { preHandler: write }, async (request) => {

@@ -1,6 +1,8 @@
 import { ASSIGNED_CATEGORIES, CW_CATEGORIES, floorLayoutSchema, OCCUPYING_STATUSES, parseLayout, type FloorLayout } from "@gcf/shared";
+import { randomBytes } from "node:crypto";
 import type { FastifyPluginAsync } from "fastify";
 import { sql, type Kysely, type Transaction } from "kysely";
+import QRCode from "qrcode";
 import { z } from "zod";
 import { writeAudit } from "../../audit.js";
 import type { SessionUser } from "../../auth/sessions.js";
@@ -34,6 +36,7 @@ const settingsBody = z
     offpeakFrom: clockTime.nullable(),
     portalEnabled: z.boolean(),
     companyTaxBp: z.number().int().min(1).max(10_000).nullable(),
+    endingSoonMinutes: z.number().int().min(5).max(240).nullable(),
   })
   .partial()
   .strict();
@@ -398,6 +401,7 @@ const SETTINGS_COLUMNS = [
   "offpeak_from",
   "portal_enabled",
   "company_tax_bp",
+  "ending_soon_minutes",
   "updated_at",
 ] as const;
 
@@ -428,6 +432,7 @@ const presentSettings = (s: Awaited<ReturnType<typeof loadSettings>>) => ({
   offpeakFrom: s.offpeak_from === null ? null : toClock(s.offpeak_from),
   portalEnabled: s.portal_enabled,
   companyTaxBp: s.company_tax_bp,
+  endingSoonMinutes: s.ending_soon_minutes,
   updatedAt: s.updated_at,
 });
 
@@ -549,6 +554,7 @@ export const coworkingConfigRoutes: FastifyPluginAsync = async (app) => {
           ...(body.offpeakFrom === undefined ? {} : { offpeak_from: body.offpeakFrom }),
           ...(body.portalEnabled === undefined ? {} : { portal_enabled: body.portalEnabled }),
           ...(body.companyTaxBp === undefined ? {} : { company_tax_bp: body.companyTaxBp }),
+          ...(body.endingSoonMinutes === undefined ? {} : { ending_soon_minutes: body.endingSoonMinutes }),
           updated_at: new Date(),
           updated_by: actor.userId,
         })
@@ -1275,6 +1281,31 @@ export const coworkingConfigRoutes: FastifyPluginAsync = async (app) => {
   });
 
   /** Out of service keeps the bookings (the staff moves or cancels them) and reports how many are affected. */
+  /**
+   * QR code to stick on a place (option "checkin"): scanned by the client from the portal, it records their arrival.
+   * The secret is created on first request and stays the same, so a printed code keeps working.
+   */
+  app.get("/resources/:id/checkin-qr", { preHandler: manage }, async (request) => {
+    const actor = request.user!;
+    if (!actor.modules.includes("checkin")) throw notFound("option");
+    const { id } = idParam.parse(request.params);
+    const resource = await db
+      .selectFrom("cw_resources")
+      .select(["id", "code", "checkin_token"])
+      .where("id", "=", id)
+      .where("centre_id", "=", actor.centreId)
+      .executeTakeFirst();
+    if (!resource) throw notFound("resource");
+    let token = resource.checkin_token;
+    if (!token) {
+      token = randomBytes(18).toString("base64url");
+      await db.updateTable("cw_resources").set({ checkin_token: token }).where("id", "=", id).where("checkin_token", "is", null).execute();
+      token = (await db.selectFrom("cw_resources").select("checkin_token").where("id", "=", id).executeTakeFirstOrThrow()).checkin_token!;
+    }
+    const url = `${app.config.publicOrigin ?? app.config.webOrigin}/espace/arrivee/${token}`;
+    return { code: resource.code, url, svg: await QRCode.toString(url, { type: "svg", errorCorrectionLevel: "M", margin: 1 }) };
+  });
+
   app.post("/resources/:id/status", { preHandler: manage }, async (request) => {
     const actor = request.user!;
     const { id } = idParam.parse(request.params);

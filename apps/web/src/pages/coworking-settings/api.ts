@@ -18,6 +18,8 @@ export interface CwSettings {
   portalEnabled: boolean;
   /** Tax rate shown to companies in basis points; null when not shown. */
   companyTaxBp: number | null;
+  /** Minutes before its end a running booking shows its place as soon free; null hides it. */
+  endingSoonMinutes: number | null;
   updatedAt: string;
 }
 

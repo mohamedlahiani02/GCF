@@ -1,4 +1,5 @@
 import { Link } from "react-router";
+import { useSession } from "../../auth/session";
 import { CW_CATEGORIES, type FloorLayout, type PlanItem, type PlanLabel } from "@gcf/shared";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useRef, useState, type ReactNode } from "react";
@@ -8,6 +9,53 @@ import { Badge, ErrorBanner, Field, Segmented } from "../../components/ui";
 import { CW_KEYS, type Attribute, type FloorDetail, type FloorResource, type Resource, type ResourceType } from "./api";
 import { TILES } from "./editorPalette";
 import { parseInteger } from "./helpers";
+
+/** QR code to print and stick on the place, when the centre has the arrival-by-QR option. */
+function CheckinQr({ resourceId }: { resourceId: string }) {
+  const { session } = useSession();
+  const [open, setOpen] = useState(false);
+  const qr = useQuery({
+    queryKey: ["cw-checkin-qr", resourceId],
+    queryFn: () => api.get<{ code: string; url: string; svg: string }>(`/coworking/resources/${resourceId}/checkin-qr`),
+    enabled: open,
+  });
+  if (!session?.modules.includes("checkin")) return null;
+  if (!open)
+    return (
+      <button type="button" className="btn" onClick={() => setOpen(true)}>
+        QR code d'arrivée
+      </button>
+    );
+  return (
+    <div className="stack" style={{ gap: 6 }}>
+      <ErrorBanner error={qr.error} />
+      {qr.data ? (
+        <>
+          <div
+            className="checkin-qr"
+            role="img"
+            aria-label={`QR code d'arrivée de la place ${qr.data.code}`}
+            dangerouslySetInnerHTML={{ __html: qr.data.svg }}
+          />
+          <span className="cap">À coller sur la place {qr.data.code} : le client le scanne à son arrivée.</span>
+          <button
+            type="button"
+            className="btn"
+            onClick={() => {
+              const w = window.open("", "_blank", "width=480,height=600");
+              if (!w) return;
+              w.document.title = `Place ${qr.data!.code}`;
+              w.document.body.innerHTML = `<div style="font-family:sans-serif;text-align:center;padding:24px"><div style="width:320px;margin:auto">${qr.data!.svg}</div><h1>Place ${qr.data!.code}</h1><p>Scannez ce code à votre arrivée.</p></div>`;
+              w.print();
+            }}
+          >
+            Imprimer
+          </button>
+        </>
+      ) : null}
+    </div>
+  );
+}
 import type { AlignMode, Selection } from "./layoutOps";
 
 export interface PanelActions {
@@ -169,6 +217,7 @@ function ResourceForm({ resource, floor, renaming, onRenamed }: { resource: Floo
       <Link className="cap" to={`/coworking/parametres?onglet=formules#type-${typeId}`}>
         Prix et formules de ce type
       </Link>
+      <CheckinQr resourceId={resource.id} />
       <Field label="Zone">
         <select className="input" value={zoneId} onChange={(e) => setZoneId(e.target.value)}>
           <option value="">Aucune zone</option>

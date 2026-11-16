@@ -34,8 +34,9 @@ export const OCCUPYING_STATUSES: readonly CwBookingStatus[] = ["requested", "con
 
 /**
  * State of a resource on the plan at a given instant, shared by the back-office legend and the portal:
- * free, requested (waiting for validation), booked, occupied (checked in), blocked or out of service,
- * assigned (dedicated through a subscription).
+ * free, ending (a running booking ends soon), requested (waiting for validation), held (confirmed but neither
+ * paid nor validated by the centre, nor checked in), booked (paid, validated or covered), occupied (checked in),
+ * blocked or out of service, assigned (dedicated through a subscription).
  */
-export const PLAN_STATES = ["free", "requested", "booked", "occupied", "blocked", "assigned"] as const;
+export const PLAN_STATES = ["free", "ending", "requested", "held", "booked", "occupied", "blocked", "assigned"] as const;
 export type PlanState = (typeof PLAN_STATES)[number];

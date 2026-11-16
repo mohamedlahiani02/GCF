@@ -471,14 +471,16 @@ export const BOOKING_STATUS: Record<CwBookingStatus, { label: string; tone: Tone
 
 export const PLAN_STATE: Record<PlanState, string> = {
   free: "Libre",
+  ending: "Bientôt libre",
   requested: "Demande en attente",
-  booked: "Réservé",
-  occupied: "Occupé",
+  held: "Réservé, non confirmé",
+  booked: "Réservé et confirmé",
+  occupied: "Arrivé",
   blocked: "Bloqué ou hors service",
   assigned: "Attribué",
 };
 
-export const PROFILE: Record<Profile, string> = { visitor: "Visiteur", member: "Abonné" };
+export const PROFILE: Record<Profile, string> = { visitor: "Sans abonnement", member: "Abonné" };
 export const MEMBER_KIND: Record<MemberRow["kind"], string> = { member: "Membre", guest: "Client de passage" };
 export const MEMBER_STATUS: Record<MemberRow["status"], { label: string; tone: Tone }> = {
   pending: { label: "À valider", tone: "amber" },

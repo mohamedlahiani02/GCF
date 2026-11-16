@@ -1,3 +1,4 @@
+import { ArrivalPage } from "./pages/arrival";
 import { createBrowserRouter, Link, Navigate, Outlet, useLocation } from "react-router";
 import { usePortal } from "./auth/session";
 import { Shell } from "./components/shell";
@@ -93,6 +94,7 @@ export const router = createBrowserRouter(
             {
               element: <RequireMember />,
               children: [
+                { path: "arrivee/:token", element: <ArrivalPage /> },
                 { path: "reservations", element: <BookingsPage /> },
                 { path: "reservations/:id", element: <BookingDetailPage /> },
                 { path: "abonnement", element: <SubscriptionPage /> },

@@ -1,5 +1,5 @@
 import { ASSIGNED_CATEGORIES, PLAN_STATES, addDays, type PlanState } from "@gcf/shared";
-import { useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import { Link, useSearchParams } from "react-router";
 import { api } from "../../api/client";
@@ -26,6 +26,24 @@ import { BlockModal, BlockPanel, BookingPanel, QuickBooking, isDeskBookable, qua
 
 const REFRESH_MS = 30_000;
 const HEAT_DAYS = 30;
+
+/** The centre confirms an unpaid booking: it turns firm on the plan and is never released for lack of payment. */
+function ValidateBooking({ bookingId }: { bookingId: string }) {
+  const client = useQueryClient();
+  const validate = useMutation({
+    mutationFn: () => api.post(`/coworking/bookings/${bookingId}/validate`),
+    onSuccess: () => client.invalidateQueries({ queryKey: ["cw-floor-state"] }),
+  });
+  return (
+    <div className="ban ban-amber">
+      <span>Ni payée, ni validée, ni arrivée : la place peut être libérée si le client ne vient pas.</span>
+      <button type="button" className="btn btn-p" disabled={validate.isPending} onClick={() => validate.mutate()}>
+        Valider la réservation
+      </button>
+      <ErrorBanner error={validate.error} />
+    </div>
+  );
+}
 
 /** Legend of the plan states, with the colours of the floor plan. */
 export function PlanLegend() {
@@ -138,6 +156,7 @@ function ResourceDrawer({
         </span>
         <Badge tone="neutral">{PLAN_STATE[resource.state]}</Badge>
       </div>
+      {resource.state === "held" && can("coworking:write") && resource.occupant ? <ValidateBooking bookingId={resource.occupant.bookingId} /> : null}
       {body}
     </Drawer>
   );
@@ -262,8 +281,16 @@ export function LivePlanPage() {
       />
       <div className="grid4">
         <Kpi label="Libres" value={count("free")} sub={`sur ${resources.length} ressource(s) de l'étage`} />
-        <Kpi label="Réservées" value={count("booked")} sub="client attendu" />
-        <Kpi label="Occupées" value={count("occupied")} sub="client arrivé" />
+        <Kpi
+          label="Réservées"
+          value={count("booked") + count("held")}
+          sub={count("held") ? `client attendu, dont ${count("held")} non confirmée(s)` : "client attendu"}
+        />
+        <Kpi
+          label="Occupées"
+          value={count("occupied") + count("ending")}
+          sub={count("ending") ? `client arrivé, dont ${count("ending")} bientôt libre(s)` : "client arrivé"}
+        />
         <Kpi
           label="Demandes en attente"
           value={requests.data?.items.length ?? 0}

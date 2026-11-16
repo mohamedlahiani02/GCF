@@ -5,7 +5,15 @@ import QRCode from "qrcode";
 import { z } from "zod";
 import type { Database } from "../../db/types.js";
 import { floorState, freeCounts } from "../../domain/coworking/availability.js";
-import { cancelBooking, cancellationTerms, createBooking, quoteBooking, type BookingActor, type MailContext } from "../../domain/coworking/bookings.js";
+import {
+  cancelBooking,
+  cancellationTerms,
+  checkInAtPlace,
+  createBooking,
+  quoteBooking,
+  type BookingActor,
+  type MailContext,
+} from "../../domain/coworking/bookings.js";
 import { activeSubscriptions, profileOf } from "../../domain/coworking/entitlements.js";
 import { listPrice } from "../../domain/coworking/pricing.js";
 import { centreCalendar, formatSlots, localInstants, openingOn, type CoworkingSettings } from "../../domain/coworking/schedule.js";
@@ -350,6 +358,17 @@ export const portalBookingRoutes: FastifyPluginAsync = async (app) => {
     const result = await cancelBooking(db, mail(request), centre.id, actorOf(member.memberId), id, body.reason);
     const row = await ownBooking(centre.id, member.memberId, id);
     return { ...presentBooking(row, settings, new Date()), free: result.free, fee: result.fee };
+  });
+
+  /** Arrival scanned on the QR code stuck on a place (option "checkin"): checks in the member's booking there. */
+  app.post("/checkin/:token", async (request) => {
+    const { centre, settings, member } = await signedIn(db, request);
+    const { token } = z.object({ token: z.string().regex(/^[A-Za-z0-9_-]{16,64}$/) }).parse(request.params);
+    const { modules } = await db.selectFrom("centres").select("modules").where("id", "=", centre.id).executeTakeFirstOrThrow();
+    if (!modules.includes("checkin")) throw notFound("option");
+    const booking = await checkInAtPlace(db, centre.id, member.memberId, token);
+    const row = await ownBooking(centre.id, member.memberId, booking.id);
+    return presentBooking(row, settings, new Date());
   });
 
   /** QR code of the check-in code, shown at the desk; only a confirmed booking that has not ended has one. */

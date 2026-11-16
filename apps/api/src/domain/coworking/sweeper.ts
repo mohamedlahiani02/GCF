@@ -52,6 +52,15 @@ export async function sweepCoworking(db: Kysely<Database>, now: Date = new Date(
       from cw_settings s
       where s.centre_id = b.centre_id and b.kind = 'booking' and b.status = 'confirmed' and b.checked_in_at is null
         and s.no_show_grace_minutes is not null and b.starts_at + make_interval(mins => s.no_show_grace_minutes) <= ${now}
+        -- With arrival by QR code, only a booking that is neither paid nor validated nor entered by the staff falls;
+        -- a firm booking keeps its place and is shown as not arrived.
+        and (
+          not exists (select 1 from centres c where c.id = b.centre_id and 'checkin' = any(c.modules))
+          or (
+            b.source = 'portal' and b.validated_at is null
+            and b.charge > (select coalesce(sum(a.amount), 0) from effective_allocations a join installments i on i.id = a.installment_id where i.cw_booking_id = b.id)
+          )
+        )
       returning b.id, b.centre_id`.execute(trx);
     await deactivateRoomBooking(
       trx,
