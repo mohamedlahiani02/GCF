@@ -198,6 +198,16 @@ export const WORKSPACES: Workspace[] = [
         section: "Dossiers et catalogue",
       },
       {
+        id: "training-prospects",
+        to: "/prospects",
+        label: "Suivre les prospects",
+        text: "Contacts intéressés, relances et inscriptions",
+        icon: ICONS.inbox,
+        permission: "prospects:read",
+        section: "Dossiers et catalogue",
+        crossLink: true,
+      },
+      {
         id: "instructors",
         to: "/intervenants",
         label: "Voir les profs / formateurs",
@@ -301,6 +311,15 @@ export const WORKSPACES: Workspace[] = [
         text: "Fiches et historique des clients",
         icon: ICONS.members,
         permission: "coworking:read",
+        section: "Dossiers et catalogue",
+      },
+      {
+        id: "prospects",
+        to: "/prospects",
+        label: "Suivre les prospects",
+        text: "Contacts intéressés, relances et inscriptions",
+        icon: ICONS.inbox,
+        permission: "prospects:read",
         section: "Dossiers et catalogue",
       },
       {

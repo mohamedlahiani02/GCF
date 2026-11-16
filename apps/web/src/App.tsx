@@ -22,6 +22,7 @@ import { ProposalsPage } from "./pages/proposals";
 import { coworkingRoutes } from "./pages/coworking/routes";
 import { coworkingSettingsRoutes } from "./pages/coworking-settings/routes";
 import { InvoicePage, InvoicesPage } from "./pages/invoices";
+import { ProspectPage, ProspectsPage } from "./pages/prospects";
 import { ReceiptPage, ReceiptsPage } from "./pages/receipts";
 import { ReportsPage } from "./pages/reports";
 import { SettingsPage } from "./pages/settings";
@@ -73,6 +74,8 @@ export const router = createBrowserRouter([
       { path: "/recus/:id", element: guard("payments:read", <ReceiptPage />) },
       { path: "/factures", element: guard("invoices:read", <InvoicesPage />) },
       { path: "/factures/:id", element: guard("invoices:read", <InvoicePage />) },
+      { path: "/prospects", element: guard("prospects:read", <ProspectsPage />) },
+      { path: "/prospects/:id", element: guard("prospects:read", <ProspectPage />) },
       { path: "/paie", element: guard("payroll:read", <PayrollPage />) },
       { path: "/paie/intervenants/:id", element: guard("payroll:read", <InstructorPayPage />) },
       { path: "/salles", element: guard("catalogue:read", <RoomsPage />) },
