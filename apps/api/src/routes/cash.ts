@@ -1,6 +1,7 @@
 import type { FastifyPluginAsync } from "fastify";
 import { z } from "zod";
 import { writeAudit } from "../audit.js";
+import { lockCafeTill } from "../domain/cafe.js";
 import { cashDay, lockTill, openingFloat, setOpeningFloat } from "../domain/cash.js";
 import { recordFinancialEvents } from "../domain/financialEvents.js";
 import { centreClock } from "../domain/ledger.js";
@@ -61,6 +62,8 @@ export const cashRoutes: FastifyPluginAsync = async (app) => {
     const body = closeBody.parse(request.body);
     const result = await db.transaction().execute(async (trx) => {
       await lockTill(trx, actor.centreId, "centre");
+      // A single till also holds the café's sales: none may slip in while the day is being closed.
+      await lockCafeTill(trx, actor.centreId);
       const { today } = await centreClock(trx, actor.centreId);
       if (body.day > today) throw unprocessable("future_day", "a day can only be closed once it has started");
       const existing = await trx

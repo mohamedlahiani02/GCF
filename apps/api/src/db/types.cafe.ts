@@ -9,6 +9,9 @@ export type CafePurchasing = "simple" | "suppliers" | "orders";
 export type CafeOrderStatus = "draft" | "ordered" | "received" | "cancelled";
 type NullableTimestamp = ColumnType<Date | null, Date | string | null | undefined, Date | string | null>;
 
+/** separate: the café closes its own till; single: its sales count in the centre's till and closing. */
+export type CafeTillMode = "separate" | "single";
+
 export interface CafeSettingsTable {
   centre_id: string;
   opening_float: Generated<number>;
@@ -16,6 +19,7 @@ export interface CafeSettingsTable {
   ticket_prefix: Generated<string>;
   ticket_printing: Generated<CafeTicketPrinting>;
   purchasing: Generated<CafePurchasing>;
+  till_mode: Generated<CafeTillMode>;
   updated_by: OptionalRef;
   updated_at: Timestamp;
 }

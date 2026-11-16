@@ -17,6 +17,7 @@ export interface CafeSettings {
   ticketPrefix: string;
   ticketPrinting: "none" | "browser" | "thermal_58" | "thermal_80";
   purchasing: "simple" | "suppliers" | "orders";
+  tillMode: "separate" | "single";
 }
 export interface CafeSupplier {
   id: string;

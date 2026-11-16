@@ -8,7 +8,7 @@ import { usePage } from "../../components/shell";
 import { useToast } from "../../components/toasts";
 import { Badge, Card, Empty, ErrorBanner, Field, Kpi, Loading, Modal, PageHeader, ReasonDialog } from "../../components/ui";
 import { addDaysIso, frDate, frDateTime, frTime, todayIso, tnd, tryParseTnd } from "../../lib/format";
-import { CAFE_METHOD, type CafeMethod, type CafeSaleLine } from "./types";
+import { CAFE_METHOD, type CafeMethod, type CafeSaleLine, type CafeSettings } from "./types";
 
 interface Sale {
   id: string;
@@ -125,6 +125,8 @@ export function CafeTillPage() {
   const [closing, setClosing] = useState(false);
   const [cancelling, setCancelling] = useState<Sale | null>(null);
   const journal = useQuery({ queryKey: ["cafe-journal", date], queryFn: () => api.get<Journal>("/cafe/journal", { date }) });
+  const settings = useQuery({ queryKey: ["cafe-settings"], queryFn: () => api.get<CafeSettings>("/cafe/settings") });
+  const single = settings.data?.tillMode === "single";
   const history = useQuery({ queryKey: ["cafe-closings"], queryFn: () => api.get<Closing[]>("/cafe/closings") });
   const j = journal.data;
   const valid = j?.sales.filter((s) => s.status === "valid").length ?? 0;
@@ -155,7 +157,7 @@ export function CafeTillPage() {
             >
               ›
             </button>
-            {can("cafe:close") && j && !j.closing ? (
+            {can("cafe:close") && j && !j.closing && !single ? (
               <button type="button" className="btn btn-p" onClick={() => setClosing(true)}>
                 Clôturer la journée
               </button>
@@ -178,17 +180,28 @@ export function CafeTillPage() {
             />
             <Kpi label="Espèces attendues" value={<span className="num">{tnd(j.expectedCash)}</span>} sub={`TND · ${valid} vente(s)`} />
           </div>
-          <OpeningFloat
-            endpoint="/cafe/opening"
-            till="caisse du café"
-            day={j.day}
-            amount={j.openingFloat}
-            recorded={j.openingRecorded}
-            suggested={j.suggestedFloat}
-            expectedCash={j.expectedCash}
-            editable={!j.closing && (can("cafe:sell") || can("cafe:close"))}
-            queryKey="cafe-journal"
-          />
+          {single ? (
+            <div className="ban ban-blue">
+              <strong>Une seule caisse avec le centre</strong>
+              <span>
+                Les ventes du café sont comptées dans la caisse du centre : le fond de caisse et la clôture se font dans{" "}
+                <Link to="/caisse">Finances, Caisse</Link>.
+              </span>
+            </div>
+          ) : null}
+          {single ? null : (
+            <OpeningFloat
+              endpoint="/cafe/opening"
+              till="caisse du café"
+              day={j.day}
+              amount={j.openingFloat}
+              recorded={j.openingRecorded}
+              suggested={j.suggestedFloat}
+              expectedCash={j.expectedCash}
+              editable={!j.closing && (can("cafe:sell") || can("cafe:close"))}
+              queryKey="cafe-journal"
+            />
+          )}
           {j.closing ? (
             <div className={j.closing.difference === 0 ? "ban ban-green" : "ban ban-amber"}>
               <strong>Clôturée le {frDateTime(j.closing.closedAt)}</strong>

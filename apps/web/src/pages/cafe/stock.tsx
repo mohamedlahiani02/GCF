@@ -252,10 +252,12 @@ function SettingsModal({ settings, onClose }: { settings: CafeSettings; onClose:
   const [prefix, setPrefix] = useState(settings.ticketPrefix);
   const [ticketPrinting, setTicketPrinting] = useState(settings.ticketPrinting);
   const [purchasing, setPurchasing] = useState(settings.purchasing);
+  const [tillMode, setTillMode] = useState(settings.tillMode);
   const openingFloat = tryParseTnd(floatText);
   const prefixOk = /^[A-Z0-9]{1,8}$/.test(prefix);
   const save = useMutation({
-    mutationFn: () => api.put("/cafe/settings", { openingFloat, allowNegativeStock: allowNegative, ticketPrefix: prefix, ticketPrinting, purchasing }),
+    mutationFn: () =>
+      api.put("/cafe/settings", { openingFloat, allowNegativeStock: allowNegative, ticketPrefix: prefix, ticketPrinting, purchasing, tillMode }),
     onSuccess: async () => {
       await client.invalidateQueries({ queryKey: ["cafe-settings"] });
       await client.invalidateQueries({ queryKey: ["cafe-journal"] });
@@ -307,6 +309,12 @@ function SettingsModal({ settings, onClose }: { settings: CafeSettings; onClose:
             <option value="simple">Réception simple, sans fournisseur</option>
             <option value="suppliers">Réception avec fournisseur</option>
             <option value="orders">Bons de commande puis réception</option>
+          </select>
+        </Field>
+        <Field label="Caisse" hint="Où se comptent les ventes du café.">
+          <select className="input" value={tillMode} onChange={(e) => setTillMode(e.target.value as CafeSettings["tillMode"])}>
+            <option value="separate">Caisse du café à part, clôturée dans le café</option>
+            <option value="single">Une seule caisse avec le centre, clôturée dans Finances</option>
           </select>
         </Field>
       </div>
