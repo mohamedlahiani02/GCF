@@ -10,7 +10,7 @@ import { conflict, forbidden, notFound, unauthenticated, unprocessable } from ".
 import { idParam, isoDate, millimes, optionalText, reason, requiredText, uuid } from "../validation.js";
 
 const quantity = z.number().int().min(1).max(100_000);
-const settingsBody = z
+export const settingsBody = z
   .object({
     openingFloat: millimes,
     allowNegativeStock: z.boolean(),
@@ -23,7 +23,7 @@ const settingsBody = z
     tillMode: z.enum(["separate", "single"]).optional(),
   })
   .strict();
-const productBody = z
+export const productBody = z
   .object({
     name: requiredText(80),
     category: optionalText(60),

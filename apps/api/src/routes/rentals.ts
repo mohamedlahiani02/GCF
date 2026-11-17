@@ -15,7 +15,7 @@ const UNITS = ["hour", "half_day", "day", "month", "year"] as const;
 const UNIT_FR: Record<RentalUnit, string> = { hour: "heure", half_day: "demi-journée", day: "journée", month: "mois", year: "année" };
 
 const renterFields = { name: requiredText(150), company: optionalText(150), phone: optionalText(40), email: optionalEmail };
-const renterCreate = z.object(renterFields).strict();
+export const renterCreate = z.object(renterFields).strict();
 const renterUpdate = z.object(renterFields).partial().strict();
 const ratesBody = z.object({ rates: z.array(z.object({ unit: z.enum(UNITS), amount: millimes }).strict()).max(5) }).strict();
 

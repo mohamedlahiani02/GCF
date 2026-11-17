@@ -12,7 +12,7 @@ const nullableText = z
   .transform((v) => (v === "" ? null : v))
   .nullable();
 
-const centreUpdate = z
+export const centreUpdate = z
   .object({
     name: z.string().trim().min(1).max(200),
     address: nullableText,

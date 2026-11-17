@@ -7,9 +7,9 @@ import type { Database } from "../db/types.js";
 import { conflict, notFound, unprocessable } from "../errors.js";
 import { archiveBody, basisPoints, idParam, isoDate, millimes, optionalText, requiredText, uuid } from "../validation.js";
 
-const subjectBody = z.object({ name: requiredText(100) }).strict();
+export const subjectBody = z.object({ name: requiredText(100) }).strict();
 
-const roomBody = z.object({ name: requiredText(100), capacity: z.number().int().min(1).max(10_000), equipment: optionalText(500) }).strict();
+export const roomBody = z.object({ name: requiredText(100), capacity: z.number().int().min(1).max(10_000), equipment: optionalText(500) }).strict();
 
 const studyFields = {
   subjectId: uuid,
@@ -20,7 +20,7 @@ const studyFields = {
   sessionsPerWeek: z.number().int().min(1).max(14),
   capacity: z.number().int().min(1).max(1000),
 };
-const studyCreate = z.object(studyFields).strict();
+export const studyCreate = z.object(studyFields).strict();
 const studyUpdate = z.object(studyFields).partial().strict();
 
 const trainingFields = {
@@ -31,7 +31,7 @@ const trainingFields = {
   price: millimes,
   capacity: z.number().int().min(1).max(1000),
 };
-const trainingCreate = z.object(trainingFields).strict();
+export const trainingCreate = z.object(trainingFields).strict();
 const trainingUpdate = z.object(trainingFields).partial().strict();
 
 const planItem = z

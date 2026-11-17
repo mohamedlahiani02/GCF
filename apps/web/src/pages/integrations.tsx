@@ -7,7 +7,7 @@ import { Badge, Card, Drawer, Empty, ErrorBanner, Field, Loading, Modal, PageHea
 import { frDateTime, todayIso, zonedIso } from "../lib/format";
 import { ROLE } from "../lib/labels";
 
-type TokenRole = "secretariat" | "accountant" | "editor";
+type TokenRole = "secretariat" | "accountant" | "editor" | "implementation";
 type TokenState = "active" | "expired" | "revoked";
 interface ApiToken {
   id: string;
@@ -51,7 +51,7 @@ interface Delivery {
   createdAt: string;
 }
 
-const TOKEN_ROLES: TokenRole[] = ["secretariat", "accountant", "editor"];
+const TOKEN_ROLES: TokenRole[] = ["secretariat", "accountant", "editor", "implementation"];
 const TOKEN_STATE: Record<TokenState, { label: string; tone: "green" | "gray" | "red" }> = {
   active: { label: "Actif", tone: "green" },
   expired: { label: "Expiré", tone: "gray" },
@@ -188,7 +188,10 @@ function TokenModal({ onClose, onCreated }: { onClose: () => void; onCreated: (t
       <Field label="Nom *" hint="Pour reconnaître l'outil qui l'utilise, par exemple « n8n relances ».">
         <input className="input" value={name} onChange={(e) => setName(e.target.value)} />
       </Field>
-      <Field label="Rôle" hint="Le jeton a exactement les droits de ce rôle. Le rôle Admin n'est jamais proposé.">
+      <Field
+        label="Rôle"
+        hint="Le jeton a exactement les droits de ce rôle. Le rôle Admin n'est jamais proposé. Implémentation : réservé au consultant qui paramètre le centre et charge les données de départ, sans accès à l'argent ni aux utilisateurs."
+      >
         <select className="input" value={role} onChange={(e) => setRole(e.target.value as TokenRole)}>
           {TOKEN_ROLES.map((r) => (
             <option key={r} value={r}>

@@ -23,7 +23,7 @@ const color = z
   .transform((v) => v.toLowerCase());
 const weekdays = z.array(z.number().int().min(1).max(7)).min(1).max(7);
 
-const settingsBody = z
+export const settingsBody = z
   .object({
     bookingHorizonDays: z.number().int().min(1).max(365),
     minNoticeMinutes: z.number().int().min(0).max(10_080),

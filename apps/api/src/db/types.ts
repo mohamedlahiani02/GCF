@@ -6,7 +6,8 @@ import type { WebsiteTables } from "./types.website.js";
 export type Timestamp = ColumnType<Date, Date | string | undefined, Date | string>;
 export type Json = ColumnType<unknown, string | null | undefined, string | null>;
 
-export type Role = "admin" | "secretariat" | "accountant" | "editor";
+/** "implementation" is never a staff role: only an access token used by an implementation consultant carries it. */
+export type Role = "admin" | "secretariat" | "accountant" | "editor" | "implementation";
 
 /** Modules a centre subscribed to (see src/modules.ts). */
 export type Module = "training" | "coworking" | "website" | "cafe" | "checkin" | "invoicing";
@@ -858,7 +859,7 @@ export interface ProposalsTable {
 }
 
 /** Roles an access token may carry; admin is never one of them. */
-export type ApiTokenRole = "secretariat" | "accountant" | "editor";
+export type ApiTokenRole = "secretariat" | "accountant" | "editor" | "implementation";
 
 export interface ApiTokensTable {
   id: Generated<string>;

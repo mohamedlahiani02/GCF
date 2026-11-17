@@ -20,7 +20,7 @@ const fields = {
   subjectIds: z.array(uuid).max(50),
   availability: z.array(availability).max(50),
 };
-const createBody = z.object(fields).strict();
+export const createBody = z.object(fields).strict();
 const updateBody = z.object(fields).partial().strict();
 
 export const instructorRoutes: FastifyPluginAsync = async (app) => {
