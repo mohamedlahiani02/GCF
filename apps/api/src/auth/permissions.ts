@@ -141,6 +141,9 @@ const PERMISSION_MODULE: Partial<Record<Permission, Module>> = {
   "cafe:cancel": "cafe",
   "cafe:manage": "cafe",
   "cafe:close": "cafe",
+  "invoices:read": "invoicing",
+  "invoices:write": "invoicing",
+  "invoices:cancel": "invoicing",
 };
 
 /** Who is asking: a role, within a centre that runs some modules. */

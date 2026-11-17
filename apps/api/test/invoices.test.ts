@@ -46,7 +46,7 @@ async function insertCharge(memberId: string, label: string, amount: number, due
 
 beforeAll(async () => {
   h = await createHarness({ mailer });
-  await h.setModules(["training", "coworking"]);
+  await h.setModules(["training", "coworking", "invoicing"]);
   await h.createUser("admin", "admin@fa.test");
   await h.createUser("secretariat", "sec@fa.test");
   await h.createUser("accountant", "compta@fa.test");
@@ -185,5 +185,16 @@ describe("invoices", () => {
   it("keeps issued documents unchanged in the database", async () => {
     await expect(h.db.updateTable("invoices").set({ total: 1 }).where("id", "=", ids.inv1!).execute()).rejects.toThrow(/cannot be changed/);
     await expect(h.db.deleteFrom("invoices").where("id", "=", ids.inv1!).execute()).rejects.toThrow(/cannot be deleted/);
+  });
+  it("is unavailable while the invoicing option is off, and keeps its data", async () => {
+    await h.setModules(["training", "coworking"]);
+    const off = await h.login("admin@fa.test");
+    expect((await h.call("GET", "/api/invoices", off)).status).toBe(403);
+    expect((await h.call("POST", "/api/invoices", off, { payer: { kind: "member", id: ids.person }, installmentIds: [ids.c3] })).status).toBe(403);
+    await h.setModules(["training", "coworking", "invoicing"]);
+    const on = await h.login("admin@fa.test");
+    const list = await h.call("GET", "/api/invoices", on);
+    expect(list.status).toBe(200);
+    expect(JSON.stringify(list.body)).toContain(ids.inv1!);
   });
 });

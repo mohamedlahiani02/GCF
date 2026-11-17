@@ -289,109 +289,113 @@ export function DashboardPage() {
           />
         ) : null}
       </section>
-      <div className="dashboard-columns">
-        <section className="dashboard-priorities card" aria-labelledby="priorities-title">
-          <div className="dashboard-card-head">
-            <div>
-              <h2 id="priorities-title">Votre attention est nécessaire</h2>
-              <p>
-                {queue.busy
-                  ? "Actualisation des actions…"
-                  : `${queue.total} ${queue.total === 1 ? "action en attente" : "actions en attente"}${urgent ? `, dont ${urgent} ${urgent === 1 ? "urgente" : "urgentes"}` : ""}`}
-              </p>
-            </div>
-            <span className={`dashboard-priority-total${urgent ? " urgent" : ""}`}>
-              {queue.total}
-              {queue.more ? "+" : ""}
-            </span>
-          </div>
-          <div className="dashboard-filters" role="group" aria-label="Priorité des notifications">
-            {(
-              [
-                { id: "all", text: "Tout" },
-                { id: "urgent", text: "Urgent" },
-                { id: "attention", text: "À traiter" },
-                { id: "info", text: "À suivre" },
-              ] as const
-            ).map((filter) => (
-              <button type="button" key={filter.id} aria-pressed={priority === filter.id} onClick={() => setPriority(filter.id)}>
-                {filter.text}
-              </button>
-            ))}
-          </div>
-          {notices.length ? (
-            <ActionNotices items={notices} />
-          ) : (
-            <Empty
-              title={
-                queue.busy
-                  ? "Chargement des actions…"
-                  : queue.error
-                    ? "Certaines informations sont indisponibles"
-                    : priority === "all"
-                      ? "Tout est à jour"
-                      : "Aucune action dans cette catégorie"
+      <div className={`dashboard-columns${f ? "" : " dashboard-columns-single"}`}>
+        {f && d ? (
+          <div className="dashboard-main">
+            <Card
+              title="Évolution des encaissements (TND)"
+              actions={
+                <Segmented
+                  label="Période du graphique"
+                  value={granularity}
+                  onChange={setGranularity}
+                  options={[
+                    { value: "day", label: "Jour" },
+                    { value: "week", label: "Semaine" },
+                    { value: "month", label: "Mois" },
+                  ]}
+                />
               }
-              text={queue.error ? "Réessayez l’actualisation pour vérifier toutes les priorités." : ""}
-            />
-          )}
-        </section>
-        <section className="card dashboard-agenda" aria-labelledby="agenda-title">
-          <div className="dashboard-card-head">
-            <div>
-              <h2 id="agenda-title">Au programme aujourd’hui</h2>
-              <p>Séances, locations et coworking</p>
+            >
+              <div className="card-b dashboard-chart">
+                {f.series.some((point) => point.total > 0) ? (
+                  <Chart series={f.series} granularity={granularity} today={d.today} />
+                ) : (
+                  <Empty title="Aucun encaissement sur la période" text="Changez de période avec Jour, Semaine ou Mois." />
+                )}
+              </div>
+            </Card>
+            <Insights f={f} o={d.operational} />
+          </div>
+        ) : null}
+        <aside className="dashboard-rail" aria-label="Actions et programme">
+          <section className="dashboard-priorities card" aria-labelledby="priorities-title">
+            <div className="dashboard-card-head">
+              <div>
+                <h2 id="priorities-title">Votre attention est nécessaire</h2>
+                <p>
+                  {queue.busy
+                    ? "Actualisation des actions…"
+                    : `${queue.total} ${queue.total === 1 ? "action en attente" : "actions en attente"}${urgent ? `, dont ${urgent} ${urgent === 1 ? "urgente" : "urgentes"}` : ""}`}
+                </p>
+              </div>
+              <span className={`dashboard-priority-total${urgent ? " urgent" : ""}`}>
+                {queue.total}
+                {queue.more ? "+" : ""}
+              </span>
             </div>
-            <span className="dashboard-priority-total">{agenda.length}</span>
-          </div>
-          {agenda.length ? (
-            <ol className="dashboard-agenda-list">
-              {agenda.slice(0, 6).map((a) => (
-                <li key={`${a.label}-${a.id}`}>
-                  <time dateTime={a.startsAt}>{frTime(a.startsAt)}</time>
-                  <div>
-                    <span className="cap">{a.label}</span>
-                    <Link to={a.to}>{a.title}</Link>
-                    <p>{a.sub}</p>
-                  </div>
-                </li>
+            <div className="dashboard-filters" role="group" aria-label="Priorité des notifications">
+              {(
+                [
+                  { id: "all", text: "Tout" },
+                  { id: "urgent", text: "Urgent" },
+                  { id: "attention", text: "À traiter" },
+                  { id: "info", text: "À suivre" },
+                ] as const
+              ).map((filter) => (
+                <button type="button" key={filter.id} aria-pressed={priority === filter.id} onClick={() => setPriority(filter.id)}>
+                  {filter.text}
+                </button>
               ))}
-            </ol>
-          ) : (
-            <Empty title={data.isFetching || coworking.isFetching ? "Chargement du programme…" : "Rien de prévu aujourd’hui"} />
-          )}
-          <div className="dashboard-agenda-links">
-            {can("catalogue:read") ? <Link to="/planning">Planning des cours</Link> : null}
-            {can("coworking:read") ? <Link to="/coworking/planning">Planning coworking</Link> : null}
-          </div>
-        </section>
-      </div>
-      {f ? <Insights f={f} o={d?.operational} /> : null}
-      {f && d ? (
-        <Card
-          title="Évolution des encaissements (TND)"
-          actions={
-            <Segmented
-              label="Période du graphique"
-              value={granularity}
-              onChange={setGranularity}
-              options={[
-                { value: "day", label: "Jour" },
-                { value: "week", label: "Semaine" },
-                { value: "month", label: "Mois" },
-              ]}
-            />
-          }
-        >
-          <div className="card-b dashboard-chart">
-            {f.series.some((point) => point.total > 0) ? (
-              <Chart series={f.series} granularity={granularity} today={d.today} />
+            </div>
+            {notices.length ? (
+              <ActionNotices items={notices} />
             ) : (
-              <Empty title="Aucun encaissement sur la période" text="Changez de période avec Jour, Semaine ou Mois." />
+              <Empty
+                title={
+                  queue.busy
+                    ? "Chargement des actions…"
+                    : queue.error
+                      ? "Certaines informations sont indisponibles"
+                      : priority === "all"
+                        ? "Tout est à jour"
+                        : "Aucune action dans cette catégorie"
+                }
+                text={queue.error ? "Réessayez l’actualisation pour vérifier toutes les priorités." : ""}
+              />
             )}
-          </div>
-        </Card>
-      ) : null}
+          </section>
+          <section className="card dashboard-agenda" aria-labelledby="agenda-title">
+            <div className="dashboard-card-head">
+              <div>
+                <h2 id="agenda-title">Au programme aujourd’hui</h2>
+                <p>Séances, locations et coworking</p>
+              </div>
+              <span className="dashboard-priority-total">{agenda.length}</span>
+            </div>
+            {agenda.length ? (
+              <ol className="dashboard-agenda-list">
+                {agenda.slice(0, 6).map((a) => (
+                  <li key={`${a.label}-${a.id}`}>
+                    <time dateTime={a.startsAt}>{frTime(a.startsAt)}</time>
+                    <div>
+                      <span className="cap">{a.label}</span>
+                      <Link to={a.to}>{a.title}</Link>
+                      <p>{a.sub}</p>
+                    </div>
+                  </li>
+                ))}
+              </ol>
+            ) : (
+              <Empty title={data.isFetching || coworking.isFetching ? "Chargement du programme…" : "Rien de prévu aujourd’hui"} />
+            )}
+            <div className="dashboard-agenda-links">
+              {can("catalogue:read") ? <Link to="/planning">Planning des cours</Link> : null}
+              {can("coworking:read") ? <Link to="/coworking/planning">Planning coworking</Link> : null}
+            </div>
+          </section>
+        </aside>
+      </div>
     </div>
   );
 }

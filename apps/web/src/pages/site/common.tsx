@@ -1,5 +1,8 @@
+import { useQuery } from "@tanstack/react-query";
 import { useState, type ReactNode } from "react";
+import { useSession } from "../../auth/session";
 import { ErrorBanner, Modal } from "../../components/ui";
+import { fetchSettings, siteKeys } from "./api";
 
 /** Confirmation of an action that needs no reason; the error of the action stays in the dialog. */
 export function ConfirmDialog({
@@ -96,5 +99,18 @@ export function CharCount({ value, recommended, max }: { value: string; recommen
       {n} / {recommended ?? max} caractères
       {recommended !== undefined && n > recommended ? " (au-delà, le texte risque d'être coupé)" : ""}
     </span>
+  );
+}
+
+/** Opens the public site in a new tab; hidden when the user cannot edit the site or the deployment has no public address. */
+export function ViewSiteButton() {
+  const { can } = useSession();
+  const settings = useQuery({ queryKey: siteKeys.settings, queryFn: fetchSettings, enabled: can("website:edit") });
+  const url = settings.data?.siteUrl;
+  if (!url) return null;
+  return (
+    <a className="btn" href={url} target="_blank" rel="noreferrer">
+      Voir le site
+    </a>
   );
 }
