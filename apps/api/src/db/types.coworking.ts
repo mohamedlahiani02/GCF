@@ -37,6 +37,8 @@ export interface CwSettingsTable {
   company_tax_bp: number | null;
   ending_soon_minutes: number | null;
   reminder_hours: number | null;
+  visitor_retention_days: Generated<number>;
+  visitor_notify_host: Generated<boolean>;
   updated_at: Timestamp;
   updated_by: string | null;
 }
@@ -230,6 +232,27 @@ export interface CwMailTemplatesTable {
   updated_by: string | null;
 }
 
+export type CwVisitorStatus = "expected" | "arrived" | "left" | "cancelled";
+
+export interface CwVisitorsTable {
+  id: Generated<string>;
+  centre_id: string;
+  host_member_id: string;
+  name: string;
+  company: string | null;
+  phone: string | null;
+  expected_on: DateColumn;
+  expected_at: string | null;
+  purpose: string | null;
+  status: Generated<CwVisitorStatus>;
+  announced_by: "portal" | "staff";
+  arrived_at: NullableTimestamp;
+  left_at: NullableTimestamp;
+  cancelled_at: NullableTimestamp;
+  created_by: string | null;
+  created_at: Timestamp;
+}
+
 export interface CwPromoCodesTable {
   id: Generated<string>;
   centre_id: string;
@@ -384,6 +407,7 @@ export interface CoworkingTables {
   cw_promo_codes: CwPromoCodesTable;
   cw_extras: CwExtrasTable;
   cw_mail_templates: CwMailTemplatesTable;
+  cw_visitors: CwVisitorsTable;
   cw_booking_extras: CwBookingExtrasTable;
   cw_subscriptions: CwSubscriptionsTable;
   cw_packs: CwPacksTable;

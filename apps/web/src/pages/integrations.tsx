@@ -14,6 +14,7 @@ interface ApiToken {
   name: string;
   role: TokenRole;
   readOnly: boolean;
+  sharePersonalData: boolean;
   prefix: string;
   createdAt: string;
   createdByName: string;
@@ -145,6 +146,7 @@ function TokenModal({ onClose, onCreated }: { onClose: () => void; onCreated: (t
   const [name, setName] = useState("");
   const [role, setRole] = useState<TokenRole>("secretariat");
   const [readOnly, setReadOnly] = useState(true);
+  const [sharePersonalData, setSharePersonalData] = useState(false);
   const [expiresOn, setExpiresOn] = useState("");
   const create = useMutation({
     mutationFn: () =>
@@ -152,6 +154,7 @@ function TokenModal({ onClose, onCreated }: { onClose: () => void; onCreated: (t
         name: name.trim(),
         role,
         readOnly,
+        sharePersonalData,
         expiresAt: expiresOn ? zonedIso(expiresOn, "23:59") : null,
       }),
     onSuccess: async (created) => {
@@ -198,6 +201,11 @@ function TokenModal({ onClose, onCreated }: { onClose: () => void; onCreated: (t
         <input type="checkbox" className="chk" checked={readOnly} onChange={(e) => setReadOnly(e.target.checked)} /> Lecture seule (recommandé tant que l'outil
         n'a pas besoin de modifier)
       </label>
+      <label className="row center" style={{ gap: 8 }}>
+        <input type="checkbox" className="chk" checked={sharePersonalData} onChange={(e) => setSharePersonalData(e.target.checked)} /> Montrer les e-mails,
+        téléphones et adresses à l'assistant IA (serveur MCP)
+      </label>
+      <span className="cap">Décoché, ces données sont masquées dans les réponses du serveur MCP. L'API REST n'est pas concernée.</span>
       <Field label="Expire le (facultatif)" hint="Sans date, le jeton reste valable jusqu'à sa révocation.">
         <input className="input" type="date" min={todayIso()} value={expiresOn} onChange={(e) => setExpiresOn(e.target.value)} />
       </Field>
@@ -234,6 +242,21 @@ function Tokens() {
         Un jeton permet à un outil externe (n8n, un agent) d'appeler l'API avec les droits d'un rôle. Il agit au nom de l'administrateur qui l'a créé et cesse
         de fonctionner si ce dernier perd son rôle d'administrateur.
       </p>
+      <div className="card-b stack" style={{ gap: 4, paddingTop: 0 }}>
+        <span className="lab">Assistant IA (MCP)</span>
+        <span className="cap">
+          Pour brancher un assistant compatible MCP (Claude et d'autres), donnez-lui l'adresse ci-dessous et un jeton. Il agit avec le rôle du jeton, ne voit
+          aucun outil d'écriture avec un jeton en lecture seule, et chacune de ses modifications est tracée au journal d'audit au nom du jeton.
+        </span>
+        <input
+          className="input"
+          readOnly
+          aria-label="Adresse du serveur MCP"
+          value={`${window.location.origin}/api/mcp`}
+          onFocus={(e) => e.target.select()}
+          style={{ fontFamily: "monospace" }}
+        />
+      </div>
       <ErrorBanner error={tokens.error} />
       {tokens.isPending ? (
         <Loading />
@@ -262,7 +285,10 @@ function Tokens() {
                     <code>{t.prefix}…</code>
                   </td>
                   <td>{ROLE[t.role]}</td>
-                  <td>{t.readOnly ? "Lecture" : "Lecture et écriture"}</td>
+                  <td>
+                    {t.readOnly ? "Lecture" : "Lecture et écriture"}
+                    <div className="cap">{t.sharePersonalData ? "données personnelles visibles" : "données personnelles masquées (MCP)"}</div>
+                  </td>
                   <td>
                     <Badge tone={TOKEN_STATE[t.state].tone}>{TOKEN_STATE[t.state].label}</Badge>
                     {t.state === "active" && t.expiresAt ? <div className="cap">jusqu'au {frDateTime(t.expiresAt)}</div> : null}

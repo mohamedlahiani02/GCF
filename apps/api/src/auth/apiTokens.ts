@@ -18,6 +18,7 @@ export interface NewApiToken {
   name: string;
   role: ApiTokenRole;
   readOnly: boolean;
+  sharePersonalData: boolean;
   expiresAt: Date | null;
   createdBy: string;
 }
@@ -33,6 +34,7 @@ export async function createApiToken(db: Kysely<Database>, input: NewApiToken): 
       name: input.name,
       role: input.role,
       read_only: input.readOnly,
+      share_personal_data: input.sharePersonalData,
       token_hash: hashApiToken(token),
       token_prefix: prefix,
       created_by: input.createdBy,
@@ -59,6 +61,7 @@ export async function resolveApiToken(db: Kysely<Database>, token: string): Prom
       "api_tokens.name",
       "api_tokens.role",
       "api_tokens.read_only as readOnly",
+      "api_tokens.share_personal_data as sharePersonalData",
       "api_tokens.centre_id as centreId",
       "api_tokens.expires_at as expiresAt",
       "api_tokens.revoked_at as revokedAt",
@@ -91,6 +94,6 @@ export async function resolveApiToken(db: Kysely<Database>, token: string): Prom
     fullName: row.name,
     role: row.role,
     modules: row.modules,
-    apiToken: { id: row.id, name: row.name, readOnly: row.readOnly },
+    apiToken: { id: row.id, name: row.name, readOnly: row.readOnly, sharePersonalData: row.sharePersonalData },
   };
 }

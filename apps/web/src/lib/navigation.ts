@@ -198,6 +198,16 @@ export const WORKSPACES: Workspace[] = [
         section: "Dossiers et catalogue",
       },
       {
+        id: "training-prospects",
+        to: "/prospects",
+        label: "Suivre les prospects",
+        text: "Contacts intéressés, relances et inscriptions",
+        icon: ICONS.inbox,
+        permission: "prospects:read",
+        section: "Dossiers et catalogue",
+        crossLink: true,
+      },
+      {
         id: "instructors",
         to: "/intervenants",
         label: "Voir les profs / formateurs",
@@ -304,6 +314,15 @@ export const WORKSPACES: Workspace[] = [
         section: "Dossiers et catalogue",
       },
       {
+        id: "prospects",
+        to: "/prospects",
+        label: "Suivre les prospects",
+        text: "Contacts intéressés, relances et inscriptions",
+        icon: ICONS.inbox,
+        permission: "prospects:read",
+        section: "Dossiers et catalogue",
+      },
+      {
         id: "subscriptions",
         to: "/coworking/abonnements",
         label: "Suivre les abonnements",
@@ -311,6 +330,15 @@ export const WORKSPACES: Workspace[] = [
         icon: ICONS.receipts,
         permission: "coworking:read",
         section: "Dossiers et catalogue",
+      },
+      {
+        id: "visitors",
+        to: "/coworking/visiteurs",
+        label: "Accueillir un visiteur",
+        text: "Visiteurs attendus, arrivées et départs",
+        icon: ICONS.members,
+        permission: "coworking:read",
+        section: "Au quotidien",
       },
       {
         id: "mail",

@@ -1,7 +1,9 @@
 import { LEAD_KINDS, type LeadKind } from "@gcf/shared";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
-import { api } from "../../api/client";
+import { useNavigate } from "react-router";
+import { api, ApiError } from "../../api/client";
+import { useSession } from "../../auth/session";
 import { usePage } from "../../components/shell";
 import { useToast } from "../../components/toasts";
 import { Badge, Card, Drawer, Empty, ErrorBanner, Loading, PageHeader, Pagination, Segmented } from "../../components/ui";
@@ -13,6 +15,23 @@ const PAGE_SIZE = 50;
 function LeadDrawer({ lead, onClose }: { lead: Lead; onClose: () => void }) {
   const client = useQueryClient();
   const toast = useToast();
+  const navigate = useNavigate();
+  const { can } = useSession();
+  /** A request already followed opens its prospect instead of failing. */
+  const follow = useMutation({
+    mutationFn: async () => {
+      try {
+        return (await api.post<{ id: string }>(`/prospects/from-lead/${lead.id}`)).id;
+      } catch (error) {
+        if (error instanceof ApiError && error.code === "lead_already_prospect") return (error.details as { prospectId: string }).prospectId;
+        throw error;
+      }
+    },
+    onSuccess: async (prospectId) => {
+      await client.invalidateQueries({ queryKey: siteKeys.leads });
+      navigate(`/prospects/${prospectId}`);
+    },
+  });
   const change = useMutation({
     mutationFn: (status: LeadStatus) => api.patch(`/site/leads/${lead.id}`, { status }),
     onSuccess: async (_, status) => {
@@ -46,6 +65,11 @@ function LeadDrawer({ lead, onClose }: { lead: Lead; onClose: () => void }) {
             <span />
           )}
           <div className="row" style={{ gap: 8 }}>
+            {can("prospects:write") && lead.status !== "spam" ? (
+              <button type="button" className="btn" disabled={follow.isPending} onClick={() => follow.mutate()}>
+                Suivre comme prospect
+              </button>
+            ) : null}
             {lead.status !== "spam" ? (
               <button type="button" className="btn" disabled={change.isPending} onClick={() => change.mutate("spam")}>
                 Indésirable
@@ -83,7 +107,7 @@ function LeadDrawer({ lead, onClose }: { lead: Lead; onClose: () => void }) {
         <span className="lab">Message</span>
         {lead.message ? <p className="site-message">{lead.message}</p> : <span className="cap">Aucun message.</span>}
       </div>
-      <ErrorBanner error={change.error} />
+      <ErrorBanner error={change.error ?? follow.error} />
     </Drawer>
   );
 }

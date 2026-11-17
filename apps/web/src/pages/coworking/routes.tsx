@@ -10,6 +10,7 @@ import { CoworkingPlanningPage } from "./planning";
 import { RequestsPage } from "./requests";
 import { StatsPage } from "./stats";
 import { SubscriptionsPage } from "./subscriptions";
+import { VisitorsPage } from "./visitors";
 
 const guard = (permission: string, element: React.ReactNode) => <RequirePermission permission={permission}>{element}</RequirePermission>;
 
@@ -24,5 +25,6 @@ export const coworkingRoutes: RouteObject[] = [
   { path: "/coworking/membres/:id", element: guard("coworking:read", <MemberPage />) },
   { path: "/coworking/abonnements", element: guard("coworking:read", <SubscriptionsPage />) },
   { path: "/coworking/courrier", element: guard("coworking:read", <MailPage />) },
+  { path: "/coworking/visiteurs", element: guard("coworking:read", <VisitorsPage />) },
   { path: "/coworking/statistiques", element: guard("coworking:reports", <StatsPage />) },
 ];

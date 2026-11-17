@@ -449,7 +449,8 @@ export interface ReceiptPrintsTable {
   duplicate: boolean;
 }
 
-export type MailDispatchKind = "receipt" | "reminder" | "member_activation" | "password_reset" | "booking" | "mail_item" | "subscription" | "invoice";
+export type MailDispatchKind =
+  "receipt" | "reminder" | "member_activation" | "password_reset" | "booking" | "mail_item" | "subscription" | "invoice" | "visitor";
 
 export interface MailDispatchesTable {
   id: Generated<string>;
@@ -696,8 +697,62 @@ export interface InvoiceItemsTable {
   active: Generated<boolean>;
 }
 
+export type ProspectStage = "new" | "contacted" | "visit" | "proposal" | "won" | "lost";
+export type ProspectSource = "website" | "walk_in" | "phone" | "referral" | "event" | "social" | "other";
+export type ProspectInterest = "training" | "coworking" | "rental" | "cafe" | "other";
+
+export interface ProspectTagsTable {
+  id: Generated<string>;
+  centre_id: string;
+  name: string;
+  color: Generated<string>;
+  created_at: Timestamp;
+}
+
+export interface ProspectsTable {
+  id: Generated<string>;
+  centre_id: string;
+  name: string;
+  company: string | null;
+  email: string | null;
+  phone: string | null;
+  interests: ColumnType<ProspectInterest[], ProspectInterest[] | undefined, ProspectInterest[]>;
+  source: ProspectSource;
+  stage: Generated<ProspectStage>;
+  lost_reason: string | null;
+  owner_id: string | null;
+  next_action: string | null;
+  next_action_on: ColumnType<string | null, string | null | undefined, string | null>;
+  notes: string | null;
+  site_lead_id: OptionalRef;
+  member_id: OptionalRef;
+  student_id: OptionalRef;
+  won_at: NullableTimestamp;
+  created_by: string | null;
+  created_at: Timestamp;
+  updated_at: Timestamp;
+}
+
+export interface ProspectTagLinksTable {
+  prospect_id: string;
+  tag_id: string;
+}
+
+export interface ProspectActivitiesTable {
+  id: Generated<string>;
+  prospect_id: string;
+  kind: "note" | "call" | "email" | "visit" | "stage";
+  text: string;
+  at: Timestamp;
+  user_id: string | null;
+}
+
 export interface Database extends CoworkingTables, WebsiteTables, CafeTables {
   centres: CentresTable;
+  prospect_tags: ProspectTagsTable;
+  prospects: ProspectsTable;
+  prospect_tag_links: ProspectTagLinksTable;
+  prospect_activities: ProspectActivitiesTable;
   invoice_counters: InvoiceCountersTable;
   invoices: InvoicesTable;
   invoice_items: InvoiceItemsTable;
@@ -811,6 +866,7 @@ export interface ApiTokensTable {
   name: string;
   role: ApiTokenRole;
   read_only: Generated<boolean>;
+  share_personal_data: Generated<boolean>;
   token_hash: Buffer;
   token_prefix: string;
   created_by: string;
