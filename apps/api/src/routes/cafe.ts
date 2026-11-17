@@ -33,7 +33,7 @@ export const productBody = z
   })
   .strict();
 const productPatch = productBody.partial().extend({ active: z.boolean().optional() }).strict();
-const stockBody = z.discriminatedUnion("kind", [
+export const stockBody = z.discriminatedUnion("kind", [
   z
     .object({ kind: z.literal("purchase"), quantity, unitCost: millimes.nullable().optional(), supplierId: uuid.optional(), reason: optionalText(500) })
     .strict(),

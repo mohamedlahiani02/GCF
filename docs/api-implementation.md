@@ -18,8 +18,9 @@ jeton.
 | GET     | `/api/implementation/imports`         | Entités chargeables, dans l'ordre des dépendances, avec le JSON Schema d'une ligne |
 | POST    | `/api/implementation/imports/:entité` | `{ "mode": "preview" \| "apply", "rows": [...] }`, 2 000 lignes au plus par appel  |
 
-Entités : `rooms`, `subjects`, `instructors`, `studies`, `trainings`, `students`, `renters`, `companies`, `members`,
-`cafe-products`. Une ligne a la forme du corps de la route REST de création, avec les références écrites par leur nom
+Entités de référence : `rooms`, `subjects`, `instructors`, `studies`, `trainings`, `students`, `renters`, `companies`,
+`members`, `cafe-products`. Entités de reprise : `groups` (cours réguliers, avec leurs créneaux), `enrolments`,
+`subscriptions` (coworking), `cafe-stock` (stock initial, saisi comme un inventaire). Une ligne a la forme du corps de la route REST de création, avec les références écrites par leur nom
 (`subject` pour une étude, `subjects` pour un intervenant, `company` pour un membre, nom ou matricule fiscal).
 
 - **preview** n'écrit rien. Chaque ligne reçoit une action : `create`, `exists` (même clé métier déjà présente, rien ne sera
@@ -27,6 +28,15 @@ Entités : `rooms`, `subjects`, `instructors`, `studies`, `trainings`, `students
 - **apply** refait la vérification, puis envoie chaque ligne `create` à la route REST de création. Résultat : `created` avec
   l'identifiant, ou `failed` avec le code et le message de l'API (règle métier). Rien n'est modifié ni supprimé ; renvoyer le
   même fichier ne crée rien deux fois.
+
+Une personne (élève, intervenant, membre) se nomme par son e-mail, ou par son prénom et son nom. Un nom porté par plusieurs
+fiches est refusé (« ambiguous reference ») : il faut alors l'e-mail. Un groupe se nomme par matière, étude et nom du
+groupe ; un plan de paiement par son nom dans l'étude du groupe ; une place du coworking par son code.
+
+Reprise : la date d'effet d'une inscription et la date de début d'un abonnement fixent le début de l'échéancier. À la
+reprise, on prend la date de bascule : les impayés antérieurs ne sont pas recréés par ces imports. Un jeton ne peut pas
+désactiver le prorata d'un mois partiel (décision réservée à un administrateur). Les groupes de formation (sessions) ne se
+chargent pas encore par fichier.
 
 Clés métier : nom (salles, matières, produits du café), matière + nom (études), intitulé (formations), e-mail sinon nom,
 prénom et téléphone (personnes), matricule fiscal sinon nom (entreprises). Comparaison sans casse ni espaces superflus.

@@ -118,6 +118,8 @@ const ROLE_PERMISSIONS: Record<Role, ReadonlySet<Permission>> = {
     "students:write",
     "catalogue:read",
     "catalogue:write",
+    "groups:write",
+    "enrolments:write",
     "instructors:read",
     "instructors:write",
     "rooms:write",

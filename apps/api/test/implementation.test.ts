@@ -61,6 +61,10 @@ describe("implementation access", () => {
       "companies",
       "members",
       "cafe-products",
+      "groups",
+      "enrolments",
+      "subscriptions",
+      "cafe-stock",
     ]);
     const studies = catalogue.body.find((e: { entity: string }) => e.entity === "studies");
     expect(studies).toMatchObject({ dependsOn: ["subjects"], available: true });
@@ -184,5 +188,99 @@ describe("configuration packs", () => {
     });
     expect(refused.body.failed[0].section).toBe("centre");
     expect(refused.body.failed[0].error).toMatch(/^4\d\d/);
+  });
+});
+
+describe("operational reprise", () => {
+  it("loads groups with their slots, the instructor and rooms named in the row", async () => {
+    await api(consultant, "POST", "/api/implementation/imports/rooms", { mode: "apply", rows: [{ name: "Salle Atlas", capacity: 14 }] });
+    const result = await api(consultant, "POST", "/api/implementation/imports/groups", {
+      mode: "apply",
+      rows: [
+        {
+          subject: "Mathématiques",
+          study: "Maths Bac",
+          name: "Maths Bac A",
+          instructor: "sana@impl.test",
+          room: "Salle Atlas",
+          startDate: "2026-09-15",
+          endDate: "2027-06-30",
+          slots: [{ weekday: 2, startTime: "17:00", endTime: "19:00" }],
+        },
+        { subject: "Mathématiques", study: "Maths Bac", name: "Maths Bac B", instructor: "Personne Inconnue", startDate: "2026-09-15", endDate: "2027-06-30" },
+      ],
+    });
+    expect(result.body.rows[0]).toMatchObject({ action: "created" });
+    expect(result.body.rows[1].errors).toEqual(["unknown reference instructor:Personne Inconnue"]);
+    const slots = await h.db.selectFrom("group_slots").select("weekday").where("group_id", "=", result.body.rows[0].id).execute();
+    expect(slots).toEqual([{ weekday: 2 }]);
+    ids.group = result.body.rows[0].id;
+  });
+
+  it("enrols students named by e-mail or by name, and refuses an ambiguous name", async () => {
+    await api(consultant, "POST", "/api/implementation/imports/students", {
+      mode: "apply",
+      rows: [
+        { firstName: "Yasmine", lastName: "Ben Salem", email: "yasmine@impl.test" },
+        { firstName: "Adam", lastName: "Trabelsi", phone: "55 000 001" },
+        { firstName: "Adam", lastName: "Trabelsi", phone: "55 000 002" },
+        { firstName: "Rim", lastName: "Gharbi", phone: "55 000 003" },
+      ],
+    });
+    const rows = [
+      { student: "yasmine@impl.test", subject: "Mathématiques", study: "Maths Bac", group: "Maths Bac A", effectiveDate: "2026-11-01" },
+      { student: "Rim Gharbi", subject: "Mathématiques", study: "Maths Bac", group: "Maths Bac A", effectiveDate: "2026-11-01" },
+      { student: "Adam Trabelsi", subject: "Mathématiques", study: "Maths Bac", group: "Maths Bac A", effectiveDate: "2026-11-01" },
+    ];
+    const result = await api(consultant, "POST", "/api/implementation/imports/enrolments", { mode: "apply", rows });
+    expect(result.body.rows.map((r: { action: string }) => r.action)).toEqual(["created", "created", "error"]);
+    expect(result.body.rows[2].errors[0]).toMatch(/^ambiguous reference student:Adam Trabelsi/);
+    const charges = await h.db.selectFrom("installments").select("id").where("enrolment_id", "=", result.body.rows[0].id).execute();
+    expect(charges.length).toBeGreaterThan(0);
+    const again = await api(consultant, "POST", "/api/implementation/imports/enrolments", { mode: "preview", rows: rows.slice(0, 2) });
+    expect(again.body.summary).toMatchObject({ exists: 2 });
+  });
+
+  it("starts coworking subscriptions for members named by e-mail", async () => {
+    await h.db
+      .insertInto("cw_plans")
+      .values({
+        centre_id: h.centreId,
+        name: "Résident mensuel",
+        description: null,
+        period: "month",
+        price: 250_000,
+        billing: "upfront",
+        assigned_type_id: null,
+        status: "active",
+      })
+      .execute();
+    const rows = [{ member: "lina@impl.test", plan: "Résident mensuel", startsOn: "2026-12-01" }];
+    const result = await api(consultant, "POST", "/api/implementation/imports/subscriptions", { mode: "apply", rows });
+    expect(result.body.rows[0]).toMatchObject({ action: "created" });
+    expect((await api(consultant, "POST", "/api/implementation/imports/subscriptions", { mode: "preview", rows })).body.summary).toMatchObject({ exists: 1 });
+  });
+
+  it("records the café's initial stock once, as an inventory with its reason", async () => {
+    await api(consultant, "POST", "/api/implementation/imports/cafe-products", {
+      mode: "apply",
+      rows: [
+        { name: "Eau 50 cl", price: 1000, trackStock: true },
+        { name: "Express", price: 2500, trackStock: false },
+      ],
+    });
+    const rows = [
+      { product: "Eau 50 cl", counted: 48, reason: "Inventaire de reprise" },
+      { product: "Express", counted: 10, reason: "Inventaire de reprise" },
+    ];
+    const result = await api(consultant, "POST", "/api/implementation/imports/cafe-stock", { mode: "apply", rows });
+    expect(result.body.rows[0]).toMatchObject({ action: "created" });
+    expect(result.body.rows[1]).toMatchObject({ action: "failed" });
+    expect(result.body.rows[1].errors[0]).toMatch(/stock_not_tracked/);
+    const product = await h.db.selectFrom("cafe_products").select("stock_quantity").where("name", "=", "Eau 50 cl").executeTakeFirstOrThrow();
+    expect(product.stock_quantity).toBe(48);
+    expect((await api(consultant, "POST", "/api/implementation/imports/cafe-stock", { mode: "preview", rows: rows.slice(0, 1) })).body.summary).toMatchObject({
+      exists: 1,
+    });
   });
 });

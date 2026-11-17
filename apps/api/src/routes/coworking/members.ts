@@ -52,7 +52,7 @@ const memberQuery = z.object({
 });
 const convertBody = z.object({ email, lastName: optionalText(100), phone: optionalText(40) }).strict();
 
-const subscriptionCreate = z
+export const subscriptionCreate = z
   .object({ memberId: uuid, planId: uuid, startsOn: isoDate, assignedResourceId: uuid.nullable().optional(), autoRenew: z.boolean().optional() })
   .strict();
 const subscriptionQuery = z.object({
