@@ -2,7 +2,7 @@ import type { FastifyInstance, FastifyPluginAsync, FastifyRequest } from "fastif
 import { z } from "zod";
 import { can } from "../auth/permissions.js";
 import { HttpError, notFound, unauthenticated } from "../errors.js";
-import { IMPORTS, MAX_IMPORT_ROWS, previewRows, summarise, type RowResult } from "../implementation/imports.js";
+import { IMPORTS, MAX_IMPORT_ROWS, previewRows, summarise, totalsOf, type RowResult } from "../implementation/imports.js";
 import { AUTOMATIONS_PERMISSION, PACK_FORMAT, packSchema, pick, sameValue, SETTINGS_SECTIONS, type Change, type Pack } from "../implementation/pack.js";
 
 const entityParam = z.object({ entity: z.string().max(40) });
@@ -88,7 +88,7 @@ export const implementationRoutes: FastifyPluginAsync = async (app) => {
         }
       }
     }
-    return { entity, mode: body.mode, summary: summarise(results), rows: results };
+    return { entity, mode: body.mode, summary: summarise(results), totals: totalsOf(results), rows: results };
   });
 
   /** The centre's current settings as a pack; sections of modules the centre does not run are left out. */

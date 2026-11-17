@@ -64,7 +64,7 @@ export const accountRoutes: FastifyPluginAsync = async (app) => {
     const postponements = await db
       .selectFrom("postponements")
       .innerJoin("installments", "installments.id", "postponements.installment_id")
-      .innerJoin("enrolments", "enrolments.id", "installments.enrolment_id")
+      .leftJoin("enrolments", "enrolments.id", "installments.enrolment_id")
       .select([
         "postponements.id",
         "postponements.installment_id as installmentId",
@@ -76,7 +76,7 @@ export const accountRoutes: FastifyPluginAsync = async (app) => {
         "postponements.requested_at as requestedAt",
         "postponements.decision_reason as decisionReason",
       ])
-      .where("enrolments.student_id", "=", id)
+      .where(sql<boolean>`coalesce(enrolments.student_id, installments.student_id) = ${id}`)
       .orderBy("postponements.requested_at", "desc")
       .execute();
     const enrolmentEvents = await db
@@ -213,8 +213,9 @@ export const accountRoutes: FastifyPluginAsync = async (app) => {
           "installments.status",
           "installments.due_date as dueDate",
           "installments.postponement_count as count",
-          "enrolments.student_id as studentId",
+          sql<string | null>`coalesce(enrolments.student_id, installments.student_id)`.as("studentId"),
           "rentals.renter_id as renterId",
+          "installments.member_id as memberId",
           "centres.max_postponements as max",
           "centres.postponement_requires_approval as requiresApproval",
         ])
@@ -222,7 +223,11 @@ export const accountRoutes: FastifyPluginAsync = async (app) => {
         .where("installments.centre_id", "=", actor.centreId)
         .executeTakeFirst();
       if (!row || row.kind !== "charge" || row.status !== "open") throw notFound("open instalment");
-      await lockPayer(trx, row.studentId ? { kind: "student", id: row.studentId } : { kind: "renter", id: row.renterId! }, actor.centreId);
+      await lockPayer(
+        trx,
+        row.studentId ? { kind: "student", id: row.studentId } : row.memberId ? { kind: "member", id: row.memberId } : { kind: "renter", id: row.renterId! },
+        actor.centreId,
+      );
       const [balance] = await installmentBalances(trx, actor.centreId, { installmentIds: [id] });
       if (!balance || balance.remaining <= 0) throw conflict("already_paid", "the instalment is already paid");
       if (body.toDate <= row.dueDate) throw unprocessable("date_not_later", "the new date must be after the current due date");

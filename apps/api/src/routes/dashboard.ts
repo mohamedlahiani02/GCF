@@ -49,7 +49,7 @@ export const dashboardRoutes: FastifyPluginAsync = async (app) => {
         "installments.original_due_date as originalDueDate",
         "installments.postponement_count as postponementCount",
         "installments.label",
-        sql<string | null>`coalesce(enrolments.student_id::text, rentals.renter_id::text)`.as("payerId"),
+        sql<string | null>`coalesce(enrolments.student_id::text, installments.student_id::text, rentals.renter_id::text)`.as("payerId"),
         sql<number>`coalesce(p.paid, 0)`.as("paid"),
       ])
       .where("installments.centre_id", "=", centreId)

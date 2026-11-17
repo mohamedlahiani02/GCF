@@ -55,6 +55,7 @@ export const PERMISSIONS = [
   "cafe:manage",
   "cafe:close",
   "implementation:run",
+  "opening:write",
 ] as const;
 export type Permission = (typeof PERMISSIONS)[number];
 
@@ -111,6 +112,7 @@ const ROLE_PERMISSIONS: Record<Role, ReadonlySet<Permission>> = {
   // Configures a centre and loads its reference data; never touches money (payments, cash, payroll runs, invoices) nor users.
   implementation: new Set<Permission>([
     "implementation:run",
+    "opening:write",
     "centre:read",
     "centre:manage",
     "audit:read",

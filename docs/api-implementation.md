@@ -41,6 +41,27 @@ chargent pas encore par fichier.
 Clés métier : nom (salles, matières, produits du café), matière + nom (études), intitulé (formations), e-mail sinon nom,
 prénom et téléphone (personnes), matricule fiscal sinon nom (entreprises). Comparaison sans casse ni espaces superflus.
 
+## Soldes d'ouverture (impayés et avances)
+
+Deux entités chargent ce que les élèves et les membres du coworking devaient, ou avaient payé d'avance, à la date de bascule.
+Elles passent par `POST /api/opening-balances/debts` et `/advances`, réservées au jeton Implémentation et à l'administrateur
+(permission `opening:write`) ; ce sont les seules routes d'argent que ce jeton atteint.
+
+- `opening-debts` : une dette ancienne. La ligne donne `kind` (`student` ou `member`), la personne (e-mail ou prénom et nom),
+  le montant en millimes, la date d'échéance dans l'ancien système (antérieure à aujourd'hui) et un libellé facultatif
+  (« Solde d'ouverture » par défaut). Elle se règle, se reporte et se relance comme une échéance, avec son ancienneté. Elle
+  n'est ni rattachée à une inscription, ni du chiffre d'affaires de la période : les rapports « facturé » l'ignorent et la
+  paie, qui lit les inscriptions, ne la voit jamais. Une fois encaissée, elle figure dans les encaissements sous « Reprise :
+  soldes d'ouverture ».
+- `opening-advances` : un paiement reçu avant la bascule. Il est enregistré le jour du chargement, avec son reçu, comme tout
+  paiement : il règle d'abord les échéances ouvertes du payeur (les plus anciennes d'abord, donc les dettes reprises), le reste
+  devient son crédit. La référence de l'ancien système est obligatoire et empêche tout doublon. Un paiement en espèces entre
+  dans la caisse du jour : pour une somme qui n'est pas dans la caisse du nouveau système, choisir virement. Un chèque donne son
+  numéro et sa banque.
+
+La réponse d'un import d'argent contient `totals` : la somme des montants des lignes par statut, pour rapprocher le fichier du
+total de l'ancien système avant et après le chargement.
+
 ## Packs de configuration
 
 | Méthode | Adresse                    | Effet                                                                             |

@@ -8,6 +8,7 @@ import { roomBody, studyCreate, subjectBody, trainingCreate } from "../routes/ca
 import { companyCreate, memberCreate, subscriptionCreate } from "../routes/coworking/members.js";
 import { enrolmentBody } from "../routes/enrolments.js";
 import { createBody as groupCreate } from "../routes/groups.js";
+import { debtBody, advanceBody } from "../routes/openingBalances.js";
 import { createBody as instructorCreate } from "../routes/instructors.js";
 import { renterCreate } from "../routes/rentals.js";
 import { createBody as studentCreate } from "../routes/students.js";
@@ -45,6 +46,8 @@ export interface ImportDefinition {
   url: string;
   /** Identifier of what the REST endpoint created, read from its answer; `id` by default. */
   resultId?: (response: Record<string, unknown>) => string;
+  /** Money amount of a row, in millimes, for the totals that reconcile a file with what was loaded. */
+  amountOf?: (row: Record<string, unknown>) => number;
   /** The schema the REST endpoint applies to its body. */
   body: z.ZodType;
 }
@@ -597,6 +600,164 @@ export const IMPORTS: readonly ImportDefinition[] = [
     resultId: (answer) => String(answer.productId),
     body: stockBody,
   },
+  {
+    entity: "opening-debts",
+    description:
+      "Impayés repris à la date de bascule : une dette ancienne d'un élève ou d'un membre. Elle se règle comme une échéance mais n'entre ni dans le facturé des rapports ni dans la paie. La date est celle de l'échéance dans l'ancien système, antérieure à aujourd'hui",
+    permission: "opening:write",
+    dependsOn: ["students", "members"],
+    row: z
+      .object({
+        kind: z.enum(["student", "member"]),
+        person: requiredText(254),
+        label: z.string().trim().max(150).optional(),
+        amount: millimes.min(1),
+        dueDate: isoDate,
+        note: z.string().trim().max(500).nullable().optional(),
+      })
+      .strict(),
+    keyFields: ["kind", "person", "dueDate", "label", "amount"],
+    key: (r) => `${String(r.kind)}|${normalise(r.person)}|${String(r.dueDate)}|${normalise(r.label || "Solde d'ouverture")}|${String(r.amount)}`,
+    existing: async (db, centreId) => {
+      const rows = await db
+        .selectFrom("installments")
+        .leftJoin("students", "students.id", "installments.student_id")
+        .leftJoin("members", "members.id", "installments.member_id")
+        .select([
+          "installments.id",
+          "installments.label",
+          "installments.amount",
+          "installments.due_date as dueDate",
+          "students.email as studentEmail",
+          "students.first_name as studentFirst",
+          "students.last_name as studentLast",
+          "members.email as memberEmail",
+          "members.first_name as memberFirst",
+          "members.last_name as memberLast",
+        ])
+        .where("installments.centre_id", "=", centreId)
+        .where("installments.opening_balance", "=", true)
+        .execute();
+      return new Map(
+        rows.flatMap((r) => {
+          const student = r.studentFirst !== null;
+          const names = personNames(
+            student
+              ? { email: r.studentEmail, firstName: r.studentFirst!, lastName: r.studentLast }
+              : { email: r.memberEmail, firstName: r.memberFirst!, lastName: r.memberLast },
+          );
+          return names.map((n): [string, string] => [
+            `${student ? "student" : "member"}|${n}|${String(r.dueDate).slice(0, 10)}|${normalise(r.label)}|${String(r.amount)}`,
+            r.id,
+          ]);
+        }),
+      );
+    },
+    references: async (db, centreId) => {
+      const [students, members] = await Promise.all([
+        db.selectFrom("students").select(["id", "email", "first_name as firstName", "last_name as lastName"]).where("centre_id", "=", centreId).execute(),
+        db.selectFrom("members").select(["id", "email", "first_name as firstName", "last_name as lastName"]).where("centre_id", "=", centreId).execute(),
+      ]);
+      return { student: peopleIndex(students), member: peopleIndex(members) };
+    },
+    toBody: (row, refs) => {
+      const problems: string[] = [];
+      const kind = row.kind as "student" | "member";
+      const id = resolve(refs[kind]!, kind, row.person, problems);
+      if (problems.length) return { problems };
+      return {
+        body: {
+          payer: { kind, id },
+          ...(row.label ? { label: row.label } : {}),
+          amount: row.amount,
+          dueDate: row.dueDate,
+          ...(row.note ? { note: row.note } : {}),
+        },
+      };
+    },
+    url: "/api/opening-balances/debts",
+    body: debtBody,
+    amountOf: (row) => Number(row.amount),
+  },
+  {
+    entity: "opening-advances",
+    description:
+      "Avances reprises à la date de bascule : un paiement reçu avant, enregistré le jour de la bascule avec son reçu. Il règle d'abord les échéances ouvertes du payeur, le reste devient son crédit. La référence de l'ancien système évite tout doublon ; le moyen de paiement compte dans la caisse du jour s'il est en espèces",
+    permission: "opening:write",
+    dependsOn: ["students", "members", "opening-debts"],
+    row: z
+      .object({
+        kind: z.enum(["student", "member"]),
+        person: requiredText(254),
+        amount: millimes.min(1),
+        method: z.enum(["cash", "transfer", "cheque", "card"]),
+        chequeNumber: z.string().trim().max(40).nullable().optional(),
+        chequeBank: z.string().trim().max(100).nullable().optional(),
+        reference: requiredText(100),
+        note: z.string().trim().max(500).nullable().optional(),
+      })
+      .strict(),
+    keyFields: ["kind", "person", "reference"],
+    key: (r) => `${String(r.kind)}|${normalise(r.person)}|${normalise(r.reference)}`,
+    existing: async (db, centreId) => {
+      const rows = await db
+        .selectFrom("payments")
+        .leftJoin("students", "students.id", "payments.student_id")
+        .leftJoin("members", "members.id", "payments.member_id")
+        .select([
+          "payments.id",
+          "payments.reference",
+          "students.email as studentEmail",
+          "students.first_name as studentFirst",
+          "students.last_name as studentLast",
+          "members.email as memberEmail",
+          "members.first_name as memberFirst",
+          "members.last_name as memberLast",
+        ])
+        .where("payments.centre_id", "=", centreId)
+        .where("payments.status", "=", "valid")
+        .where("payments.reference", "is not", null)
+        .execute();
+      return new Map(
+        rows.flatMap((r) => {
+          const student = r.studentFirst !== null;
+          const names = personNames(
+            student
+              ? { email: r.studentEmail, firstName: r.studentFirst!, lastName: r.studentLast }
+              : { email: r.memberEmail, firstName: r.memberFirst!, lastName: r.memberLast },
+          );
+          return names.map((n): [string, string] => [`${student ? "student" : "member"}|${n}|${normalise(r.reference)}`, r.id]);
+        }),
+      );
+    },
+    references: async (db, centreId) => {
+      const [students, members] = await Promise.all([
+        db.selectFrom("students").select(["id", "email", "first_name as firstName", "last_name as lastName"]).where("centre_id", "=", centreId).execute(),
+        db.selectFrom("members").select(["id", "email", "first_name as firstName", "last_name as lastName"]).where("centre_id", "=", centreId).execute(),
+      ]);
+      return { student: peopleIndex(students), member: peopleIndex(members) };
+    },
+    toBody: (row, refs) => {
+      const problems: string[] = [];
+      const kind = row.kind as "student" | "member";
+      const id = resolve(refs[kind]!, kind, row.person, problems);
+      if (problems.length) return { problems };
+      return {
+        body: {
+          payer: { kind, id },
+          amount: row.amount,
+          method: row.method,
+          ...(row.chequeNumber || row.chequeBank ? { cheque: { number: row.chequeNumber, bank: row.chequeBank } } : {}),
+          reference: row.reference,
+          ...(row.note ? { note: row.note } : {}),
+        },
+      };
+    },
+    url: "/api/opening-balances/advances",
+    resultId: (answer) => String(answer.paymentId),
+    body: advanceBody,
+    amountOf: (row) => Number(row.amount),
+  },
 ];
 
 export const MAX_IMPORT_ROWS = 2000;
@@ -609,6 +770,8 @@ export interface RowResult {
   action: RowAction;
   key: string;
   id?: string;
+  /** Millimes carried by the row, for entities that load money. */
+  amount?: number;
   errors: string[];
 }
 
@@ -635,13 +798,14 @@ export async function previewRows(
     if (earlier !== undefined) return { line, action: "error", key, errors: [`duplicate of line ${earlier}`] };
     seen.set(key, line);
     const id = existing.get(key);
-    if (id) return { line, action: "exists", key, id, errors: [] };
+    const amount = definition.amountOf ? { amount: definition.amountOf(parsed.data) } : {};
+    if (id) return { line, action: "exists", key, id, ...amount, errors: [] };
     const mapped = definition.toBody(parsed.data, refs);
     if ("problems" in mapped) return { line, action: "error", key, errors: mapped.problems };
     const checked = definition.body.safeParse(mapped.body);
     if (!checked.success) return { line, action: "error", key, errors: issues(checked.error) };
     bodies.set(line, { body: mapped.body, url: mapped.url ?? definition.url });
-    return { line, action: "create", key, errors: [] };
+    return { line, action: "create", key, ...amount, errors: [] };
   });
   return { results, bodies };
 }
@@ -650,4 +814,12 @@ export function summarise(results: RowResult[]): Record<RowAction, number> {
   const summary: Record<RowAction, number> = { create: 0, exists: 0, error: 0, created: 0, failed: 0 };
   for (const r of results) summary[r.action] += 1;
   return summary;
+}
+
+/** Sum of the money of the rows, by action, for the entities that load money; null for the others. */
+export function totalsOf(results: RowResult[]): Record<RowAction, number> | null {
+  if (!results.some((r) => r.amount !== undefined)) return null;
+  const totals: Record<RowAction, number> = { create: 0, exists: 0, error: 0, created: 0, failed: 0 };
+  for (const r of results) totals[r.action] += r.amount ?? 0;
+  return totals;
 }

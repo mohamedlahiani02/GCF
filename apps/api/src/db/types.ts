@@ -310,6 +310,10 @@ export interface InstallmentsTable {
   cw_booking_id: OptionalRef;
   cw_subscription_id: OptionalRef;
   cw_pack_id: OptionalRef;
+  /** True for a debt carried over from the previous system: it has no enrolment or service behind it. */
+  opening_balance: Generated<boolean>;
+  /** Owner of an opening debt of a student; enrolment charges reach their student through the enrolment. */
+  student_id: OptionalRef;
   created_by: string | null;
   created_at: Timestamp;
 }

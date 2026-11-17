@@ -1,7 +1,8 @@
 import type { FastifyPluginAsync } from "fastify";
-import { sql, type Transaction } from "kysely";
+import { sql, type Kysely, type Transaction } from "kysely";
 import { z } from "zod";
 import { writeAudit } from "../audit.js";
+import type { SessionUser } from "../auth/sessions.js";
 import type { Database } from "../db/types.js";
 import { assertCashOpen } from "../domain/cash.js";
 import { recordFinancialEvents } from "../domain/financialEvents.js";
@@ -42,6 +43,20 @@ const paymentBody = z
   })
   .strict()
   .refine(onePayer, ONE_PAYER)
+  .refine((p) => (p.method === "cheque") === !!p.cheque, "a cheque needs its number and bank, other methods none");
+export type PaymentBody = z.infer<typeof paymentBody>;
+
+/** An advance received before the switch-over: who paid, how much and the reference it had in the previous system. */
+export const advanceBody = z
+  .object({
+    payer: z.object({ kind: z.enum(["student", "member"]), id: uuid }).strict(),
+    amount: millimes.min(1),
+    method: z.enum(["cash", "transfer", "cheque", "card"]),
+    cheque: cheque.optional(),
+    reference: z.string().trim().min(1).max(100),
+    note: optionalText(500),
+  })
+  .strict()
   .refine((p) => (p.method === "cheque") === !!p.cheque, "a cheque needs its number and bank, other methods none");
 const previewBody = z
   .object({ ...payerFields, amount: millimes.min(1), installmentIds: z.array(uuid).max(200).default([]) })
@@ -109,30 +124,126 @@ async function allocationAxes(trx: Transaction<Database>, paymentId: string) {
     .execute();
 }
 
+type Db = Kysely<Database>;
+
+const assertInstallmentsOfPayerIn = async (db: Db, payer: Payer, installmentIds: string[], centreId: string) => {
+  // Preview must verify the payer even when no installment is selected, before reading their credit.
+  const table = payer.kind === "student" ? "students" : payer.kind === "renter" ? "renters" : "members";
+  const owner = await db.selectFrom(table).select("id").where("id", "=", payer.id).where("centre_id", "=", centreId).executeTakeFirst();
+  if (!owner) throw notFound(payer.kind);
+  if (installmentIds.length === 0) return;
+  const rows = await db
+    .selectFrom("installments")
+    .leftJoin("enrolments", "enrolments.id", "installments.enrolment_id")
+    .leftJoin("rentals", "rentals.id", "installments.rental_id")
+    .select("installments.id")
+    .where("installments.id", "in", installmentIds)
+    .where(
+      payer.kind === "student"
+        ? sql<boolean>`coalesce(enrolments.student_id, installments.student_id) = ${payer.id}`
+        : payer.kind === "renter"
+          ? sql<boolean>`rentals.renter_id = ${payer.id}`
+          : sql<boolean>`installments.member_id = ${payer.id}`,
+    )
+    .where("installments.centre_id", "=", centreId)
+    .where("installments.kind", "=", "charge")
+    .where("installments.status", "=", "open")
+    .execute();
+  if (rows.length !== new Set(installmentIds).size) throw unprocessable("unknown_installment", "a selected instalment is not an open charge of this payer");
+};
+
+/** Records a payment, pays the payer's open charges with it (oldest first, or the ones named) and issues its receipt. */
+export async function recordPayment(db: Db, actor: SessionUser, body: PaymentBody) {
+  const payer = payerOf(body);
+  await assertInstallmentsOfPayerIn(db, payer, body.installmentIds, actor.centreId);
+  const result = await db.transaction().execute(async (trx) => {
+    await assertCashOpen(trx, actor.centreId);
+    await lockPayer(trx, payer, actor.centreId);
+    const payment = await trx
+      .insertInto("payments")
+      .values({
+        centre_id: actor.centreId,
+        student_id: body.studentId ?? null,
+        renter_id: body.renterId ?? null,
+        member_id: body.memberId ?? null,
+        amount: body.amount,
+        method: body.method,
+        cheque_number: body.cheque?.number ?? null,
+        cheque_bank: body.cheque?.bank ?? null,
+        cheque_status: body.method === "cheque" ? "received" : null,
+        reference: body.reference ?? null,
+        note: body.note ?? null,
+        created_by: actor.userId,
+      })
+      .returning(["id", "received_at as receivedAt"])
+      .executeTakeFirstOrThrow();
+    const planned = await planAllocations(trx, actor.centreId, payer, { priority: body.installmentIds });
+    await applyAllocations(trx, actor.centreId, planned, actor.userId);
+    const ownLines = summarise(planned.filter((p) => p.sourceId === payment.id));
+    const axes = await allocationAxes(trx, payment.id);
+    const allocated = axes.reduce((s, a) => s + a.amount, 0);
+    await recordFinancialEvents(trx, [
+      ...axes.map((a) => ({
+        centreId: actor.centreId,
+        type: "payment_received" as const,
+        amount: a.amount,
+        userId: actor.userId,
+        studentId: body.studentId ?? null,
+        renterId: body.renterId ?? null,
+        memberId: body.memberId ?? null,
+        rentalId: a.rentalId,
+        cwBookingId: a.cwBookingId,
+        cwSubscriptionId: a.cwSubscriptionId,
+        cwPackId: a.cwPackId,
+        roomId: a.roomId,
+        installmentId: a.installmentId,
+        enrolmentId: a.enrolmentId,
+        groupId: a.groupId,
+        studyId: a.studyId,
+        trainingId: a.trainingId,
+        instructorId: a.instructorId,
+        payload: { paymentId: payment.id, method: body.method },
+      })),
+      ...(body.amount - allocated > 0
+        ? [
+            {
+              centreId: actor.centreId,
+              type: "payment_received" as const,
+              amount: body.amount - allocated,
+              userId: actor.userId,
+              studentId: body.studentId ?? null,
+              renterId: body.renterId ?? null,
+              memberId: body.memberId ?? null,
+              payload: { paymentId: payment.id, method: body.method, advance: true },
+            },
+          ]
+        : []),
+    ]);
+    const receipt = await issueReceipt(trx, {
+      centreId: actor.centreId,
+      paymentId: payment.id,
+      kind: "payment",
+      lines: ownLines.map((l) => ({ label: l.label, amount: l.amount })),
+      userId: actor.userId,
+    });
+    await writeAudit(trx, {
+      centreId: actor.centreId,
+      userId: actor.userId,
+      action: "payment.created",
+      objectType: "payment",
+      objectId: payment.id,
+      after: { ...body, receipt: receipt.number, lines: ownLines },
+    });
+    return { paymentId: payment.id, receipt, lines: ownLines, advance: body.amount - allocated };
+  });
+  const totals = await payerTotals(db, actor.centreId, payer);
+  return { ...result, after: totals };
+}
+
 export const paymentRoutes: FastifyPluginAsync = async (app) => {
   const { db } = app;
   const read = app.requirePermission("payments:read");
   const write = app.requirePermission("payments:write");
-
-  const assertInstallmentsOfPayer = async (payer: Payer, installmentIds: string[], centreId: string) => {
-    // Preview must verify the payer even when no installment is selected, before reading their credit.
-    const table = payer.kind === "student" ? "students" : payer.kind === "renter" ? "renters" : "members";
-    const owner = await db.selectFrom(table).select("id").where("id", "=", payer.id).where("centre_id", "=", centreId).executeTakeFirst();
-    if (!owner) throw notFound(payer.kind);
-    if (installmentIds.length === 0) return;
-    const rows = await db
-      .selectFrom("installments")
-      .leftJoin("enrolments", "enrolments.id", "installments.enrolment_id")
-      .leftJoin("rentals", "rentals.id", "installments.rental_id")
-      .select("installments.id")
-      .where("installments.id", "in", installmentIds)
-      .where(payer.kind === "student" ? "enrolments.student_id" : payer.kind === "renter" ? "rentals.renter_id" : "installments.member_id", "=", payer.id)
-      .where("installments.centre_id", "=", centreId)
-      .where("installments.kind", "=", "charge")
-      .where("installments.status", "=", "open")
-      .execute();
-    if (rows.length !== new Set(installmentIds).size) throw unprocessable("unknown_installment", "a selected instalment is not an open charge of this payer");
-  };
 
   /** Every payer's overdue charges, with the same grace-period boundary as the dashboard. */
   app.get("/overdue", { preHandler: read }, async (request) => {
@@ -144,7 +255,7 @@ export const paymentRoutes: FastifyPluginAsync = async (app) => {
     const rows = await db
       .selectFrom("installments")
       .leftJoin("enrolments", "enrolments.id", "installments.enrolment_id")
-      .leftJoin("students", "students.id", "enrolments.student_id")
+      .leftJoin("students", (join) => join.on(sql<boolean>`students.id = coalesce(enrolments.student_id, installments.student_id)`))
       .leftJoin("rentals", "rentals.id", "installments.rental_id")
       .leftJoin("renters", "renters.id", "rentals.renter_id")
       .leftJoin("members", "members.id", "installments.member_id")
@@ -161,7 +272,7 @@ export const paymentRoutes: FastifyPluginAsync = async (app) => {
         "installments.id",
         "installments.label",
         "installments.due_date as dueDate",
-        "enrolments.student_id as studentId",
+        sql<string | null>`students.id`.as("studentId"),
         "rentals.renter_id as renterId",
         "installments.member_id as memberId",
         sql<string>`coalesce(students.first_name || ' ' || students.last_name, renters.name, concat_ws(' ', members.first_name, members.last_name))`.as(
@@ -187,7 +298,7 @@ export const paymentRoutes: FastifyPluginAsync = async (app) => {
     const centreId = request.user!.centreId;
     const body = previewBody.parse(request.body);
     const payer = payerOf(body);
-    await assertInstallmentsOfPayer(payer, body.installmentIds, centreId);
+    await assertInstallmentsOfPayerIn(db, payer, body.installmentIds, centreId);
     const totals = await payerTotals(db, centreId, payer);
     const planned = await planAllocations(db, centreId, payer, { priority: body.installmentIds, extraCredit: body.amount, pendingPaymentId: "pending" });
     const lines = summarise(planned.filter((p) => p.sourceId === "pending"));
@@ -207,92 +318,8 @@ export const paymentRoutes: FastifyPluginAsync = async (app) => {
   });
 
   app.post("/", { preHandler: write }, async (request, reply) => {
-    const actor = request.user!;
     const body = paymentBody.parse(request.body);
-    const payer = payerOf(body);
-    await assertInstallmentsOfPayer(payer, body.installmentIds, actor.centreId);
-    const result = await db.transaction().execute(async (trx) => {
-      await assertCashOpen(trx, actor.centreId);
-      await lockPayer(trx, payer, actor.centreId);
-      const payment = await trx
-        .insertInto("payments")
-        .values({
-          centre_id: actor.centreId,
-          student_id: body.studentId ?? null,
-          renter_id: body.renterId ?? null,
-          member_id: body.memberId ?? null,
-          amount: body.amount,
-          method: body.method,
-          cheque_number: body.cheque?.number ?? null,
-          cheque_bank: body.cheque?.bank ?? null,
-          cheque_status: body.method === "cheque" ? "received" : null,
-          reference: body.reference ?? null,
-          note: body.note ?? null,
-          created_by: actor.userId,
-        })
-        .returning(["id", "received_at as receivedAt"])
-        .executeTakeFirstOrThrow();
-      const planned = await planAllocations(trx, actor.centreId, payer, { priority: body.installmentIds });
-      await applyAllocations(trx, actor.centreId, planned, actor.userId);
-      const ownLines = summarise(planned.filter((p) => p.sourceId === payment.id));
-      const axes = await allocationAxes(trx, payment.id);
-      const allocated = axes.reduce((s, a) => s + a.amount, 0);
-      await recordFinancialEvents(trx, [
-        ...axes.map((a) => ({
-          centreId: actor.centreId,
-          type: "payment_received" as const,
-          amount: a.amount,
-          userId: actor.userId,
-          studentId: body.studentId ?? null,
-          renterId: body.renterId ?? null,
-          memberId: body.memberId ?? null,
-          rentalId: a.rentalId,
-          cwBookingId: a.cwBookingId,
-          cwSubscriptionId: a.cwSubscriptionId,
-          cwPackId: a.cwPackId,
-          roomId: a.roomId,
-          installmentId: a.installmentId,
-          enrolmentId: a.enrolmentId,
-          groupId: a.groupId,
-          studyId: a.studyId,
-          trainingId: a.trainingId,
-          instructorId: a.instructorId,
-          payload: { paymentId: payment.id, method: body.method },
-        })),
-        ...(body.amount - allocated > 0
-          ? [
-              {
-                centreId: actor.centreId,
-                type: "payment_received" as const,
-                amount: body.amount - allocated,
-                userId: actor.userId,
-                studentId: body.studentId ?? null,
-                renterId: body.renterId ?? null,
-                memberId: body.memberId ?? null,
-                payload: { paymentId: payment.id, method: body.method, advance: true },
-              },
-            ]
-          : []),
-      ]);
-      const receipt = await issueReceipt(trx, {
-        centreId: actor.centreId,
-        paymentId: payment.id,
-        kind: "payment",
-        lines: ownLines.map((l) => ({ label: l.label, amount: l.amount })),
-        userId: actor.userId,
-      });
-      await writeAudit(trx, {
-        centreId: actor.centreId,
-        userId: actor.userId,
-        action: "payment.created",
-        objectType: "payment",
-        objectId: payment.id,
-        after: { ...body, receipt: receipt.number, lines: ownLines },
-      });
-      return { paymentId: payment.id, receipt, lines: ownLines, advance: body.amount - allocated };
-    });
-    const totals = await payerTotals(db, actor.centreId, payer);
-    return reply.status(201).send({ ...result, after: totals });
+    return reply.status(201).send(await recordPayment(db, request.user!, body));
   });
 
   app.get("/", { preHandler: read }, async (request) => {

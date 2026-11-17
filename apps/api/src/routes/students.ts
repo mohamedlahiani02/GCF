@@ -128,7 +128,7 @@ export const studentRoutes: FastifyPluginAsync = async (app) => {
     const due = ids.length
       ? await db
           .selectFrom("installments")
-          .innerJoin("enrolments", "enrolments.id", "installments.enrolment_id")
+          .leftJoin("enrolments", "enrolments.id", "installments.enrolment_id")
           .leftJoin(
             db
               .selectFrom("effective_allocations")
@@ -138,12 +138,15 @@ export const studentRoutes: FastifyPluginAsync = async (app) => {
             "p.installment_id",
             "installments.id",
           )
-          .select(["enrolments.student_id as studentId", sql<number>`sum(installments.amount - coalesce(p.paid, 0))::bigint`.as("due")])
+          .select([
+            sql<string>`coalesce(enrolments.student_id, installments.student_id)`.as("studentId"),
+            sql<number>`sum(installments.amount - coalesce(p.paid, 0))::bigint`.as("due"),
+          ])
           .where(sql<boolean>`installments.due_date <= (select (now() at time zone timezone)::date from centres where id = ${request.user!.centreId})`)
-          .where("enrolments.student_id", "in", ids)
+          .where(sql<boolean>`coalesce(enrolments.student_id, installments.student_id) in (${sql.join(ids)})`)
           .where("installments.kind", "=", "charge")
           .where("installments.status", "=", "open")
-          .groupBy("enrolments.student_id")
+          .groupBy(sql`coalesce(enrolments.student_id, installments.student_id)`)
           .execute()
       : [];
     const lastPayments = ids.length

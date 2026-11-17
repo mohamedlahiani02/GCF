@@ -21,6 +21,8 @@ export interface InstallmentBalance {
   cwBookingId: string | null;
   cwSubscriptionId: string | null;
   cwPackId: string | null;
+  /** A debt carried over from the previous system, not revenue of the current period. */
+  openingBalance: boolean;
   label: string;
   kind: "charge" | "discount";
   amount: number;
@@ -105,6 +107,7 @@ export async function installmentBalances(
       "installments.cw_booking_id as cwBookingId",
       "installments.cw_subscription_id as cwSubscriptionId",
       "installments.cw_pack_id as cwPackId",
+      "installments.opening_balance as openingBalance",
       "installments.label",
       "installments.kind",
       "installments.amount",
@@ -117,7 +120,7 @@ export async function installmentBalances(
       sql<number>`coalesce(p.paid, 0)`.as("paid"),
     ])
     .where("installments.centre_id", "=", centreId)
-    .$if(payer?.kind === "student", (qb) => qb.where("enrolments.student_id", "=", payer!.id))
+    .$if(payer?.kind === "student", (qb) => qb.where(sql<boolean>`coalesce(enrolments.student_id, installments.student_id) = ${payer!.id}`))
     .$if(payer?.kind === "renter", (qb) => qb.where("rentals.renter_id", "=", payer!.id))
     .$if(payer?.kind === "member", (qb) => qb.where("installments.member_id", "=", payer!.id))
     .$if(filter.enrolmentId !== undefined, (qb) => qb.where("installments.enrolment_id", "=", filter.enrolmentId!))
