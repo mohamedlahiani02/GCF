@@ -15,7 +15,7 @@ const discount = z.discriminatedUnion("kind", [
   z.object({ kind: z.literal("amount"), value: millimes.min(1), reason }).strict(),
 ]);
 
-const enrolmentBody = z
+export const enrolmentBody = z
   .object({
     studentId: uuid,
     groupId: uuid,

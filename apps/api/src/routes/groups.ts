@@ -13,7 +13,7 @@ const slot = z
   .strict()
   .refine((s) => s.endTime > s.startTime, "the end time must be after the start time");
 
-const createBody = z
+export const createBody = z
   .object({
     kind: z.enum(["study", "training"]),
     studyId: uuid.optional(),

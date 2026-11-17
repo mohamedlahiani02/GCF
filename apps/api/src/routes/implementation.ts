@@ -76,10 +76,12 @@ export const implementationRoutes: FastifyPluginAsync = async (app) => {
     if (body.mode === "apply") {
       for (const row of results) {
         if (row.action !== "create") continue;
-        const created = await callApi(app, request, "POST", definition.url, bodies.get(row.line));
+        const planned = bodies.get(row.line)!;
+        const created = await callApi(app, request, "POST", planned.url, planned.body);
         if (created.status === 201) {
           (row as RowResult).action = "created";
-          row.id = (created.body as { id: string }).id;
+          const answer = created.body as Record<string, unknown>;
+          row.id = definition.resultId ? definition.resultId(answer) : String(answer.id);
         } else {
           row.action = "failed";
           row.errors.push(apiError(created));
