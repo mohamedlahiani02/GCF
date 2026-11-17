@@ -9,7 +9,7 @@ export type Json = ColumnType<unknown, string | null | undefined, string | null>
 export type Role = "admin" | "secretariat" | "accountant" | "editor";
 
 /** Modules a centre subscribed to (see src/modules.ts). */
-export type Module = "training" | "coworking" | "website" | "cafe" | "checkin";
+export type Module = "training" | "coworking" | "website" | "cafe" | "checkin" | "invoicing";
 
 export interface CentresTable {
   id: Generated<string>;

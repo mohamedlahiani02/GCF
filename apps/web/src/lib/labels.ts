@@ -35,6 +35,8 @@ export const MODULE_LABEL: Record<string, string> = {
   coworking: "Coworking",
   website: "Site web",
   cafe: "Café et point de vente",
+  checkin: "Arrivée par QR code (option du coworking)",
+  invoicing: "Factures et avoirs",
 };
 export const EMPLOYMENT: Record<string, string> = { salaried: "Salarié", freelance: "Freelance", contractor: "Vacataire" };
 export const KIND_INSTRUCTOR: Record<string, string> = { teacher: "Professeur", trainer: "Formateur" };
