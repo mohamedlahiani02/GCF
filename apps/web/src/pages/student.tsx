@@ -575,7 +575,10 @@ export function StudentPage() {
                   <tbody>
                     {installments.map((i) => (
                       <tr key={i.id}>
-                        <td>{i.label}</td>
+                        <td>
+                          {i.label}
+                          {i.openingBalance ? <div className="cap">Reprise de l’ancien système</div> : null}
+                        </td>
                         <td>
                           {frDate(i.dueDate)}
                           {i.dueDate !== i.originalDueDate ? <div className="cap">origine {frDate(i.originalDueDate)}</div> : null}

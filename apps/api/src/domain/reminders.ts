@@ -32,8 +32,8 @@ export async function overdueByStudent(db: Kysely<Database>, centreId: string): 
   const cutoff = limit.toISOString().slice(0, 10);
   const rows = await db
     .selectFrom("installments")
-    .innerJoin("enrolments", "enrolments.id", "installments.enrolment_id")
-    .innerJoin("students", "students.id", "enrolments.student_id")
+    .leftJoin("enrolments", "enrolments.id", "installments.enrolment_id")
+    .innerJoin("students", (join) => join.on(sql<boolean>`students.id = coalesce(enrolments.student_id, installments.student_id)`))
     .leftJoin(
       db
         .selectFrom("effective_allocations")

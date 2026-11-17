@@ -35,7 +35,7 @@ async function unpaid(db: Db, centreId: string, range: ReportRange): Promise<Rep
   const rows = await db
     .selectFrom("installments")
     .leftJoin("enrolments", "enrolments.id", "installments.enrolment_id")
-    .leftJoin("students", "students.id", "enrolments.student_id")
+    .leftJoin("students", (join) => join.on(sql<boolean>`students.id = coalesce(enrolments.student_id, installments.student_id)`))
     .leftJoin("rentals", "rentals.id", "installments.rental_id")
     .leftJoin("renters", "renters.id", "rentals.renter_id")
     .leftJoin("members", "members.id", "installments.member_id")
@@ -103,6 +103,7 @@ async function revenue(db: Db, centreId: string, range: ReportRange): Promise<Re
     'Formation : ' || trainings.title,
     'Location : ' || rooms.name,
     case
+      when installments.opening_balance then 'Reprise : soldes d''ouverture'
       when installments.cw_subscription_id is not null then 'Coworking : abonnements'
       when installments.cw_pack_id is not null then 'Coworking : carnets'
       when installments.member_id is not null then 'Coworking : réservations'
@@ -122,6 +123,8 @@ async function revenue(db: Db, centreId: string, range: ReportRange): Promise<Re
     .select([offer.as("offer"), sql<number>`sum(installments.amount)::bigint`.as("total")])
     .where("installments.centre_id", "=", centreId)
     .where("installments.status", "=", "open")
+    // A debt carried over from the previous system is not revenue of the period: it is collected, never invoiced.
+    .where("installments.opening_balance", "=", false)
     .where((eb) => eb.or([eb("installments.kind", "=", "charge"), eb("installments.discount_status", "=", "approved")]))
     .where("installments.due_date", ">=", range.from)
     .where("installments.due_date", "<=", range.to)

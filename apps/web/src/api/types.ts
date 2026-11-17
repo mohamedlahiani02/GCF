@@ -33,6 +33,8 @@ export interface Installment {
   id: string;
   enrolmentId: string | null;
   rentalId: string | null;
+  /** A debt carried over from the previous system. */
+  openingBalance?: boolean;
   label: string;
   kind: "charge" | "discount";
   amount: number;

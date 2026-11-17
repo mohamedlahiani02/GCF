@@ -65,6 +65,8 @@ describe("implementation access", () => {
       "enrolments",
       "subscriptions",
       "cafe-stock",
+      "opening-debts",
+      "opening-advances",
     ]);
     const studies = catalogue.body.find((e: { entity: string }) => e.entity === "studies");
     expect(studies).toMatchObject({ dependsOn: ["subjects"], available: true });
