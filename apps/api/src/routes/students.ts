@@ -34,7 +34,7 @@ const studentFields = {
   guardianEmail: optionalEmail,
   notes: optionalText(2000),
 };
-const createBody = z.object(studentFields).strict();
+export const createBody = z.object(studentFields).strict();
 const updateBody = z.object(studentFields).partial().strict();
 const archiveBody = z.object({ reason: z.string().trim().min(1).max(500) }).strict();
 const idParam = z.object({ id: z.string().uuid() });

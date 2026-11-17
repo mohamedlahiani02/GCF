@@ -40,6 +40,7 @@ import { integrationRoutes } from "./routes/integrations.js";
 import { paymentRoutes } from "./routes/payments.js";
 import { payrollRoutes } from "./routes/payroll.js";
 import { invoiceRoutes } from "./routes/invoices.js";
+import { implementationRoutes } from "./routes/implementation.js";
 import { mcpRoutes } from "./routes/mcp.js";
 import { prospectRoutes } from "./routes/prospects.js";
 import { receiptRoutes } from "./routes/receipts.js";
@@ -226,6 +227,7 @@ export async function buildApp(options: AppOptions): Promise<FastifyInstance> {
   await app.register(invoiceRoutes, { prefix: "/api/invoices" });
   await app.register(prospectRoutes, { prefix: "/api/prospects" });
   await app.register(mcpRoutes, { prefix: "/api/mcp" });
+  await app.register(implementationRoutes, { prefix: "/api/implementation" });
   await app.register(accountRoutes, { prefix: "/api" });
   await app.register(payrollRoutes, { prefix: "/api/payroll" });
   await app.register(rentalRoutes, { prefix: "/api" });

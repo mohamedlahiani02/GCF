@@ -9,7 +9,7 @@ export interface SessionUser {
   role: "admin" | "secretariat" | "accountant" | "editor";
 }
 
-export type Module = "training" | "coworking" | "website" | "cafe" | "checkin";
+export type Module = "training" | "coworking" | "website" | "cafe" | "checkin" | "invoicing";
 
 interface Session {
   user: SessionUser;

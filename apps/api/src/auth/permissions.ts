@@ -54,6 +54,7 @@ export const PERMISSIONS = [
   "cafe:cancel",
   "cafe:manage",
   "cafe:close",
+  "implementation:run",
 ] as const;
 export type Permission = (typeof PERMISSIONS)[number];
 
@@ -107,6 +108,28 @@ const ROLE_PERMISSIONS: Record<Role, ReadonlySet<Permission>> = {
     "cafe:close",
   ]),
   editor: new Set<Permission>(["centre:read", "website:edit", "website:publish", "website:leads"]),
+  // Configures a centre and loads its reference data; never touches money (payments, cash, payroll runs, invoices) nor users.
+  implementation: new Set<Permission>([
+    "implementation:run",
+    "centre:read",
+    "centre:manage",
+    "audit:read",
+    "students:read",
+    "students:write",
+    "catalogue:read",
+    "catalogue:write",
+    "instructors:read",
+    "instructors:write",
+    "rooms:write",
+    "payroll:read",
+    "payroll:rules",
+    "coworking:read",
+    "coworking:write",
+    "coworking:manage",
+    "website:edit",
+    "cafe:read",
+    "cafe:manage",
+  ]),
 };
 
 /** Permissions that only exist when their module is enabled; the others belong to the core. */
@@ -141,6 +164,9 @@ const PERMISSION_MODULE: Partial<Record<Permission, Module>> = {
   "cafe:cancel": "cafe",
   "cafe:manage": "cafe",
   "cafe:close": "cafe",
+  "invoices:read": "invoicing",
+  "invoices:write": "invoicing",
+  "invoices:cancel": "invoicing",
 };
 
 /** Who is asking: a role, within a centre that runs some modules. */

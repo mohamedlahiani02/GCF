@@ -27,7 +27,7 @@ const companyFields = {
   email: optionalEmail,
   phone: optionalText(40),
 };
-const companyCreate = z.object(companyFields).strict();
+export const companyCreate = z.object(companyFields).strict();
 const companyUpdate = z.object(companyFields).partial().strict();
 const companyQuery = z.object({ q: z.string().trim().max(100).optional(), status: z.enum(["active", "archived", "all"]).default("active") });
 
@@ -40,7 +40,7 @@ const memberFields = {
   companyRole: z.enum(["admin", "member"]).nullable().optional(),
   notes: optionalText(2000),
 };
-const memberCreate = z.object({ kind: z.enum(["member", "guest"]), ...memberFields }).strict();
+export const memberCreate = z.object({ kind: z.enum(["member", "guest"]), ...memberFields }).strict();
 const memberUpdate = z.object(memberFields).partial().strict();
 const memberQuery = z.object({
   q: z.string().trim().max(100).optional(),

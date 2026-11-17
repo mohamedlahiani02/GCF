@@ -31,9 +31,19 @@
 }
 .dashboard-columns {
   display: grid;
-  grid-template-columns: minmax(0, 1.5fr) minmax(280px, 1fr);
+  grid-template-columns: minmax(0, 2fr) minmax(300px, 1fr);
   gap: 20px;
   align-items: start;
+}
+.dashboard-columns-single {
+  grid-template-columns: minmax(0, 1fr);
+}
+.dashboard-main,
+.dashboard-rail {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  min-width: 0;
 }
 .dashboard-card-head {
   display: flex;
@@ -548,5 +558,21 @@
 @media (max-width: 900px) {
   .pay-steps {
     grid-template-columns: minmax(0, 1fr);
+  }
+}
+.dashboard-main .dashboard-insights {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  align-items: stretch;
+}
+.dashboard-main .dashboard-insights .insight-card:nth-child(3):last-child {
+  grid-column: 1 / -1;
+}
+.dashboard-rail .dashboard-priorities .action-notices {
+  max-height: 340px;
+  overflow-y: auto;
+}
+@media (max-width: 1150px) {
+  .dashboard-rail .dashboard-priorities .action-notices {
+    max-height: none;
   }
 }

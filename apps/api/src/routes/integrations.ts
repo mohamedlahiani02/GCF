@@ -12,7 +12,7 @@ const idParam = z.object({ id: z.string().uuid() });
 const tokenBody = z
   .object({
     name: z.string().trim().min(1).max(100),
-    role: z.enum(["secretariat", "accountant", "editor"]),
+    role: z.enum(["secretariat", "accountant", "editor", "implementation"]),
     readOnly: z.boolean().default(true),
     sharePersonalData: z.boolean().default(false),
     expiresAt: z.iso.datetime({ offset: true }).nullable().default(null),
